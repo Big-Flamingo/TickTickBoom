@@ -33,11 +33,11 @@ val TextGray = Color(0xFF94A3B8)
 val SmokeLight = Color(0xFFE2E8F0) // White smoke for dark mode
 val SmokeDark = Color(0xFF334155)  // Dark smoke for light mode
 
-// --- FROG MODE COLORS ---
-val FrogGreen = Color(0xFF86EFAC)      // Light cheerful green
-val FrogDarkGreen = Color(0xFF22C55E)  // Darker outline/details
-val FrogBelly = Color(0xFFDCFCE7)      // Very pale belly
-val FrogBlush = Color(0xFFFFB4B4)      // Cute cheeks
+// --- NEW PASTEL FROG COLORS ---
+val FrogBody = Color(0xFFAED581)   // Muted pastel green
+val FrogBelly = Color(0xFFFFF59D)  // Creamy light yellow
+val FrogBlush = Color(0xFFFFAB91)  // Soft pastel pink
+val FrogFeatures = Color(0xFF455A64) // Dark charcoal for eyes/mouth
 
 // --- FONTS ---
 val CustomFont = FontFamily(

@@ -23,12 +23,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathOperation
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.asAndroidPath
 import androidx.compose.ui.graphics.asComposePath
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -121,7 +124,7 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors) {
 
     Box(contentAlignment = Alignment.Center, modifier = Modifier.size(300.dp)) {
         Canvas(modifier = Modifier.fillMaxSize()) {
-            if (frame >= 0) Unit // Trigger recomposition
+            if (frame >= 0) Unit
 
             val width = size.width
             val height = size.height
@@ -436,68 +439,164 @@ fun ExplosionScreen(colors: AppColors, onReset: () -> Unit) {
     }
 }
 
-// --- ADDED: THE CUTE FROG VISUAL ---
+// --- UPDATED FROG VISUAL (BLACK OUTLINES) ---
 @Composable
 fun FrogVisual(timeLeft: Float, isCritical: Boolean) {
     val density = LocalDensity.current
 
-    // Animate a "Croak" expansion on every second (throat wobble)
-    val tickProgress = timeLeft % 1f
-    val throatExpansion by animateFloatAsState(
-        targetValue = if (tickProgress > 0.8f) 1.1f else 1.0f,
-        animationSpec = spring(stiffness = Spring.StiffnessLow),
+    val tickDuration = if (timeLeft <= 5f) 0.5f else 1.0f
+
+    val rawProgress = (timeLeft % tickDuration) / tickDuration
+    val tickProgress = 1f - rawProgress
+
+    val bellyHeightScale by animateFloatAsState(
+        targetValue = if (tickProgress < 0.2f) 1.15f else 1.0f,
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
         label = "croak"
     )
 
-    Box(contentAlignment = Alignment.Center, modifier = Modifier.size(300.dp)) {
+    Box(contentAlignment = Alignment.Center, modifier = Modifier.size(320.dp)) {
         Canvas(modifier = Modifier.fillMaxSize()) {
             val cx = size.width / 2
             val cy = size.height / 2
-            val radius = size.width * 0.35f
+            val mainRadius = size.width * 0.35f
 
-            // 1. Throat Pouch (Animates/Throbs behind the body)
-            drawCircle(
-                color = FrogGreen.copy(alpha = 0.6f),
-                radius = radius * 0.9f * throatExpansion,
-                center = Offset(cx, cy + radius * 0.2f)
+            // CHANGED: Outline color set to black
+            val outlineColor = Color.Black
+            val outlineStroke = Stroke(width = 6.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
+
+            // LAYER 0: Shadow
+            val shadowWidth = mainRadius * 2.2f
+            val shadowHeight = mainRadius * 0.4f
+            val shadowY = cy + mainRadius * 1.05f
+            drawOval(
+                color = Color.Black.copy(alpha = 0.2f),
+                topLeft = Offset(cx - shadowWidth / 2, shadowY - shadowHeight / 2),
+                size = Size(shadowWidth, shadowHeight)
             )
 
-            // 2. Main Body
-            drawCircle(color = FrogGreen, radius = radius, center = Offset(cx, cy))
+            // LAYER 1: Feet
+            val footRadius = mainRadius * 0.2f
+            val footY = cy + mainRadius * 0.85f
+            val leftFootX = cx - mainRadius * 0.5f
+            val rightFootX = cx + mainRadius * 0.5f
 
-            // 3. Belly (Oval)
+            drawCircle(outlineColor, radius = footRadius, center = Offset(leftFootX, footY), style = outlineStroke)
+            drawCircle(FrogBody, radius = footRadius, center = Offset(leftFootX, footY))
+
+            drawCircle(outlineColor, radius = footRadius, center = Offset(rightFootX, footY), style = outlineStroke)
+            drawCircle(FrogBody, radius = footRadius, center = Offset(rightFootX, footY))
+
+            // LAYER 2: Body & Head (Silhouette)
+            val bumpRadius = mainRadius * 0.45f
+            val bumpY = cy - mainRadius * 0.65f
+            val bumpXOffset = mainRadius * 0.5f
+
+            val bodyCircle = Path().apply {
+                addOval(Rect(center = Offset(cx, cy), radius = mainRadius))
+            }
+            val leftBump = Path().apply {
+                addOval(Rect(center = Offset(cx - bumpXOffset, bumpY), radius = bumpRadius))
+            }
+            val rightBump = Path().apply {
+                addOval(Rect(center = Offset(cx + bumpXOffset, bumpY), radius = bumpRadius))
+            }
+
+            val silhouette = Path()
+            silhouette.op(bodyCircle, leftBump, PathOperation.Union)
+            silhouette.op(silhouette, rightBump, PathOperation.Union)
+
+            drawPath(silhouette, outlineColor, style = outlineStroke)
+            drawPath(silhouette, FrogBody)
+
+            // LAYER 3: Belly (ANIMATED)
+            val bellyWidth = mainRadius * 1.4f
+            val baseBellyHeight = mainRadius * 1.0f
+            val currentBellyHeight = baseBellyHeight * bellyHeightScale
+
             drawOval(
                 color = FrogBelly,
-                topLeft = Offset(cx - radius * 0.6f, cy),
-                size = Size(radius * 1.2f, radius * 0.8f)
+                topLeft = Offset(cx - bellyWidth / 2, cy - baseBellyHeight * 0.05f),
+                size = Size(bellyWidth, currentBellyHeight * 0.9f)
             )
 
-            // 4. Eyes
-            val eyeRadius = radius * 0.35f
-            val eyeY = cy - radius * 0.7f
-            val leftEyeX = cx - radius * 0.5f
-            val rightEyeX = cx + radius * 0.5f
+            // LAYER 4: Arms (Blended into body)
+            val armWidth = mainRadius * 0.25f
+            val armHeight = mainRadius * 0.35f
+            val armY = cy + mainRadius * 0.2f
+            val armXOffset = mainRadius * 0.65f
 
-            // Left Eye
-            drawCircle(color = FrogGreen, radius = eyeRadius, center = Offset(leftEyeX, eyeY))
-            drawCircle(color = Color.White, radius = eyeRadius * 0.8f, center = Offset(leftEyeX, eyeY))
-            drawCircle(color = Color.Black, radius = eyeRadius * 0.3f, center = Offset(leftEyeX, eyeY))
-
-            // Right Eye
-            drawCircle(color = FrogGreen, radius = eyeRadius, center = Offset(rightEyeX, eyeY))
-            drawCircle(color = Color.White, radius = eyeRadius * 0.8f, center = Offset(rightEyeX, eyeY))
-            drawCircle(color = Color.Black, radius = eyeRadius * 0.3f, center = Offset(rightEyeX, eyeY))
-
-            // 5. Cheeks (Blush)
-            drawCircle(color = FrogBlush.copy(alpha=0.6f), radius = radius * 0.15f, center = Offset(cx - radius * 0.6f, cy))
-            drawCircle(color = FrogBlush.copy(alpha=0.6f), radius = radius * 0.15f, center = Offset(cx + radius * 0.6f, cy))
-
-            // 6. Mouth
-            val mouthPath = Path().apply {
-                moveTo(cx - radius * 0.3f, cy + radius * 0.1f)
-                quadraticTo(cx, cy + radius * 0.3f, cx + radius * 0.3f, cy + radius * 0.1f)
+            // Left Arm
+            rotate(30f, pivot = Offset(cx - armXOffset, armY)) {
+                // Outline (Skip right side to blend) - Starts at Top (-90) sweeps clockwise (270) to Bottom.
+                val arcTopLeft = Offset(cx - armXOffset - armWidth, armY - armHeight/2)
+                val arcSize = Size(armWidth*2, armHeight)
+                drawArc(
+                    color = outlineColor,
+                    startAngle = -90f,
+                    sweepAngle = 270f,
+                    useCenter = false,
+                    topLeft = arcTopLeft,
+                    size = arcSize,
+                    style = outlineStroke
+                )
+                // Fill
+                drawOval(FrogBody, topLeft = Offset(cx - armXOffset - armWidth, armY - armHeight/2), size = Size(armWidth*2, armHeight))
             }
-            drawPath(path = mouthPath, color = FrogDarkGreen, style = Stroke(width = 8f, cap = StrokeCap.Round))
+
+            // Right Arm
+            rotate(-30f, pivot = Offset(cx + armXOffset, armY)) {
+                // Outline (Skip left side to blend) - Starts at Top (-90) sweeps counter-clockwise (-270) to Bottom.
+                val arcTopLeft = Offset(cx + armXOffset - armWidth, armY - armHeight/2)
+                val arcSize = Size(armWidth*2, armHeight)
+                drawArc(
+                    color = outlineColor,
+                    startAngle = -90f,
+                    sweepAngle = -270f,
+                    useCenter = false,
+                    topLeft = arcTopLeft,
+                    size = arcSize,
+                    style = outlineStroke
+                )
+                // Fill
+                drawOval(FrogBody, topLeft = Offset(cx + armXOffset - armWidth, armY - armHeight/2), size = Size(armWidth*2, armHeight))
+            }
+
+            // LAYER 5: Face
+            val eyeWhiteRadius = bumpRadius * 0.7f
+            val pupilRadius = eyeWhiteRadius * 0.9f
+            val glintRadius = pupilRadius * 0.25f
+
+            fun drawEye(centerX: Float, centerY: Float) {
+                // Eye Outline
+                drawCircle(outlineColor, radius = eyeWhiteRadius, center = Offset(centerX, centerY), style = outlineStroke)
+                // Eye Fill
+                drawCircle(Color.White, radius = eyeWhiteRadius, center = Offset(centerX, centerY))
+                // Pupil
+                drawCircle(Color.Black, radius = pupilRadius, center = Offset(centerX, centerY))
+                // Glint
+                drawCircle(Color.White, radius = glintRadius, center = Offset(centerX - pupilRadius*0.4f, centerY - pupilRadius*0.4f))
+            }
+            drawEye(cx - bumpXOffset, bumpY)
+            drawEye(cx + bumpXOffset, bumpY)
+
+            val cheekRadius = mainRadius * 0.15f
+            val cheekY = cy - mainRadius * 0.18f
+            val cheekXOffset = mainRadius * 0.65f
+            drawCircle(color = FrogBlush, radius = cheekRadius, center = Offset(cx - cheekXOffset, cheekY))
+            drawCircle(color = FrogBlush, radius = cheekRadius, center = Offset(cx + cheekXOffset, cheekY))
+
+            val mouthWidth = mainRadius * 0.3f
+            val mouthY = cy - mainRadius * 0.22f
+            val mouthH = mainRadius * 0.08f
+
+            val mouthPath = Path().apply {
+                moveTo(cx - mouthWidth/2, mouthY)
+                quadraticTo(cx - mouthWidth/4, mouthY + mouthH, cx, mouthY)
+                quadraticTo(cx + mouthWidth/4, mouthY + mouthH, cx + mouthWidth/2, mouthY)
+            }
+            // CHANGED: Mouth color set to black
+            drawPath(path = mouthPath, color = Color.Black, style = Stroke(width = 8f, cap = StrokeCap.Round, join = StrokeJoin.Round))
         }
     }
 }

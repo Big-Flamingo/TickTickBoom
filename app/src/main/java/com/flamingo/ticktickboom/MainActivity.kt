@@ -13,6 +13,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -165,52 +166,63 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, onToggleTheme: () -> Uni
 
     // EASTER EGG LOGIC
     fun handleBombTap() {
+        if (easterEggTaps >= 3) return
+
         scope.launch {
             easterEggTaps++
 
-            // 1. Play actual "Wobble" sound
             AudioService.playWobble()
 
-            // 2. Animate Wobble
             wobbleAnim.snapTo(0f)
-            // Rotate left, then right, then center
             wobbleAnim.animateTo(-15f, tween(50))
             wobbleAnim.animateTo(15f, tween(50))
             wobbleAnim.animateTo(0f, spring(stiffness = Spring.StiffnessMediumLow))
 
-            // 3. Check Trigger (3 Taps)
             if (easterEggTaps >= 3) {
-                // Fly elements down
-                flyAwayAnim.animateTo(2000f, tween(800, easing = FastOutSlowInEasing))
+                // Ensure elements fly completely off
+                val screenHeight = context.resources.displayMetrics.heightPixels.toFloat()
+                flyAwayAnim.animateTo(screenHeight + 500f, tween(800, easing = FastOutSlowInEasing))
 
-                // Start with FROG style (Defaulting to 5-10s random timer)
+                // Start FROG mode
                 val min = minText.toIntOrNull() ?: 5
                 val max = maxText.toIntOrNull() ?: 10
                 onStart(TimerSettings(min, max, "FROG"))
 
-                // Reset taps so it doesn't trigger immediately next time
                 easterEggTaps = 0
                 delay(500)
-                flyAwayAnim.snapTo(0f) // Reset position for next time (behind scene)
+                flyAwayAnim.snapTo(0f)
             }
         }
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    // FIX: Apply animation to the ROOT Box.
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .graphicsLayer {
+                translationY = flyAwayAnim.value
+                clip = false
+            }
+    ) {
         Column(
             modifier = Modifier
                 .verticalScroll(rememberScrollState())
                 .fillMaxWidth()
-                .padding(horizontal = 24.dp, vertical = 48.dp),
+                .padding(horizontal = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // --- THE BOMB ICON (TRIGGER) ---
+            Spacer(modifier = Modifier.height(48.dp))
+
+            // --- THE BOMB ICON ---
             Box(
                 modifier = Modifier
-                    .size(80.dp) // Slightly larger touch area
+                    .size(80.dp)
                     .clip(CircleShape)
-                    .clickable { handleBombTap() }
-                    .graphicsLayer { rotationZ = wobbleAnim.value }, // Apply Wobble
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
+                    ) { handleBombTap() }
+                    .graphicsLayer { rotationZ = wobbleAnim.value },
                 contentAlignment = Alignment.Center
             ) {
                 val path = remember { Path() }
@@ -255,83 +267,78 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, onToggleTheme: () -> Uni
                 }
             }
 
-            // --- THE REST OF THE UI (FLIES AWAY) ---
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .graphicsLayer { translationY = flyAwayAnim.value }, // Apply Fly Away
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Spacer(modifier = Modifier.height(32.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("TICKTICK", color = colors.text, fontSize = 26.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont, letterSpacing = 1.sp)
-                    Text("BOOM", color = NeonRed, fontSize = 26.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont, letterSpacing = 1.sp)
-                }
-                Text("RANDOMIZED DETONATION SEQUENCE", color = colors.textSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, modifier = Modifier.padding(top=4.dp), fontFamily = CustomFont)
-                Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.height(4.dp))
 
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                    StyleButton("DIGITAL", Icons.Rounded.DeveloperBoard, style == "C4", NeonCyan, colors) { AudioService.playClick(); style = "C4" }
-                    StyleButton("FUSE", Icons.Rounded.LocalFireDepartment, style == "FUSE", NeonOrange, colors) { AudioService.playClick(); style = "FUSE" }
-                    StyleButton("TIMER", Icons.Rounded.AccessTime, style == "DYNAMITE", NeonRed, colors) { AudioService.playClick(); style = "DYNAMITE" }
-                }
-                Spacer(modifier = Modifier.height(24.dp))
-
-                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    TimeInput("MIN SECS", minText, { minText = it }, NeonCyan, colors, Modifier.weight(1f))
-                    TimeInput("MAX SECS", maxText, { maxText = it }, NeonRed, colors, Modifier.weight(1f))
-                }
-                Spacer(modifier = Modifier.height(32.dp))
-
-                VolumeSlider("TIMER VOLUME", timerVol, NeonCyan, colors) { timerVol = it }
-                Spacer(modifier = Modifier.height(16.dp))
-                VolumeSlider("EXPLOSION VOLUME", explodeVol, NeonRed, colors) { explodeVol = it }
-                Spacer(modifier = Modifier.height(24.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth().height(48.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center
-                ) {
-                    Icon(Icons.Filled.LightMode, null, tint = if(!isDarkMode) NeonOrange else colors.textSecondary, modifier = Modifier.size(20.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("LIGHT MODE", color = if(!isDarkMode) NeonOrange else colors.textSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont)
-
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Switch(
-                        checked = isDarkMode,
-                        onCheckedChange = { onToggleTheme() },
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = NeonCyan,
-                            checkedTrackColor = Color.Transparent,
-                            checkedBorderColor = NeonCyan,
-                            uncheckedThumbColor = NeonOrange,
-                            uncheckedTrackColor = Color.Transparent,
-                            uncheckedBorderColor = NeonOrange
-                        )
-                    )
-                    Spacer(modifier = Modifier.width(16.dp))
-
-                    Text("DARK MODE", color = if(isDarkMode) NeonCyan else colors.textSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Icon(Icons.Filled.DarkMode, null, tint = if(isDarkMode) NeonCyan else colors.textSecondary, modifier = Modifier.size(20.dp))
-                }
-
-                Spacer(modifier = Modifier.height(32.dp))
-
-                if (errorMsg.isNotEmpty()) { Text(errorMsg, color = NeonRed, fontSize = 14.sp, modifier = Modifier.padding(bottom = 16.dp), fontFamily = CustomFont) }
-
-                Button(
-                    onClick = { tryStart() },
-                    colors = ButtonDefaults.buttonColors(containerColor = NeonRed),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth().height(60.dp)
-                ) {
-                    Icon(Icons.Filled.PlayArrow, null)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("ARM SYSTEM", fontSize = 18.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp, fontFamily = CustomFont)
-                }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("TICKTICK", color = colors.text, fontSize = 26.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont, letterSpacing = 1.sp)
+                Text("BOOM", color = NeonRed, fontSize = 26.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont, letterSpacing = 1.sp)
             }
+            Text("RANDOMIZED DETONATION SEQUENCE", color = colors.textSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, modifier = Modifier.padding(top=4.dp), fontFamily = CustomFont)
+            Spacer(modifier = Modifier.height(32.dp))
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                StyleButton("DIGITAL", Icons.Rounded.DeveloperBoard, style == "C4", NeonCyan, colors) { AudioService.playClick(); style = "C4" }
+                StyleButton("FUSE", Icons.Rounded.LocalFireDepartment, style == "FUSE", NeonOrange, colors) { AudioService.playClick(); style = "FUSE" }
+                StyleButton("TIMER", Icons.Rounded.AccessTime, style == "DYNAMITE", NeonRed, colors) { AudioService.playClick(); style = "DYNAMITE" }
+            }
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                TimeInput("MIN SECS", minText, { minText = it }, NeonCyan, colors, Modifier.weight(1f))
+                TimeInput("MAX SECS", maxText, { maxText = it }, NeonRed, colors, Modifier.weight(1f))
+            }
+            Spacer(modifier = Modifier.height(32.dp))
+
+            VolumeSlider("TIMER VOLUME", timerVol, NeonCyan, colors) { timerVol = it }
+            Spacer(modifier = Modifier.height(16.dp))
+            VolumeSlider("EXPLOSION VOLUME", explodeVol, NeonRed, colors) { explodeVol = it }
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth().height(48.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center
+            ) {
+                Icon(Icons.Filled.LightMode, null, tint = if(!isDarkMode) NeonOrange else colors.textSecondary, modifier = Modifier.size(20.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("LIGHT MODE", color = if(!isDarkMode) NeonOrange else colors.textSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont)
+
+                Spacer(modifier = Modifier.width(16.dp))
+                Switch(
+                    checked = isDarkMode,
+                    onCheckedChange = { onToggleTheme() },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = NeonCyan,
+                        checkedTrackColor = Color.Transparent,
+                        checkedBorderColor = NeonCyan,
+                        uncheckedThumbColor = NeonOrange,
+                        uncheckedTrackColor = Color.Transparent,
+                        uncheckedBorderColor = NeonOrange
+                    )
+                )
+                Spacer(modifier = Modifier.width(16.dp))
+
+                Text("DARK MODE", color = if(isDarkMode) NeonCyan else colors.textSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont)
+                Spacer(modifier = Modifier.width(8.dp))
+                Icon(Icons.Filled.DarkMode, null, tint = if(isDarkMode) NeonCyan else colors.textSecondary, modifier = Modifier.size(20.dp))
+            }
+
+            Spacer(modifier = Modifier.height(32.dp))
+
+            if (errorMsg.isNotEmpty()) { Text(errorMsg, color = NeonRed, fontSize = 14.sp, modifier = Modifier.padding(bottom = 16.dp), fontFamily = CustomFont) }
+
+            Button(
+                onClick = { tryStart() },
+                colors = ButtonDefaults.buttonColors(containerColor = NeonRed),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth().height(60.dp)
+            ) {
+                Icon(Icons.Filled.PlayArrow, null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("ARM SYSTEM", fontSize = 18.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp, fontFamily = CustomFont)
+            }
+
+            Spacer(modifier = Modifier.height(48.dp))
         }
     }
 }
@@ -377,13 +384,9 @@ fun BombScreen(durationSeconds: Int, style: String, colors: AppColors, isDarkMod
             val tickInterval = if (timeLeft < 5) 500L else 1000L
 
             if (now - lastTickTime >= tickInterval && timeLeft > 0) {
-                // SOUND LOGIC
                 if (style == "C4") { AudioService.playTick(); isLedOn = true }
                 if (style == "DYNAMITE" && timeLeft > 1.0) AudioService.playClockTick()
-
-                // --- FROG SOUND ---
                 if (style == "FROG") AudioService.playCroak()
-
                 lastTickTime = now
             }
 
@@ -393,10 +396,7 @@ fun BombScreen(durationSeconds: Int, style: String, colors: AppColors, isDarkMod
 
         timeLeft = 0f
         launch { flashAnim.animateTo(1f, tween(50, easing = LinearOutSlowInEasing)) }
-
-        // --- EXPLOSION ---
         AudioService.playExplosion(context)
-
         delay(100)
         onExplode()
     }
@@ -406,7 +406,6 @@ fun BombScreen(durationSeconds: Int, style: String, colors: AppColors, isDarkMod
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 val isCritical = isFuseFinished
 
-                // HEADER TEXT LOGIC
                 if (style == "FUSE") {
                     if (!isCritical) {
                         Text("ARMED", color = NeonOrange, fontSize = 48.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont, letterSpacing = 2.sp, style = TextStyle(shadow = Shadow(color = NeonOrange, blurRadius = 20f)))
@@ -424,7 +423,8 @@ fun BombScreen(durationSeconds: Int, style: String, colors: AppColors, isDarkMod
                         }
                     }
                 } else if (style == "FROG") {
-                    Text("RIBBIT", color = FrogGreen, fontSize = 48.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont, letterSpacing = 2.sp, style = TextStyle(shadow = Shadow(color = FrogGreen, blurRadius = 20f)))
+                    // FIX: Use FrogBody instead of the removed FrogGreen
+                    Text("RIBBIT", color = FrogBody, fontSize = 48.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont, letterSpacing = 2.sp, style = TextStyle(shadow = Shadow(color = FrogBody, blurRadius = 20f)))
                 } else {
                     Surface(color = Color.Transparent, border = BorderStroke(1.dp, NeonRed), shape = RoundedCornerShape(50), modifier = Modifier.padding(bottom = 48.dp)) {
                         Text("DETONATION SEQUENCE", color = NeonRed, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp), fontFamily = CustomFont)
@@ -442,7 +442,6 @@ fun BombScreen(durationSeconds: Int, style: String, colors: AppColors, isDarkMod
                     }
                     "C4" -> C4Visual(isLedOn, isDarkMode)
                     "DYNAMITE" -> DynamiteVisual(timeLeft)
-                    // NEW FROG VISUAL
                     "FROG" -> FrogVisual(timeLeft, isCritical)
                 }
 
