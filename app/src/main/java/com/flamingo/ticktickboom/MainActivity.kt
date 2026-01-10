@@ -3,6 +3,7 @@ package com.flamingo.ticktickboom
 import android.app.Activity
 import android.content.Context
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -11,8 +12,6 @@ import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -29,7 +28,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -42,13 +40,13 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.edit // Added for KTX extension
 import androidx.core.view.WindowCompat
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -57,7 +55,7 @@ import kotlin.random.Random
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         AudioService.init(this)
         setContent {
             MaterialTheme {
@@ -83,15 +81,15 @@ fun BombApp() {
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as Activity).window
+            @Suppress("DEPRECATION") // Suppress status bar warning
             window.statusBarColor = colors.background.toArgb()
-            @Suppress("DEPRECATION")
             WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !isDarkMode
         }
     }
 
     fun toggleTheme() {
         isDarkMode = !isDarkMode
-        prefs.edit().putBoolean("dark_mode", isDarkMode).apply()
+        prefs.edit { putBoolean("dark_mode", isDarkMode) } // Uses KTX extension
         AudioService.playClick()
     }
 
@@ -117,7 +115,6 @@ fun BombApp() {
     Surface(modifier = Modifier.fillMaxSize(), color = colors.background) {
         when (appState) {
             AppState.SETUP -> SetupScreen(colors, isDarkMode, { toggleTheme() }, { handleStart(it) })
-            // PASSED ISDARKMODE HERE:
             AppState.RUNNING -> BombScreen(duration, bombStyle, colors, isDarkMode, { handleExplode() }, { handleAbort() })
             AppState.EXPLODED -> ExplosionScreen(colors, { handleReset() })
         }
@@ -143,13 +140,14 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, onToggleTheme: () -> Uni
         if (min <= 0 || max <= 0) { errorMsg = "Time must be > 0"; return }
         if (min >= max) { errorMsg = "Min must be less than Max"; return }
 
-        val editor = prefs.edit()
-        editor.putInt("min", min)
-        editor.putInt("max", max)
-        editor.putString("style", style)
-        editor.putFloat("vol_timer", timerVol)
-        editor.putFloat("vol_explode", explodeVol)
-        editor.apply()
+        // Updated to use the KTX "edit {}" block
+        prefs.edit {
+            putInt("min", min)
+            putInt("max", max)
+            putString("style", style)
+            putFloat("vol_timer", timerVol)
+            putFloat("vol_explode", explodeVol)
+        }
 
         AudioService.timerVolume = timerVol
         AudioService.explosionVolume = explodeVol
@@ -276,7 +274,6 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, onToggleTheme: () -> Uni
     }
 }
 
-// ADDED isDarkMode PARAM
 @Composable
 fun BombScreen(durationSeconds: Int, style: String, colors: AppColors, isDarkMode: Boolean, onExplode: () -> Unit, onAbort: () -> Unit) {
     var timeLeft by remember { mutableFloatStateOf(durationSeconds.toFloat()) }
@@ -334,8 +331,6 @@ fun BombScreen(durationSeconds: Int, style: String, colors: AppColors, isDarkMod
         onExplode()
     }
 
-    val currentShake = 0f
-
     Box(modifier = Modifier.fillMaxSize()) {
         Box(modifier = Modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -371,7 +366,6 @@ fun BombScreen(durationSeconds: Int, style: String, colors: AppColors, isDarkMod
                         val progress = if (fuseBurnDuration > 0) (currentBurnTime / fuseBurnDuration).coerceIn(0f, 1f) else 1f
                         FuseVisual(progress, isFuseFinished, colors)
                     }
-                    // PASSING ISDARKMODE
                     "C4" -> C4Visual(isLedOn, isDarkMode)
                     "DYNAMITE" -> DynamiteVisual(timeLeft)
                 }

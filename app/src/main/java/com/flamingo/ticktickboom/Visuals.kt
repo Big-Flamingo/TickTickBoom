@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bolt
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.rounded.DeveloperBoard
 import androidx.compose.material3.*
@@ -122,8 +121,8 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors) {
 
     Box(contentAlignment = Alignment.Center, modifier = Modifier.size(300.dp)) {
         Canvas(modifier = Modifier.fillMaxSize()) {
-            @Suppress("UNUSED_VARIABLE")
-            val trigger = frame
+            // Forces recomposition on frame change without creating an unused variable warning
+            if (frame >= 0) Unit
 
             val width = size.width
             val height = size.height
@@ -132,15 +131,13 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors) {
             val bodyRadius = width * 0.28f
             val neckTopY = bombCenterY - bodyRadius - holeOffset
 
-            // --- UPDATED SHADOW (Solid & Centered) ---
+            // --- SHADOW ---
             val shadowW = width * 0.6f
             val shadowH = 20.dp.toPx()
-
-            // Mathematically centered on the bottom of the spherical body
             val shadowCenterY = bombCenterY + bodyRadius
 
             drawOval(
-                color = Color.Black.copy(alpha = 0.2f), // Solid color (no gradient), subtle opacity
+                color = Color.Black.copy(alpha = 0.2f),
                 topLeft = Offset(bombCenterX - shadowW / 2, shadowCenterY - shadowH / 2),
                 size = Size(shadowW, shadowH)
             )
@@ -157,7 +154,6 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors) {
 
             val fuseBase = Offset(bombCenterX, protrusionTopY)
             if (isCritical) {
-                // Static Glow, Transparent Red Fade
                 drawCircle(
                     brush = Brush.radialGradient(
                         colors = listOf(NeonRed.copy(alpha=0.6f), NeonRed.copy(alpha=0f)),
@@ -196,7 +192,7 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors) {
             androidMeasure.getPosTan(currentBurnPoint, pos, null)
             val sparkCenter = Offset(pos[0], pos[1])
 
-            // Spawning Logic inside Canvas
+            // Spawning Logic
             if (Math.random() < 0.3) {
                 val angle = Math.random() * Math.PI * 2
                 val speed = (2f + Math.random() * 4f).toFloat()
@@ -262,7 +258,6 @@ fun C4Visual(isLedOn: Boolean, isDarkMode: Boolean) {
                 for(i in 0..2) Box(Modifier.width(80.dp).fillMaxHeight().background(c4BlockColor).border(1.dp, c4BorderColor))
             }
             Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.SpaceEvenly) {
-                // Tape strips are BLACK in all modes
                 Box(Modifier.fillMaxWidth().height(24.dp).background(c4TapeColor))
                 Box(Modifier.fillMaxWidth().height(24.dp).background(c4TapeColor))
             }
@@ -273,7 +268,6 @@ fun C4Visual(isLedOn: Boolean, isDarkMode: Boolean) {
                     for (y in 0..size.height.toInt() step step.toInt()) drawLine(NeonCyan, Offset(0f, y.toFloat()), Offset(size.width, y.toFloat()), 2f)
                 }
                 Column(Modifier.fillMaxSize().padding(vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    // UPDATED: Use LcdDarkBackground for the digits area
                     Box(Modifier.weight(0.6f).fillMaxWidth().padding(horizontal = 16.dp).background(LcdDarkBackground, RoundedCornerShape(4.dp)).border(2.dp, Slate800, RoundedCornerShape(4.dp))) {
                         Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
                             Icon(Icons.Rounded.DeveloperBoard, null, tint = Color(0xFF64748B), modifier = Modifier.size(32.dp))
@@ -408,13 +402,11 @@ fun ExplosionScreen(colors: AppColors, onReset: () -> Unit) {
             val progress = animationProgress.value
             val center = Offset(size.width / 2, size.height / 2)
 
-            // USE DYNAMIC SMOKE COLOR
             smoke.forEach { s ->
-                val smokeProgress = progress
-                val currentX = center.x + (s.vx * smokeProgress * 3f)
-                val currentY = center.y + (s.vy * smokeProgress * 3f)
-                val currentSize = s.size + (smokeProgress * 150f)
-                val currentAlpha = (s.alpha * (1f - smokeProgress)).coerceIn(0f, 1f)
+                val currentX = center.x + (s.vx * progress * 3f)
+                val currentY = center.y + (s.vy * progress * 3f)
+                val currentSize = s.size + (progress * 150f)
+                val currentAlpha = (s.alpha * (1f - progress)).coerceIn(0f, 1f)
                 drawCircle(color = colors.smokeColor.copy(alpha = currentAlpha), radius = currentSize, center = Offset(currentX, currentY))
             }
             particles.forEach { p ->
@@ -437,7 +429,6 @@ fun ExplosionScreen(colors: AppColors, onReset: () -> Unit) {
             Text("BOOM", fontSize = 96.sp, fontWeight = FontWeight.Black, style = TextStyle(brush = Brush.verticalGradient(listOf(Color.Yellow, NeonRed)), shadow = Shadow(color = NeonOrange, blurRadius = 40f)), fontFamily = CustomFont)
             Spacer(modifier = Modifier.height(80.dp))
 
-            // RESTART Button - Using SLATE900 (Dark) translucent even in light mode
             ActionButton(
                 text = "RESTART",
                 icon = Icons.Filled.Refresh,
