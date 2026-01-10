@@ -121,8 +121,7 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors) {
 
     Box(contentAlignment = Alignment.Center, modifier = Modifier.size(300.dp)) {
         Canvas(modifier = Modifier.fillMaxSize()) {
-            // Forces recomposition on frame change without creating an unused variable warning
-            if (frame >= 0) Unit
+            if (frame >= 0) Unit // Trigger recomposition
 
             val width = size.width
             val height = size.height
@@ -131,7 +130,6 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors) {
             val bodyRadius = width * 0.28f
             val neckTopY = bombCenterY - bodyRadius - holeOffset
 
-            // --- SHADOW ---
             val shadowW = width * 0.6f
             val shadowH = 20.dp.toPx()
             val shadowCenterY = bombCenterY + bodyRadius
@@ -192,7 +190,6 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors) {
             androidMeasure.getPosTan(currentBurnPoint, pos, null)
             val sparkCenter = Offset(pos[0], pos[1])
 
-            // Spawning Logic
             if (Math.random() < 0.3) {
                 val angle = Math.random() * Math.PI * 2
                 val speed = (2f + Math.random() * 4f).toFloat()
@@ -244,12 +241,9 @@ fun C4Visual(isLedOn: Boolean, isDarkMode: Boolean) {
     val ledSize = with(density) { 12.dp.toPx() }
     val ledRadius = with(density) { 6.dp.toPx() }
 
-    // Realistic "Putty" / Plastic Explosive Beige
     val c4BodyColor = if (isDarkMode) Color(0xFFD6D0C4) else Color(0xFFC8C2B4)
     val c4BlockColor = if (isDarkMode) Color(0xFFC7C1B3) else Color(0xFFB9B3A5)
     val c4BorderColor = if (isDarkMode) Color(0xFF9E9889) else Color(0xFF8C8677)
-
-    // Tape is always BLACK
     val c4TapeColor = Color.Black
 
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -438,6 +432,72 @@ fun ExplosionScreen(colors: AppColors, onReset: () -> Unit) {
                 borderWidth = 2.dp,
                 onClick = { AudioService.playClick(); onReset() }
             )
+        }
+    }
+}
+
+// --- ADDED: THE CUTE FROG VISUAL ---
+@Composable
+fun FrogVisual(timeLeft: Float, isCritical: Boolean) {
+    val density = LocalDensity.current
+
+    // Animate a "Croak" expansion on every second (throat wobble)
+    val tickProgress = timeLeft % 1f
+    val throatExpansion by animateFloatAsState(
+        targetValue = if (tickProgress > 0.8f) 1.1f else 1.0f,
+        animationSpec = spring(stiffness = Spring.StiffnessLow),
+        label = "croak"
+    )
+
+    Box(contentAlignment = Alignment.Center, modifier = Modifier.size(300.dp)) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val cx = size.width / 2
+            val cy = size.height / 2
+            val radius = size.width * 0.35f
+
+            // 1. Throat Pouch (Animates/Throbs behind the body)
+            drawCircle(
+                color = FrogGreen.copy(alpha = 0.6f),
+                radius = radius * 0.9f * throatExpansion,
+                center = Offset(cx, cy + radius * 0.2f)
+            )
+
+            // 2. Main Body
+            drawCircle(color = FrogGreen, radius = radius, center = Offset(cx, cy))
+
+            // 3. Belly (Oval)
+            drawOval(
+                color = FrogBelly,
+                topLeft = Offset(cx - radius * 0.6f, cy),
+                size = Size(radius * 1.2f, radius * 0.8f)
+            )
+
+            // 4. Eyes
+            val eyeRadius = radius * 0.35f
+            val eyeY = cy - radius * 0.7f
+            val leftEyeX = cx - radius * 0.5f
+            val rightEyeX = cx + radius * 0.5f
+
+            // Left Eye
+            drawCircle(color = FrogGreen, radius = eyeRadius, center = Offset(leftEyeX, eyeY))
+            drawCircle(color = Color.White, radius = eyeRadius * 0.8f, center = Offset(leftEyeX, eyeY))
+            drawCircle(color = Color.Black, radius = eyeRadius * 0.3f, center = Offset(leftEyeX, eyeY))
+
+            // Right Eye
+            drawCircle(color = FrogGreen, radius = eyeRadius, center = Offset(rightEyeX, eyeY))
+            drawCircle(color = Color.White, radius = eyeRadius * 0.8f, center = Offset(rightEyeX, eyeY))
+            drawCircle(color = Color.Black, radius = eyeRadius * 0.3f, center = Offset(rightEyeX, eyeY))
+
+            // 5. Cheeks (Blush)
+            drawCircle(color = FrogBlush.copy(alpha=0.6f), radius = radius * 0.15f, center = Offset(cx - radius * 0.6f, cy))
+            drawCircle(color = FrogBlush.copy(alpha=0.6f), radius = radius * 0.15f, center = Offset(cx + radius * 0.6f, cy))
+
+            // 6. Mouth
+            val mouthPath = Path().apply {
+                moveTo(cx - radius * 0.3f, cy + radius * 0.1f)
+                quadraticTo(cx, cy + radius * 0.3f, cx + radius * 0.3f, cy + radius * 0.1f)
+            }
+            drawPath(path = mouthPath, color = FrogDarkGreen, style = Stroke(width = 8f, cap = StrokeCap.Round))
         }
     }
 }

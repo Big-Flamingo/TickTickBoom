@@ -17,10 +17,10 @@ val Slate200 = Color(0xFFE2E8F0) // Light Mode Border
 val MetallicLight = Color(0xFFF1F5F9)
 val MetallicDark = Color(0xFFE2E8F0)
 
-// REVERTED: Original Screen Background (The casing)
+// Original Screen Background (The casing)
 val C4ScreenBg = Color(0xFF0B1120)
 
-// NEW: The actual dark background for the digits
+// The actual dark background for the digits
 val LcdDarkBackground = Color(0xFF020408)
 
 // Accents
@@ -32,6 +32,12 @@ val TextGray = Color(0xFF94A3B8)
 // Smoke Colors
 val SmokeLight = Color(0xFFE2E8F0) // White smoke for dark mode
 val SmokeDark = Color(0xFF334155)  // Dark smoke for light mode
+
+// --- FROG MODE COLORS ---
+val FrogGreen = Color(0xFF86EFAC)      // Light cheerful green
+val FrogDarkGreen = Color(0xFF22C55E)  // Darker outline/details
+val FrogBelly = Color(0xFFDCFCE7)      // Very pale belly
+val FrogBlush = Color(0xFFFFB4B4)      // Cute cheeks
 
 // --- FONTS ---
 val CustomFont = FontFamily(

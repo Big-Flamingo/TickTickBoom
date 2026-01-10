@@ -14,6 +14,9 @@ object AudioService {
     private var fuseId = 0
     private var dingId = 0
     private var explosionId = 0
+    // NEW: Frog Mode Sounds
+    private var wobbleId = 0
+    private var croakId = 0
 
     // Stream IDs (for controlling loops)
     private var fuseStreamId = 0
@@ -45,6 +48,11 @@ object AudioService {
         dingId = soundPool!!.load(context, R.raw.ding, 1)
         explosionId = soundPool!!.load(context, R.raw.explosion, 1)
 
+        // NEW: Load Easter Egg sounds
+        // Make sure files are named "wobble.mp3" and "croak.mp3" (lowercase)
+        wobbleId = soundPool!!.load(context, R.raw.wobble, 1)
+        croakId = soundPool!!.load(context, R.raw.croak, 1)
+
         soundPool?.setOnLoadCompleteListener { _, _, status ->
             if (status == 0) isLoaded = true
         }
@@ -66,7 +74,16 @@ object AudioService {
         if (isLoaded) soundPool?.play(dingId, timerVolume, timerVolume, 1, 0, 1f)
     }
 
-    // UPDATED: Added startMuffled parameter
+    // NEW: Play Wobble (Max volume for UI feedback)
+    fun playWobble() {
+        if (isLoaded) soundPool?.play(wobbleId, 1.0f, 1.0f, 1, 0, 1f)
+    }
+
+    // NEW: Play Croak (Respects timer volume slider)
+    fun playCroak() {
+        if (isLoaded) soundPool?.play(croakId, timerVolume, timerVolume, 1, 0, 1f)
+    }
+
     fun startFuse(startMuffled: Boolean = false) {
         if (fuseStreamId != 0) return
         if (isLoaded) {
