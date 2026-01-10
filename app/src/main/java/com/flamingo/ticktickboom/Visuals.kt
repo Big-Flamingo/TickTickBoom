@@ -6,7 +6,7 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
 import androidx.compose.animation.core.*
-import androidx.compose.foundation.BorderStroke // FIXED: Added
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -28,7 +28,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.Shadow // FIXED: Added
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.asAndroidPath
 import androidx.compose.ui.graphics.asComposePath
@@ -37,15 +37,15 @@ import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.TextStyle // FIXED: Added
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch // FIXED: Added
-import kotlin.math.PI // FIXED: Added
+import kotlinx.coroutines.launch
+import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
 
@@ -132,20 +132,17 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors) {
             val bodyRadius = width * 0.28f
             val neckTopY = bombCenterY - bodyRadius - holeOffset
 
-            // Shadow
-            val shadowBrush = Brush.radialGradient(
-                colorStops = arrayOf(
-                    0.0f to Color.Black.copy(alpha = 0.4f),
-                    0.6f to Color.Black.copy(alpha = 0.1f),
-                    1.0f to Color.Transparent
-                ),
-                center = Offset(bombCenterX, bombCenterY + bodyRadius),
-                radius = width * 0.4f
-            )
+            // --- UPDATED SHADOW (Solid & Centered) ---
+            val shadowW = width * 0.6f
+            val shadowH = 20.dp.toPx()
+
+            // Mathematically centered on the bottom of the spherical body
+            val shadowCenterY = bombCenterY + bodyRadius
+
             drawOval(
-                brush = shadowBrush,
-                topLeft = Offset(center.x - width * 0.3f, bombCenterY + bodyRadius - 5.dp.toPx()),
-                size = Size(width * 0.6f, 30.dp.toPx())
+                color = Color.Black.copy(alpha = 0.2f), // Solid color (no gradient), subtle opacity
+                topLeft = Offset(bombCenterX - shadowW / 2, shadowCenterY - shadowH / 2),
+                size = Size(shadowW, shadowH)
             )
 
             drawCircle(brush = Brush.radialGradient(colors = listOf(Color(0xFF475569), Slate950), center = Offset(bombCenterX - 20, bombCenterY - 20), radius = width * 0.35f), radius = bodyRadius, center = Offset(bombCenterX, bombCenterY))
@@ -246,18 +243,28 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors) {
 }
 
 @Composable
-fun C4Visual(isLedOn: Boolean) {
+fun C4Visual(isLedOn: Boolean, isDarkMode: Boolean) {
     val density = LocalDensity.current
     val ledSize = with(density) { 12.dp.toPx() }
     val ledRadius = with(density) { 6.dp.toPx() }
+
+    // Realistic "Putty" / Plastic Explosive Beige
+    val c4BodyColor = if (isDarkMode) Color(0xFFD6D0C4) else Color(0xFFC8C2B4)
+    val c4BlockColor = if (isDarkMode) Color(0xFFC7C1B3) else Color(0xFFB9B3A5)
+    val c4BorderColor = if (isDarkMode) Color(0xFF9E9889) else Color(0xFF8C8677)
+
+    // Tape is always BLACK
+    val c4TapeColor = Color.Black
+
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Box(modifier = Modifier.width(320.dp).height(200.dp).background(ParcelLight, RoundedCornerShape(4.dp))) {
+        Box(modifier = Modifier.width(320.dp).height(200.dp).background(c4BodyColor, RoundedCornerShape(4.dp))) {
             Row(Modifier.fillMaxSize().padding(horizontal = 20.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                for(i in 0..2) Box(Modifier.width(80.dp).fillMaxHeight().background(ParcelDark).border(1.dp, Color(0xFF3E2723)))
+                for(i in 0..2) Box(Modifier.width(80.dp).fillMaxHeight().background(c4BlockColor).border(1.dp, c4BorderColor))
             }
             Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.SpaceEvenly) {
-                Box(Modifier.fillMaxWidth().height(24.dp).background(Color(0xFF3E2723)))
-                Box(Modifier.fillMaxWidth().height(24.dp).background(Color(0xFF3E2723)))
+                // Tape strips are BLACK in all modes
+                Box(Modifier.fillMaxWidth().height(24.dp).background(c4TapeColor))
+                Box(Modifier.fillMaxWidth().height(24.dp).background(c4TapeColor))
             }
             Box(modifier = Modifier.align(Alignment.Center).width(280.dp).height(140.dp).background(C4ScreenBg, RoundedCornerShape(8.dp)).border(4.dp, Color(0xFF1E293B), RoundedCornerShape(8.dp))) {
                 Canvas(modifier = Modifier.fillMaxSize().alpha(0.2f)) {
@@ -266,7 +273,8 @@ fun C4Visual(isLedOn: Boolean) {
                     for (y in 0..size.height.toInt() step step.toInt()) drawLine(NeonCyan, Offset(0f, y.toFloat()), Offset(size.width, y.toFloat()), 2f)
                 }
                 Column(Modifier.fillMaxSize().padding(vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Box(Modifier.weight(0.6f).fillMaxWidth().padding(horizontal = 16.dp).background(Slate900, RoundedCornerShape(4.dp)).border(2.dp, Slate800, RoundedCornerShape(4.dp))) {
+                    // UPDATED: Use LcdDarkBackground for the digits area
+                    Box(Modifier.weight(0.6f).fillMaxWidth().padding(horizontal = 16.dp).background(LcdDarkBackground, RoundedCornerShape(4.dp)).border(2.dp, Slate800, RoundedCornerShape(4.dp))) {
                         Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
                             Icon(Icons.Rounded.DeveloperBoard, null, tint = Color(0xFF64748B), modifier = Modifier.size(32.dp))
                             Spacer(modifier = Modifier.width(16.dp))

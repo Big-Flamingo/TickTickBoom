@@ -6,9 +6,9 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
-import androidx.compose.animation.animateColor // FIXED: Added
+import androidx.compose.animation.animateColor
 import androidx.compose.animation.core.*
-import androidx.compose.foundation.BorderStroke // FIXED: Added
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -36,17 +36,16 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.Shadow // FIXED: Added
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.drawscope.withTransform
-import androidx.compose.ui.graphics.graphicsLayer // FIXED: Added
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
-import androidx.compose.ui.text.TextStyle // FIXED: Added
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -118,7 +117,8 @@ fun BombApp() {
     Surface(modifier = Modifier.fillMaxSize(), color = colors.background) {
         when (appState) {
             AppState.SETUP -> SetupScreen(colors, isDarkMode, { toggleTheme() }, { handleStart(it) })
-            AppState.RUNNING -> BombScreen(duration, bombStyle, colors, { handleExplode() }, { handleAbort() })
+            // PASSED ISDARKMODE HERE:
+            AppState.RUNNING -> BombScreen(duration, bombStyle, colors, isDarkMode, { handleExplode() }, { handleAbort() })
             AppState.EXPLODED -> ExplosionScreen(colors, { handleReset() })
         }
     }
@@ -276,8 +276,9 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, onToggleTheme: () -> Uni
     }
 }
 
+// ADDED isDarkMode PARAM
 @Composable
-fun BombScreen(durationSeconds: Int, style: String, colors: AppColors, onExplode: () -> Unit, onAbort: () -> Unit) {
+fun BombScreen(durationSeconds: Int, style: String, colors: AppColors, isDarkMode: Boolean, onExplode: () -> Unit, onAbort: () -> Unit) {
     var timeLeft by remember { mutableFloatStateOf(durationSeconds.toFloat()) }
     var isLedOn by remember { mutableStateOf(false) }
 
@@ -337,7 +338,7 @@ fun BombScreen(durationSeconds: Int, style: String, colors: AppColors, onExplode
 
     Box(modifier = Modifier.fillMaxSize()) {
         Box(modifier = Modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.Center) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.graphicsLayer { translationX = currentShake }) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 val isCritical = isFuseFinished
                 if (style == "FUSE") {
                     if (!isCritical) {
@@ -370,7 +371,8 @@ fun BombScreen(durationSeconds: Int, style: String, colors: AppColors, onExplode
                         val progress = if (fuseBurnDuration > 0) (currentBurnTime / fuseBurnDuration).coerceIn(0f, 1f) else 1f
                         FuseVisual(progress, isFuseFinished, colors)
                     }
-                    "C4" -> C4Visual(isLedOn)
+                    // PASSING ISDARKMODE
+                    "C4" -> C4Visual(isLedOn, isDarkMode)
                     "DYNAMITE" -> DynamiteVisual(timeLeft)
                 }
 
