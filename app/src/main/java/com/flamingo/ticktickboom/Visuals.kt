@@ -45,11 +45,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
+import kotlin.math.atan2
 
 @Composable
 fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors) {
@@ -374,7 +374,7 @@ fun DynamiteVisual(timeLeft: Float) {
 }
 
 @Composable
-fun ExplosionScreen(colors: AppColors, onReset: () -> Unit) {
+fun ExplosionScreen(colors: AppColors, style: String?, onReset: () -> Unit) {
     val context = LocalContext.current
     val particles = remember {
         val colorsList = listOf(NeonRed, NeonOrange, Color.Yellow, Color.White)
@@ -387,10 +387,7 @@ fun ExplosionScreen(colors: AppColors, onReset: () -> Unit) {
 
     LaunchedEffect(Unit) {
         launch { animationProgress.animateTo(1f, tween(1500, easing = LinearOutSlowInEasing)) }
-        val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) { (context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager).defaultVibrator } else { @Suppress("DEPRECATION") context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator }
-        if (vibrator.hasVibrator()) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) { vibrator.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 100, 50, 400, 100, 200), -1)) } else { @Suppress("DEPRECATION") vibrator.vibrate(800) }
-        }
+        AudioService.playExplosion(context)
     }
 
     Box(modifier = Modifier.fillMaxSize().background(Color(0xFF431407)), contentAlignment = Alignment.Center) {
@@ -423,7 +420,9 @@ fun ExplosionScreen(colors: AppColors, onReset: () -> Unit) {
         if (flashAlpha > 0f) Box(modifier = Modifier.fillMaxSize().background(Color.White.copy(alpha = flashAlpha)))
 
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("BOOM", fontSize = 96.sp, fontWeight = FontWeight.Black, style = TextStyle(brush = Brush.verticalGradient(listOf(Color.Yellow, NeonRed)), shadow = Shadow(color = NeonOrange, blurRadius = 40f)), fontFamily = CustomFont)
+            val titleText = if (style == "FROG") "CROAKED" else "BOOM"
+            val titleSize = if (style == "FROG") 72.sp else 96.sp // Reverted to 72.sp
+            Text(titleText, fontSize = titleSize, fontWeight = FontWeight.Black, style = TextStyle(brush = Brush.verticalGradient(listOf(Color.Yellow, NeonRed)), shadow = Shadow(color = NeonOrange, blurRadius = 40f)), fontFamily = CustomFont)
             Spacer(modifier = Modifier.height(80.dp))
 
             ActionButton(
@@ -433,16 +432,21 @@ fun ExplosionScreen(colors: AppColors, onReset: () -> Unit) {
                 textColor = NeonOrange,
                 borderColor = NeonOrange,
                 borderWidth = 2.dp,
-                onClick = { AudioService.playClick(); onReset() }
+                onClick = {
+                    AudioService.playClick()
+                    onReset()
+                }
             )
         }
     }
 }
 
-// --- UPDATED FROG VISUAL (BLACK OUTLINES) ---
 @Composable
 fun FrogVisual(timeLeft: Float, isCritical: Boolean) {
     val density = LocalDensity.current
+
+    // Removed the "&& timeLeft >= 0f" check so panic doesn't turn off at 0s
+    val isPanic = timeLeft <= 1.05f
 
     val tickDuration = if (timeLeft <= 5f) 0.5f else 1.0f
 
@@ -455,13 +459,23 @@ fun FrogVisual(timeLeft: Float, isCritical: Boolean) {
         label = "croak"
     )
 
+    val infiniteTransition = rememberInfiniteTransition("flail")
+    val flailRotation by infiniteTransition.animateFloat(
+        initialValue = -40f,
+        targetValue = 40f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(100, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "flail"
+    )
+
     Box(contentAlignment = Alignment.Center, modifier = Modifier.size(320.dp)) {
         Canvas(modifier = Modifier.fillMaxSize()) {
             val cx = size.width / 2
             val cy = size.height / 2
             val mainRadius = size.width * 0.35f
 
-            // CHANGED: Outline color set to black
             val outlineColor = Color.Black
             val outlineStroke = Stroke(width = 6.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
 
@@ -519,6 +533,12 @@ fun FrogVisual(timeLeft: Float, isCritical: Boolean) {
                 topLeft = Offset(cx - bellyWidth / 2, cy - baseBellyHeight * 0.05f),
                 size = Size(bellyWidth, currentBellyHeight * 0.9f)
             )
+            // Belly Highlight
+            drawOval(
+                color = Color.White.copy(alpha = 0.3f),
+                topLeft = Offset(cx - bellyWidth * 0.3f, cy + baseBellyHeight * 0.1f),
+                size = Size(bellyWidth * 0.2f, currentBellyHeight * 0.15f)
+            )
 
             // LAYER 4: Arms (Blended into body)
             val armWidth = mainRadius * 0.25f
@@ -526,11 +546,13 @@ fun FrogVisual(timeLeft: Float, isCritical: Boolean) {
             val armY = cy + mainRadius * 0.2f
             val armXOffset = mainRadius * 0.65f
 
-            // Left Arm
-            rotate(30f, pivot = Offset(cx - armXOffset, armY)) {
-                // Outline (Skip right side to blend) - Starts at Top (-90) sweeps clockwise (270) to Bottom.
+            val leftArmRot = if (isPanic) flailRotation else 30f
+            val rightArmRot = if (isPanic) -flailRotation else -30f
+
+            rotate(leftArmRot, pivot = Offset(cx - armXOffset, armY)) {
                 val arcTopLeft = Offset(cx - armXOffset - armWidth, armY - armHeight/2)
                 val arcSize = Size(armWidth*2, armHeight)
+                // Outline first
                 drawArc(
                     color = outlineColor,
                     startAngle = -90f,
@@ -540,15 +562,14 @@ fun FrogVisual(timeLeft: Float, isCritical: Boolean) {
                     size = arcSize,
                     style = outlineStroke
                 )
-                // Fill
+                // Fill second
                 drawOval(FrogBody, topLeft = Offset(cx - armXOffset - armWidth, armY - armHeight/2), size = Size(armWidth*2, armHeight))
             }
 
-            // Right Arm
-            rotate(-30f, pivot = Offset(cx + armXOffset, armY)) {
-                // Outline (Skip left side to blend) - Starts at Top (-90) sweeps counter-clockwise (-270) to Bottom.
+            rotate(rightArmRot, pivot = Offset(cx + armXOffset, armY)) {
                 val arcTopLeft = Offset(cx + armXOffset - armWidth, armY - armHeight/2)
                 val arcSize = Size(armWidth*2, armHeight)
+                // Outline first
                 drawArc(
                     color = outlineColor,
                     startAngle = -90f,
@@ -558,7 +579,7 @@ fun FrogVisual(timeLeft: Float, isCritical: Boolean) {
                     size = arcSize,
                     style = outlineStroke
                 )
-                // Fill
+                // Fill second
                 drawOval(FrogBody, topLeft = Offset(cx + armXOffset - armWidth, armY - armHeight/2), size = Size(armWidth*2, armHeight))
             }
 
@@ -567,18 +588,36 @@ fun FrogVisual(timeLeft: Float, isCritical: Boolean) {
             val pupilRadius = eyeWhiteRadius * 0.9f
             val glintRadius = pupilRadius * 0.25f
 
-            fun drawEye(centerX: Float, centerY: Float) {
-                // Eye Outline
+            fun drawEye(centerX: Float, centerY: Float, isLeft: Boolean) {
                 drawCircle(outlineColor, radius = eyeWhiteRadius, center = Offset(centerX, centerY), style = outlineStroke)
-                // Eye Fill
                 drawCircle(Color.White, radius = eyeWhiteRadius, center = Offset(centerX, centerY))
-                // Pupil
-                drawCircle(Color.Black, radius = pupilRadius, center = Offset(centerX, centerY))
-                // Glint
-                drawCircle(Color.White, radius = glintRadius, center = Offset(centerX - pupilRadius*0.4f, centerY - pupilRadius*0.4f))
+
+                if (isPanic) {
+                    // Panic Eyes: Empty White (No pupil drawn)
+                } else if (isCritical) {
+                    val size = eyeWhiteRadius * 1.2f
+                    val stroke = Stroke(width = 8.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
+                    val path = Path()
+                    val offset = size * 0.15f
+                    if (isLeft) {
+                        val cX = centerX + offset
+                        path.moveTo(cX - size/2, centerY - size/2)
+                        path.lineTo(cX + size/4, centerY)
+                        path.lineTo(cX - size/2, centerY + size/2)
+                    } else {
+                        val cX = centerX - offset
+                        path.moveTo(cX + size/2, centerY - size/2)
+                        path.lineTo(cX - size/4, centerY)
+                        path.lineTo(cX + size/2, centerY + size/2)
+                    }
+                    drawPath(path, Color.Black, style = stroke)
+                } else {
+                    drawCircle(Color.Black, radius = pupilRadius, center = Offset(centerX, centerY))
+                    drawCircle(Color.White, radius = glintRadius, center = Offset(centerX - pupilRadius*0.4f, centerY - pupilRadius*0.4f))
+                }
             }
-            drawEye(cx - bumpXOffset, bumpY)
-            drawEye(cx + bumpXOffset, bumpY)
+            drawEye(cx - bumpXOffset, bumpY, true)
+            drawEye(cx + bumpXOffset, bumpY, false)
 
             val cheekRadius = mainRadius * 0.15f
             val cheekY = cy - mainRadius * 0.18f
@@ -586,17 +625,27 @@ fun FrogVisual(timeLeft: Float, isCritical: Boolean) {
             drawCircle(color = FrogBlush, radius = cheekRadius, center = Offset(cx - cheekXOffset, cheekY))
             drawCircle(color = FrogBlush, radius = cheekRadius, center = Offset(cx + cheekXOffset, cheekY))
 
-            val mouthWidth = mainRadius * 0.3f
+            val mouthWidth = if (isCritical) mainRadius * 0.2f else mainRadius * 0.3f
             val mouthY = cy - mainRadius * 0.22f
-            val mouthH = mainRadius * 0.08f
 
-            val mouthPath = Path().apply {
-                moveTo(cx - mouthWidth/2, mouthY)
-                quadraticTo(cx - mouthWidth/4, mouthY + mouthH, cx, mouthY)
-                quadraticTo(cx + mouthWidth/4, mouthY + mouthH, cx + mouthWidth/2, mouthY)
+            if (isPanic) {
+                val path = Path().apply {
+                    moveTo(cx - mouthWidth/2, mouthY + 10f)
+                    lineTo(cx, mouthY - 10f)
+                    lineTo(cx + mouthWidth/2, mouthY + 10f)
+                }
+                drawPath(path, Color.Black, style = Stroke(width = 8f, cap = StrokeCap.Round, join = StrokeJoin.Round))
+            } else if (isCritical) {
+                drawCircle(Color.Black, radius = 6.dp.toPx(), center = Offset(cx, mouthY))
+            } else {
+                val mouthH = mainRadius * 0.08f
+                val mouthPath = Path().apply {
+                    moveTo(cx - mouthWidth/2, mouthY)
+                    quadraticTo(cx - mouthWidth/4, mouthY + mouthH, cx, mouthY)
+                    quadraticTo(cx + mouthWidth/4, mouthY + mouthH, cx + mouthWidth/2, mouthY)
+                }
+                drawPath(path = mouthPath, color = Color.Black, style = Stroke(width = 8f, cap = StrokeCap.Round, join = StrokeJoin.Round))
             }
-            // CHANGED: Mouth color set to black
-            drawPath(path = mouthPath, color = Color.Black, style = Stroke(width = 8f, cap = StrokeCap.Round, join = StrokeJoin.Round))
         }
     }
 }

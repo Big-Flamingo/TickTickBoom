@@ -2,100 +2,130 @@ package com.flamingo.ticktickboom
 
 import android.content.Context
 import android.media.AudioAttributes
-import android.media.MediaPlayer
 import android.media.SoundPool
+import android.os.Build
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 
 object AudioService {
     private var soundPool: SoundPool? = null
+
     // Sound IDs
-    private var clickId = 0
-    private var tickId = 0
-    private var clockId = 0
-    private var fuseId = 0
-    private var dingId = 0
-    private var explosionId = 0
-    // NEW: Frog Mode Sounds
-    private var wobbleId = 0
-    private var croakId = 0
+    private var tickSoundId: Int = 0
+    private var clockSoundId: Int = 0
+    private var explosionSoundId: Int = 0
+    private var fuseSoundId: Int = 0
+    private var croakSoundId: Int = 0
+    private var croakFastSoundId: Int = 0
+    private var bombCroakSoundId: Int = 0
+    private var flailSoundId: Int = 0
+    private var dingSoundId: Int = 0
+    private var clickSoundId: Int = 0
 
-    // Stream IDs (for controlling loops)
-    private var fuseStreamId = 0
-    private var isLoaded = false
+    private var fuseStreamId: Int = 0
+    private var flailStreamId: Int = 0 // Track the flail sound
 
-    // MediaPlayer for optional longer explosion layers
-    private var explosionPlayer: MediaPlayer? = null
-
-    var timerVolume = 0.8f
-    var explosionVolume = 1.0f
+    var timerVolume: Float = 1.0f
+    var explosionVolume: Float = 1.0f
 
     fun init(context: Context) {
-        if (soundPool != null) return
-
-        val attributes = AudioAttributes.Builder()
+        val audioAttributes = AudioAttributes.Builder()
             .setUsage(AudioAttributes.USAGE_GAME)
             .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
             .build()
 
         soundPool = SoundPool.Builder()
-            .setMaxStreams(10)
-            .setAudioAttributes(attributes)
+            .setMaxStreams(5)
+            .setAudioAttributes(audioAttributes)
             .build()
 
-        clickId = soundPool!!.load(context, R.raw.click, 1)
-        tickId = soundPool!!.load(context, R.raw.tick, 1)
-        clockId = soundPool!!.load(context, R.raw.clock, 1)
-        fuseId = soundPool!!.load(context, R.raw.fuse, 1)
-        dingId = soundPool!!.load(context, R.raw.ding, 1)
-        explosionId = soundPool!!.load(context, R.raw.explosion, 1)
-
-        // NEW: Load Easter Egg sounds
-        // Make sure files are named "wobble.mp3" and "croak.mp3" (lowercase)
-        wobbleId = soundPool!!.load(context, R.raw.wobble, 1)
-        croakId = soundPool!!.load(context, R.raw.croak, 1)
-
-        soundPool?.setOnLoadCompleteListener { _, _, status ->
-            if (status == 0) isLoaded = true
+        soundPool?.let {
+            tickSoundId = it.load(context, R.raw.tick, 1)
+            clockSoundId = it.load(context, R.raw.clock, 1)
+            explosionSoundId = it.load(context, R.raw.explosion, 1)
+            fuseSoundId = it.load(context, R.raw.fuse, 1)
+            croakSoundId = it.load(context, R.raw.croak, 1)
+            croakFastSoundId = it.load(context, R.raw.croak_fast, 1)
+            bombCroakSoundId = it.load(context, R.raw.bomb_croak, 1)
+            flailSoundId = it.load(context, R.raw.flail, 1)
+            dingSoundId = it.load(context, R.raw.ding, 1)
+            clickSoundId = it.load(context, R.raw.click, 1)
         }
     }
 
-    fun playClick() {
-        if (isLoaded) soundPool?.play(clickId, 0.5f, 0.5f, 1, 0, 1f)
-    }
-
     fun playTick() {
-        if (isLoaded) soundPool?.play(tickId, timerVolume, timerVolume, 1, 0, 1f)
+        soundPool?.play(tickSoundId, timerVolume, timerVolume, 1, 0, 1f)
     }
 
     fun playClockTick() {
-        if (isLoaded) soundPool?.play(clockId, timerVolume, timerVolume, 1, 0, 1f)
+        soundPool?.play(clockSoundId, timerVolume * 0.5f, timerVolume * 0.5f, 1, 0, 1f)
+    }
+
+    fun playClick() {
+        soundPool?.play(clickSoundId, timerVolume, timerVolume, 1, 0, 1f)
+    }
+
+    fun playCroak(isFast: Boolean = false) {
+        val soundId = if (isFast) croakFastSoundId else croakSoundId
+        val pitch = 0.9f + Math.random().toFloat() * 0.2f
+        soundPool?.play(soundId, timerVolume, timerVolume, 1, 0, pitch)
+    }
+
+    fun playBombCroak() {
+        soundPool?.play(bombCroakSoundId, timerVolume, timerVolume, 1, 0, 1f)
+    }
+
+    fun playFlail() {
+        // Stop any existing flail first just in case
+        if (flailStreamId != 0) soundPool?.stop(flailStreamId)
+        flailStreamId = soundPool?.play(flailSoundId, timerVolume, timerVolume, 1, 0, 1f) ?: 0
+    }
+
+    fun stopFlail() {
+        if (flailStreamId != 0) {
+            soundPool?.stop(flailStreamId)
+            flailStreamId = 0
+        }
     }
 
     fun playDing() {
-        if (isLoaded) soundPool?.play(dingId, timerVolume, timerVolume, 1, 0, 1f)
+        soundPool?.play(dingSoundId, timerVolume, timerVolume, 1, 0, 1f)
     }
 
-    // NEW: Play Wobble (Max volume for UI feedback)
-    fun playWobble() {
-        if (isLoaded) soundPool?.play(wobbleId, 1.0f, 1.0f, 1, 0, 1f)
+    fun playExplosion(context: Context) {
+        // Stop the panic sound immediately!
+        stopFlail()
+
+        soundPool?.play(explosionSoundId, explosionVolume, explosionVolume, 2, 0, 1f)
+
+        val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            (context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager).defaultVibrator
+        } else {
+            @Suppress("DEPRECATION")
+            context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+        }
+
+        if (vibrator.hasVibrator()) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                vibrator.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 100, 50, 400, 100, 200), -1))
+            } else {
+                @Suppress("DEPRECATION")
+                vibrator.vibrate(800)
+            }
+        }
     }
 
-    // NEW: Play Croak (Respects timer volume slider)
-    fun playCroak() {
-        if (isLoaded) soundPool?.play(croakId, timerVolume, timerVolume, 1, 0, 1f)
-    }
-
-    fun startFuse(startMuffled: Boolean = false) {
-        if (fuseStreamId != 0) return
-        if (isLoaded) {
-            val vol = if (startMuffled) timerVolume * 0.15f else timerVolume
-            fuseStreamId = soundPool?.play(fuseId, vol, vol, 1, -1, 1f) ?: 0
+    fun startFuse(startMuffled: Boolean) {
+        if (fuseStreamId == 0) {
+            val volume = if (startMuffled) timerVolume * 0.3f else timerVolume
+            fuseStreamId = soundPool?.play(fuseSoundId, volume, volume, 1, -1, 1f) ?: 0
         }
     }
 
     fun dimFuse() {
         if (fuseStreamId != 0) {
-            val muffledVol = timerVolume * 0.15f
-            soundPool?.setVolume(fuseStreamId, muffledVol, muffledVol)
+            soundPool?.setVolume(fuseStreamId, timerVolume * 0.3f, timerVolume * 0.3f)
         }
     }
 
@@ -103,26 +133,6 @@ object AudioService {
         if (fuseStreamId != 0) {
             soundPool?.stop(fuseStreamId)
             fuseStreamId = 0
-        }
-    }
-
-    fun playExplosion(context: Context) {
-        stopFuse()
-        if (isLoaded) soundPool?.play(explosionId, explosionVolume, explosionVolume, 2, 0, 1f)
-
-        try {
-            if (explosionPlayer != null) {
-                explosionPlayer?.release()
-            }
-            explosionPlayer = MediaPlayer.create(context, R.raw.explosion)
-            explosionPlayer?.setVolume(explosionVolume, explosionVolume)
-            explosionPlayer?.start()
-            explosionPlayer?.setOnCompletionListener {
-                it.release()
-                explosionPlayer = null
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
         }
     }
 }
