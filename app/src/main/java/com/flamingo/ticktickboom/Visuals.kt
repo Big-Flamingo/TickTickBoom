@@ -446,7 +446,7 @@ fun ExplosionScreen(colors: AppColors, style: String?, onReset: () -> Unit) {
     }
 }
 
-// --- UPDATED FROG VISUAL (Fixed Pivot Rotation) ---
+// --- UPDATED FROG VISUAL (Final: Timed Spray + Wider Spread + Correct Geometry + Specular + Nudge + Gravity + Alert) ---
 @Composable
 fun FrogVisual(timeLeft: Float, isCritical: Boolean) {
     val density = LocalDensity.current
@@ -475,10 +475,26 @@ fun FrogVisual(timeLeft: Float, isCritical: Boolean) {
         label = "flail"
     )
 
+    // Alert Scale Animation
+    val alertScale = remember { Animatable(0f) }
+    LaunchedEffect(isPanic) {
+        if (isPanic) {
+            alertScale.animateTo(
+                targetValue = 1f,
+                animationSpec = spring(dampingRatio = Spring.DampingRatioHighBouncy, stiffness = Spring.StiffnessMedium)
+            )
+        } else {
+            alertScale.snapTo(0f)
+        }
+    }
+
     // --- PARTICLE SYSTEM ---
     val sweatDrops = remember { mutableListOf<FrogSweatParticle>() }
     var frame by remember { mutableLongStateOf(0L) }
     var lastFrameTime by remember { mutableLongStateOf(0L) }
+
+    // Initialize to 0.5f so the first spray happens immediately!
+    var timeAccumulator by remember { mutableFloatStateOf(0.5f) }
     val currentIsCritical by rememberUpdatedState(isCritical)
 
     // LOGIC LOOP (Physics Only)
@@ -488,13 +504,18 @@ fun FrogVisual(timeLeft: Float, isCritical: Boolean) {
                 val dt = if (lastFrameTime == 0L) 0.016f else ((nanos - lastFrameTime) / 1_000_000_000f).coerceAtMost(0.1f)
                 lastFrameTime = nanos
 
+                // Accumulate time for "Spray" timer
+                if (currentIsCritical) {
+                    timeAccumulator += dt
+                }
+
                 val iter = sweatDrops.iterator()
                 while (iter.hasNext()) {
                     val p = iter.next()
                     p.life -= dt
                     p.x += p.vx * dt
                     p.y += p.vy * dt
-                    // No gravity for short burst - looks snappier
+                    p.vy += 500f * dt // Gravity ON (500f/s^2)
                     if (p.life <= 0) iter.remove()
                 }
 
@@ -519,17 +540,22 @@ fun FrogVisual(timeLeft: Float, isCritical: Boolean) {
             val rightBumpCenterX = cx + bumpXOffset
             val rightBumpCenterY = bumpY
 
-            // POSITION ADJUSTMENT (Manual Tweak 1.2x, 1.5x) - "NAILED IT" POSITION
-            val spawnX = rightBumpCenterX + (bumpRadius * 1.2f)
-            val spawnY = rightBumpCenterY - (bumpRadius * 1.5f)
+            // POSITION ADJUSTMENT (Tighter Nudge)
+            val spawnX = rightBumpCenterX + (bumpRadius * 1.05f)
+            val spawnY = rightBumpCenterY - (bumpRadius * 1.15f)
 
-            // 2. SPAWN PARTICLES (BURST MODE: 3 Drops, 1:30 Angle)
-            if (currentIsCritical && Math.random() < 0.025) { // 2.5% chance per frame for burst
+            // 2. SPAWN PARTICLES (DETERMINISTIC SPRAY MODE)
+            // Trigger every 0.5 seconds
+            if (currentIsCritical && timeAccumulator >= 0.5f) {
+                timeAccumulator -= 0.5f // Reset timer but keep cadence
+
+                // Batch of 3 droplets
                 repeat(3) { i ->
                     // DIRECTION: -PI/4 is -45 degrees (1:30 Clock Position)
+                    // Spread: 0.5 radians (approx 28 degrees separation)
                     val baseAngle = -PI / 4
-                    val spreadOffset = (i - 1) * 0.25
-                    val angle = baseAngle + spreadOffset + ((Math.random() - 0.5) * 0.1)
+                    val spreadOffset = (i - 1) * 0.5
+                    val angle = baseAngle + spreadOffset + ((Math.random() - 0.5) * 0.1) // Slight wobble
 
                     // DISTANCE: Travel roughly 1.0x eye radius (Short Path)
                     val lifeSpan = 0.5f
@@ -667,18 +693,40 @@ fun FrogVisual(timeLeft: Float, isCritical: Boolean) {
                 drawPath(path = mouthPath, color = Color.Black, style = Stroke(width = 8f, cap = StrokeCap.Round, join = StrokeJoin.Round))
             }
 
+            // ALERT VISUAL (Exclamation Mark)
+            if (alertScale.value > 0f) {
+                val markCenter = Offset(cx, bumpY - bumpRadius * 1.8f)
+                val markW = mainRadius * 0.15f
+                val markH = mainRadius * 0.6f
+
+                withTransform({
+                    scale(scaleX = alertScale.value, scaleY = alertScale.value, pivot = Offset(markCenter.x, markCenter.y + markH/2))
+                }) {
+                    drawRoundRect(
+                        color = NeonRed,
+                        topLeft = Offset(markCenter.x - markW/2, markCenter.y - markH/2),
+                        size = Size(markW, markH * 0.65f),
+                        cornerRadius = CornerRadius(markW/2, markW/2)
+                    )
+                    drawCircle(
+                        color = NeonRed,
+                        radius = markW/1.8f,
+                        center = Offset(markCenter.x, markCenter.y + markH/2 - markW/2)
+                    )
+                }
+            }
+
             // --- DRAW PARTICLES ---
             sweatDrops.forEach { p ->
-                val dropSize = mainRadius * 0.08f
+                val dropSize = mainRadius * 0.1f
                 val dropColor = Color(0xFF60A5FA)
 
-                // FIXED ROTATION PIVOT: Use Offset.Zero to rotate around the particle itself.
-                // This prevents the "Orbiting Offset" bug.
-                // +45 degrees aligns the Up-Facing droplet to the 1:30 direction (-45 + 90 = 45).
+                // ROTATION LOGIC:
+                val rotation = (atan2(p.vy, p.vx) * (180f / PI)).toFloat() + 90f
 
                 withTransform({
                     translate(p.x, p.y)
-                    rotate(45f, pivot = Offset.Zero)
+                    rotate(rotation, pivot = Offset.Zero)
                 }) {
                     // DEFINE PATH CENTERED ON (0,0) AND POINTING UP (Ice Cream Cone Shape)
                     val w = dropSize
@@ -700,7 +748,16 @@ fun FrogVisual(timeLeft: Float, isCritical: Boolean) {
                         // 4. Close path back to left start
                         close()
                     }
-                    drawPath(path, dropColor.copy(alpha = alpha))
+
+                    // FIXED: Named arguments to prevent compiler ambiguity
+                    drawPath(path = path, color = dropColor.copy(alpha = alpha))
+
+                    // Specular Highlight (Shiny Wet Look)
+                    drawOval(
+                        color = Color.White.copy(alpha = 0.6f * alpha),
+                        topLeft = Offset(-w * 0.4f, -w * 0.6f),
+                        size = Size(w * 0.5f, w * 0.3f)
+                    )
                 }
             }
         }

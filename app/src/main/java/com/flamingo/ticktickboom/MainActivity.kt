@@ -108,6 +108,11 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    override fun onPause() {
+        super.onPause()
+        AudioService.stopFlail()
+    }
 }
 
 @Composable
@@ -149,8 +154,16 @@ fun BombApp() {
     }
 
     fun handleExplode() { appState = AppState.EXPLODED }
-    fun handleReset() { appState = AppState.SETUP }
-    fun handleAbort() { appState = AppState.SETUP }
+
+    fun handleReset() {
+        AudioService.stopFlail()
+        appState = AppState.SETUP
+    }
+
+    fun handleAbort() {
+        AudioService.stopFlail()
+        appState = AppState.SETUP
+    }
 
     BackHandler(enabled = appState != AppState.SETUP) {
         if (appState == AppState.RUNNING) handleAbort()
@@ -161,7 +174,6 @@ fun BombApp() {
         when (appState) {
             AppState.SETUP -> SetupScreen(colors, isDarkMode, { toggleTheme() }, { handleStart(it) })
             AppState.RUNNING -> BombScreen(duration, bombStyle, colors, isDarkMode, { handleExplode() }, { handleAbort() })
-            // PASSING bombStyle HERE
             AppState.EXPLODED -> ExplosionScreen(colors, bombStyle, { handleReset() })
         }
     }
@@ -366,7 +378,8 @@ fun BombScreen(durationSeconds: Int, style: String, colors: AppColors, isDarkMod
     val isCriticalStart = durationSeconds <= 5
     var isFuseFinished by remember { mutableStateOf(isCriticalStart) }
     var hasPlayedDing by remember { mutableStateOf(false) }
-    var hasPlayedFlail by remember { mutableStateOf(false) } // NEW state
+    var hasPlayedFlail by remember { mutableStateOf(false) }
+    var hasPlayedAlert by remember { mutableStateOf(false) }
 
     val flashAnim = remember { Animatable(0f) }
     val context = LocalContext.current
@@ -397,7 +410,11 @@ fun BombScreen(durationSeconds: Int, style: String, colors: AppColors, isDarkMod
                 hasPlayedDing = true
             }
 
-            // NEW: Trigger flail sound once at 1 second
+            if (style == "FROG" && timeLeft <= 1.05f && !hasPlayedAlert && timeLeft > 0) {
+                AudioService.playAlert()
+                hasPlayedAlert = true
+            }
+
             if (style == "FROG" && timeLeft <= 1.0f && !hasPlayedFlail && timeLeft > 0) {
                 AudioService.playFlail()
                 hasPlayedFlail = true

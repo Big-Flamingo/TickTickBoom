@@ -22,9 +22,10 @@ object AudioService {
     private var flailSoundId: Int = 0
     private var dingSoundId: Int = 0
     private var clickSoundId: Int = 0
+    private var alertSoundId: Int = 0 // NEW
 
     private var fuseStreamId: Int = 0
-    private var flailStreamId: Int = 0 // Track the flail sound
+    private var flailStreamId: Int = 0
 
     var timerVolume: Float = 1.0f
     var explosionVolume: Float = 1.0f
@@ -51,6 +52,7 @@ object AudioService {
             flailSoundId = it.load(context, R.raw.flail, 1)
             dingSoundId = it.load(context, R.raw.ding, 1)
             clickSoundId = it.load(context, R.raw.click, 1)
+            alertSoundId = it.load(context, R.raw.alert, 1) // NEW: Load alert sound
         }
     }
 
@@ -76,8 +78,12 @@ object AudioService {
         soundPool?.play(bombCroakSoundId, timerVolume, timerVolume, 1, 0, 1f)
     }
 
+    // NEW: Play Alert Sound
+    fun playAlert() {
+        soundPool?.play(alertSoundId, timerVolume, timerVolume, 1, 0, 1f)
+    }
+
     fun playFlail() {
-        // Stop any existing flail first just in case
         if (flailStreamId != 0) soundPool?.stop(flailStreamId)
         flailStreamId = soundPool?.play(flailSoundId, timerVolume, timerVolume, 1, 0, 1f) ?: 0
     }
@@ -94,9 +100,7 @@ object AudioService {
     }
 
     fun playExplosion(context: Context) {
-        // Stop the panic sound immediately!
         stopFlail()
-
         soundPool?.play(explosionSoundId, explosionVolume, explosionVolume, 2, 0, 1f)
 
         val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
