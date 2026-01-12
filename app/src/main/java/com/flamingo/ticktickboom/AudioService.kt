@@ -22,7 +22,7 @@ object AudioService {
     private var flailSoundId: Int = 0
     private var dingSoundId: Int = 0
     private var clickSoundId: Int = 0
-    private var alertSoundId: Int = 0 // NEW
+    private var alertSoundId: Int = 0
 
     private var fuseStreamId: Int = 0
     private var flailStreamId: Int = 0
@@ -31,6 +31,9 @@ object AudioService {
     var explosionVolume: Float = 1.0f
 
     fun init(context: Context) {
+        // PREVENT RE-INIT: If soundPool exists, keep using it (survives rotation)
+        if (soundPool != null) return
+
         val audioAttributes = AudioAttributes.Builder()
             .setUsage(AudioAttributes.USAGE_GAME)
             .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
@@ -41,18 +44,20 @@ object AudioService {
             .setAudioAttributes(audioAttributes)
             .build()
 
+        // Use applicationContext to avoid leaking the Activity context
+        val appContext = context.applicationContext
         soundPool?.let {
-            tickSoundId = it.load(context, R.raw.tick, 1)
-            clockSoundId = it.load(context, R.raw.clock, 1)
-            explosionSoundId = it.load(context, R.raw.explosion, 1)
-            fuseSoundId = it.load(context, R.raw.fuse, 1)
-            croakSoundId = it.load(context, R.raw.croak, 1)
-            croakFastSoundId = it.load(context, R.raw.croak_fast, 1)
-            bombCroakSoundId = it.load(context, R.raw.bomb_croak, 1)
-            flailSoundId = it.load(context, R.raw.flail, 1)
-            dingSoundId = it.load(context, R.raw.ding, 1)
-            clickSoundId = it.load(context, R.raw.click, 1)
-            alertSoundId = it.load(context, R.raw.alert, 1) // NEW: Load alert sound
+            tickSoundId = it.load(appContext, R.raw.tick, 1)
+            clockSoundId = it.load(appContext, R.raw.clock, 1)
+            explosionSoundId = it.load(appContext, R.raw.explosion, 1)
+            fuseSoundId = it.load(appContext, R.raw.fuse, 1)
+            croakSoundId = it.load(appContext, R.raw.croak, 1)
+            croakFastSoundId = it.load(appContext, R.raw.croak_fast, 1)
+            bombCroakSoundId = it.load(appContext, R.raw.bomb_croak, 1)
+            flailSoundId = it.load(appContext, R.raw.flail, 1)
+            dingSoundId = it.load(appContext, R.raw.ding, 1)
+            clickSoundId = it.load(appContext, R.raw.click, 1)
+            alertSoundId = it.load(appContext, R.raw.alert, 1)
         }
     }
 
@@ -78,7 +83,6 @@ object AudioService {
         soundPool?.play(bombCroakSoundId, timerVolume, timerVolume, 1, 0, 1f)
     }
 
-    // NEW: Play Alert Sound
     fun playAlert() {
         soundPool?.play(alertSoundId, timerVolume, timerVolume, 1, 0, 1f)
     }
@@ -100,7 +104,7 @@ object AudioService {
     }
 
     fun playExplosion(context: Context) {
-        stopFlail()
+        stopAll() // Silence looping sounds immediately
         soundPool?.play(explosionSoundId, explosionVolume, explosionVolume, 2, 0, 1f)
 
         val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -121,10 +125,12 @@ object AudioService {
     }
 
     fun startFuse(startMuffled: Boolean) {
-        if (fuseStreamId == 0) {
-            val volume = if (startMuffled) timerVolume * 0.3f else timerVolume
-            fuseStreamId = soundPool?.play(fuseSoundId, volume, volume, 1, -1, 1f) ?: 0
-        }
+        // IDEMPOTENCY CHECK: If already playing, do nothing.
+        // This allows 'startFuse' to be called on rotation without restarting the audio track.
+        if (fuseStreamId != 0) return
+
+        val volume = if (startMuffled) timerVolume * 0.3f else timerVolume
+        fuseStreamId = soundPool?.play(fuseSoundId, volume, volume, 1, -1, 1f) ?: 0
     }
 
     fun dimFuse() {
@@ -138,5 +144,11 @@ object AudioService {
             soundPool?.stop(fuseStreamId)
             fuseStreamId = 0
         }
+    }
+
+    // Helper to stop everything (used on Abort/Reset)
+    fun stopAll() {
+        stopFuse()
+        stopFlail()
     }
 }

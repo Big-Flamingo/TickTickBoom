@@ -2,6 +2,7 @@ package com.flamingo.ticktickboom
 
 import android.app.Activity
 import android.content.Context
+import android.content.res.Configuration
 import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
@@ -27,6 +28,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -61,9 +63,11 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -80,6 +84,9 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.TextStyle
@@ -111,7 +118,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onPause() {
         super.onPause()
-        AudioService.stopFlail()
+        if (!isChangingConfigurations) {
+            AudioService.stopAll()
+        }
     }
 }
 
@@ -143,25 +152,32 @@ fun BombApp() {
         AudioService.playClick()
     }
 
-    var appState by remember { mutableStateOf(AppState.SETUP) }
-    var duration by remember { mutableIntStateOf(0) }
-    var bombStyle by remember { mutableStateOf("C4") }
+    var appState by rememberSaveable { mutableStateOf(AppState.SETUP) }
+    var duration by rememberSaveable { mutableIntStateOf(0) }
+    var bombStyle by rememberSaveable { mutableStateOf("C4") }
+    var startTime by rememberSaveable { mutableLongStateOf(0L) }
+
+    var explosionOrigin by remember { mutableStateOf(Offset.Zero) }
 
     fun handleStart(settings: TimerSettings) {
         duration = Random.nextInt(settings.minSeconds, settings.maxSeconds + 1)
         bombStyle = settings.style
+        startTime = System.currentTimeMillis()
         appState = AppState.RUNNING
     }
 
-    fun handleExplode() { appState = AppState.EXPLODED }
+    fun handleExplode() {
+        AudioService.stopAll()
+        appState = AppState.EXPLODED
+    }
 
     fun handleReset() {
-        AudioService.stopFlail()
+        AudioService.stopAll()
         appState = AppState.SETUP
     }
 
     fun handleAbort() {
-        AudioService.stopFlail()
+        AudioService.stopAll()
         appState = AppState.SETUP
     }
 
@@ -173,8 +189,17 @@ fun BombApp() {
     Surface(modifier = Modifier.fillMaxSize(), color = colors.background) {
         when (appState) {
             AppState.SETUP -> SetupScreen(colors, isDarkMode, { toggleTheme() }, { handleStart(it) })
-            AppState.RUNNING -> BombScreen(duration, bombStyle, colors, isDarkMode, { handleExplode() }, { handleAbort() })
-            AppState.EXPLODED -> ExplosionScreen(colors, bombStyle, { handleReset() })
+            AppState.RUNNING -> BombScreen(
+                duration = duration,
+                startTime = startTime,
+                style = bombStyle,
+                colors = colors,
+                isDarkMode = isDarkMode,
+                onExplode = { handleExplode() },
+                onAbort = { handleAbort() },
+                onUpdateExplosionOrigin = { explosionOrigin = it }
+            )
+            AppState.EXPLODED -> ExplosionScreen(colors, bombStyle, explosionOrigin, { handleReset() })
         }
     }
 }
@@ -371,34 +396,55 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, onToggleTheme: () -> Uni
 }
 
 @Composable
-fun BombScreen(durationSeconds: Int, style: String, colors: AppColors, isDarkMode: Boolean, onExplode: () -> Unit, onAbort: () -> Unit) {
-    var timeLeft by remember { mutableFloatStateOf(durationSeconds.toFloat()) }
+fun BombScreen(
+    duration: Int,
+    startTime: Long,
+    style: String,
+    colors: AppColors,
+    isDarkMode: Boolean,
+    onExplode: () -> Unit,
+    onAbort: () -> Unit,
+    onUpdateExplosionOrigin: (Offset) -> Unit
+) {
+    val initialElapsed = (System.currentTimeMillis() - startTime) / 1000f
+    var timeLeft by remember { mutableFloatStateOf((duration - initialElapsed).coerceAtLeast(0f)) }
+
     var isLedOn by remember { mutableStateOf(false) }
 
-    val isCriticalStart = durationSeconds <= 5
+    val isCriticalStart = duration <= 5
     var isFuseFinished by remember { mutableStateOf(isCriticalStart) }
-    var hasPlayedDing by remember { mutableStateOf(false) }
-    var hasPlayedFlail by remember { mutableStateOf(false) }
-    var hasPlayedAlert by remember { mutableStateOf(false) }
+
+    var hasPlayedDing by rememberSaveable { mutableStateOf(false) }
+    var hasPlayedFlail by rememberSaveable { mutableStateOf(false) }
+    var hasPlayedAlert by rememberSaveable { mutableStateOf(false) }
+
+    // FIX: Persist lastTickTime to prevent rhythm reset on rotation
+    var lastTickTime by rememberSaveable { mutableLongStateOf(0L) }
 
     val flashAnim = remember { Animatable(0f) }
     val context = LocalContext.current
 
+    val configuration = LocalConfiguration.current
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+
     LaunchedEffect(style) {
         if (style == "FUSE" && !isCriticalStart) AudioService.startFuse(startMuffled = false)
         if (style == "FUSE" && isCriticalStart) AudioService.startFuse(startMuffled = true)
+
+        if (style == "FROG" && timeLeft <= 1.0f && timeLeft > 0) {
+            AudioService.playFlail()
+        }
     }
 
-    DisposableEffect(Unit) { onDispose { AudioService.stopFuse() } }
-
-    LaunchedEffect(key1 = durationSeconds) {
-        val startTime = System.currentTimeMillis()
-        var lastTickTime = 0L
+    LaunchedEffect(key1 = startTime) {
+        // If this is a fresh start (0), it will tick immediately.
+        // If this is a rotation restore, lastTickTime will be non-zero (from saved state),
+        // so 'now - lastTickTime' will be small, preventing an immediate catch-up tick.
 
         while (timeLeft > 0.01) {
             val now = System.currentTimeMillis()
             val elapsed = (now - startTime) / 1000f
-            timeLeft = (durationSeconds - elapsed)
+            timeLeft = (duration - elapsed)
 
             if (timeLeft <= 5f && !isFuseFinished) {
                 isFuseFinished = true
@@ -445,62 +491,130 @@ fun BombScreen(durationSeconds: Int, style: String, colors: AppColors, isDarkMod
 
     Box(modifier = Modifier.fillMaxSize()) {
         Box(modifier = Modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.Center) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                val isCritical = isFuseFinished
-
-                if (style == "FUSE") {
-                    if (!isCritical) {
-                        Text("ARMED", color = NeonOrange, fontSize = 48.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont, letterSpacing = 2.sp, style = TextStyle(shadow = Shadow(color = NeonOrange, blurRadius = 20f)))
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Surface(color = Color.Transparent, border = BorderStroke(1.dp, NeonOrange), shape = RoundedCornerShape(50)) {
-                            Text("FUSE BURNING", color = NeonOrange, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp), fontFamily = CustomFont)
-                        }
-                    } else {
-                        val infiniteTransition = rememberInfiniteTransition()
-                        val color by infiniteTransition.animateColor(initialValue = NeonRed, targetValue = colors.text, animationSpec = infiniteRepeatable(tween(200), RepeatMode.Reverse), label = "crit")
-                        Text("CRITICAL", color = color, fontSize = 48.sp, fontWeight = FontWeight.Black, letterSpacing = 2.sp, style = TextStyle(shadow = Shadow(color = NeonRed, blurRadius = 40f)), fontFamily = CustomFont)
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Surface(color = Color.Transparent, border = BorderStroke(1.dp, NeonRed), shape = RoundedCornerShape(50)) {
-                            Text("DETONATION IMMINENT", color = NeonRed, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp), fontFamily = CustomFont)
+            if (isLandscape) {
+                Row(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    Box(modifier = Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
+                        Box(
+                            modifier = Modifier.onGloballyPositioned { layoutCoordinates ->
+                                val position = layoutCoordinates.positionInRoot()
+                                val size = layoutCoordinates.size
+                                var centerX = position.x + size.width / 2f
+                                var centerY = position.y + size.height / 2f
+                                if (style == "FUSE") centerY += size.height * 0.1f
+                                onUpdateExplosionOrigin(Offset(centerX, centerY))
+                            }
+                        ) {
+                            BombVisualContent(style, duration, timeLeft, isFuseFinished, isLedOn, isDarkMode, colors)
                         }
                     }
-                } else if (style == "FROG") {
-                    Text("RIBBIT", color = FrogBody, fontSize = 48.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont, letterSpacing = 2.sp, style = TextStyle(shadow = Shadow(color = FrogBody, blurRadius = 20f)))
-                } else {
-                    Surface(color = Color.Transparent, border = BorderStroke(1.dp, NeonRed), shape = RoundedCornerShape(50), modifier = Modifier.padding(bottom = 48.dp)) {
-                        Text("DETONATION SEQUENCE", color = NeonRed, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp), fontFamily = CustomFont)
+
+                    Column(
+                        modifier = Modifier.weight(1f).fillMaxHeight(),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        BombTextContent(style, isFuseFinished, colors)
+                        Spacer(modifier = Modifier.height(32.dp))
+                        AbortButtonContent(colors, onAbort)
                     }
                 }
+            } else {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    BombTextContent(style, isFuseFinished, colors)
 
-                Spacer(modifier = Modifier.height(32.dp))
+                    Spacer(modifier = Modifier.height(32.dp))
 
-                when (style) {
-                    "FUSE" -> {
-                        val fuseBurnDuration = (durationSeconds - 5).coerceAtLeast(0)
-                        val currentBurnTime = (durationSeconds - timeLeft).coerceAtLeast(0f)
-                        val progress = if (fuseBurnDuration > 0) (currentBurnTime / fuseBurnDuration).coerceIn(0f, 1f) else 1f
-                        FuseVisual(progress, isFuseFinished, colors)
+                    Box(
+                        modifier = Modifier.onGloballyPositioned { layoutCoordinates ->
+                            val position = layoutCoordinates.positionInRoot()
+                            val size = layoutCoordinates.size
+                            var centerX = position.x + size.width / 2f
+                            var centerY = position.y + size.height / 2f
+                            if (style == "FUSE") centerY += size.height * 0.1f
+                            onUpdateExplosionOrigin(Offset(centerX, centerY))
+                        }
+                    ) {
+                        BombVisualContent(style, duration, timeLeft, isFuseFinished, isLedOn, isDarkMode, colors)
                     }
-                    "C4" -> C4Visual(isLedOn, isDarkMode)
-                    "DYNAMITE" -> DynamiteVisual(timeLeft)
-                    "FROG" -> FrogVisual(timeLeft, isCritical)
+
+                    Spacer(modifier = Modifier.height(64.dp))
+
+                    AbortButtonContent(colors, onAbort)
                 }
-
-                Spacer(modifier = Modifier.height(64.dp))
-
-                ActionButton(
-                    text = "ABORT",
-                    icon = Icons.Filled.Close,
-                    color = colors.surface.copy(alpha=0.5f),
-                    textColor = colors.textSecondary,
-                    borderColor = colors.textSecondary,
-                    borderWidth = 1.dp,
-                    onClick = { AudioService.playClick(); onAbort() }
-                )
             }
         }
+
         if (flashAnim.value > 0f) {
             Box(modifier = Modifier.fillMaxSize().background(Color.White.copy(alpha = flashAnim.value)))
         }
     }
+}
+
+// ... (Helper Composables BombVisualContent, BombTextContent, AbortButtonContent same as before) ...
+// (Omitted for brevity as they are identical to previous prompt, but ensure they are included in your file)
+@Composable
+fun BombVisualContent(
+    style: String,
+    duration: Int,
+    timeLeft: Float,
+    isFuseFinished: Boolean,
+    isLedOn: Boolean,
+    isDarkMode: Boolean,
+    colors: AppColors
+) {
+    when (style) {
+        "FUSE" -> {
+            val fuseBurnDuration = (duration - 5).coerceAtLeast(0)
+            val currentBurnTime = (duration - timeLeft).coerceAtLeast(0f)
+            val progress = if (fuseBurnDuration > 0) (currentBurnTime / fuseBurnDuration).coerceIn(0f, 1f) else 1f
+            FuseVisual(progress, isFuseFinished, colors)
+        }
+        "C4" -> C4Visual(isLedOn, isDarkMode)
+        "DYNAMITE" -> DynamiteVisual(timeLeft)
+        "FROG" -> FrogVisual(timeLeft, isFuseFinished) // Using isFuseFinished as 'isCritical'
+    }
+}
+
+@Composable
+fun BombTextContent(style: String, isCritical: Boolean, colors: AppColors) {
+    if (style == "FUSE") {
+        if (!isCritical) {
+            Text("ARMED", color = NeonOrange, fontSize = 48.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont, letterSpacing = 2.sp, style = TextStyle(shadow = Shadow(color = NeonOrange, blurRadius = 20f)))
+            Spacer(modifier = Modifier.height(16.dp))
+            Surface(color = Color.Transparent, border = BorderStroke(1.dp, NeonOrange), shape = RoundedCornerShape(50)) {
+                Text("FUSE BURNING", color = NeonOrange, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp), fontFamily = CustomFont)
+            }
+        } else {
+            val infiniteTransition = rememberInfiniteTransition()
+            val color by infiniteTransition.animateColor(initialValue = NeonRed, targetValue = colors.text, animationSpec = infiniteRepeatable(tween(200), RepeatMode.Reverse), label = "crit")
+            Text("CRITICAL", color = color, fontSize = 48.sp, fontWeight = FontWeight.Black, letterSpacing = 2.sp, style = TextStyle(shadow = Shadow(color = NeonRed, blurRadius = 40f)), fontFamily = CustomFont)
+            Spacer(modifier = Modifier.height(16.dp))
+            Surface(color = Color.Transparent, border = BorderStroke(1.dp, NeonRed), shape = RoundedCornerShape(50)) {
+                Text("DETONATION IMMINENT", color = NeonRed, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp), fontFamily = CustomFont)
+            }
+        }
+    } else if (style == "FROG") {
+        Text("RIBBIT", color = FrogBody, fontSize = 48.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont, letterSpacing = 2.sp, style = TextStyle(shadow = Shadow(color = FrogBody, blurRadius = 20f)))
+    } else {
+        Surface(color = Color.Transparent, border = BorderStroke(1.dp, NeonRed), shape = RoundedCornerShape(50), modifier = Modifier.padding(bottom = 48.dp)) {
+            Text("DETONATION SEQUENCE", color = NeonRed, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp), fontFamily = CustomFont)
+        }
+    }
+}
+
+@Composable
+fun AbortButtonContent(colors: AppColors, onAbort: () -> Unit) {
+    ActionButton(
+        text = "ABORT",
+        icon = Icons.Filled.Close,
+        color = colors.surface.copy(alpha=0.5f),
+        textColor = colors.textSecondary,
+        borderColor = colors.textSecondary,
+        borderWidth = 1.dp,
+        onClick = { AudioService.playClick(); onAbort() }
+    )
 }
