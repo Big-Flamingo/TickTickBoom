@@ -1,51 +1,18 @@
 package com.flamingo.ticktickboom
 
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.LinearOutSlowInEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.rounded.DeveloperBoard
-import androidx.compose.material3.Icon
-import androidx.compose.material3.LocalTextStyle
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableLongStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameNanos
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -75,17 +42,18 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import kotlin.math.PI
-import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.sin
+import kotlin.math.atan2
 
-// --- DEBUG PARTICLE CLASS ---
-data class DebugParticle(
+// --- PARTICLE CLASS ---
+data class FrogSweatParticle(
     var x: Float,
     var y: Float,
     var vx: Float,
     var vy: Float,
-    var life: Float
+    var life: Float,
+    val maxLife: Float
 )
 
 @Composable
@@ -478,7 +446,7 @@ fun ExplosionScreen(colors: AppColors, style: String?, onReset: () -> Unit) {
     }
 }
 
-// --- UPDATED FROG VISUAL (STEP 5: STABLE COORDINATES) ---
+// --- UPDATED FROG VISUAL (Fixed Pivot Rotation) ---
 @Composable
 fun FrogVisual(timeLeft: Float, isCritical: Boolean) {
     val density = LocalDensity.current
@@ -507,54 +475,26 @@ fun FrogVisual(timeLeft: Float, isCritical: Boolean) {
         label = "flail"
     )
 
-    // --- DEBUG PARTICLE SYSTEM ---
-    val debugParticles = remember { mutableListOf<DebugParticle>() }
+    // --- PARTICLE SYSTEM ---
+    val sweatDrops = remember { mutableListOf<FrogSweatParticle>() }
     var frame by remember { mutableLongStateOf(0L) }
     var lastFrameTime by remember { mutableLongStateOf(0L) }
     val currentIsCritical by rememberUpdatedState(isCritical)
 
-    // GEOMETRY - CALCULATED ONCE, OUTSIDE LOOPS (THE FIX)
-    val boxSize = 320.dp
-    val boxSizePx = with(density) { boxSize.toPx() }
-    val cx = boxSizePx / 2f
-    val cy = boxSizePx / 2f
-    val mainRadius = boxSizePx * 0.35f
-    val bumpRadius = mainRadius * 0.45f
-    val bumpY = cy - mainRadius * 0.65f
-    val bumpXOffset = mainRadius * 0.5f
-
-    val rightBumpCenterX = cx + bumpXOffset
-    val rightBumpCenterY = bumpY
-    // Angle -45 degrees (Top Right)
-    val spawnAngleRad = -45f * (PI / 180f).toFloat()
-    val spawnX = rightBumpCenterX + bumpRadius * cos(spawnAngleRad.toDouble()).toFloat()
-    val spawnY = rightBumpCenterY + bumpRadius * sin(spawnAngleRad.toDouble()).toFloat()
-
-    // LOGIC LOOP (Physics)
+    // LOGIC LOOP (Physics Only)
     LaunchedEffect(Unit) {
         while (true) {
             withFrameNanos { nanos ->
                 val dt = if (lastFrameTime == 0L) 0.016f else ((nanos - lastFrameTime) / 1_000_000_000f).coerceAtMost(0.1f)
                 lastFrameTime = nanos
 
-                // SPAWN using the stable spawnX/spawnY variables
-                if (currentIsCritical && Math.random() < 0.3) {
-                    debugParticles.add(DebugParticle(
-                        x = spawnX,
-                        y = spawnY,
-                        vx = 0f,
-                        vy = -200f, // Straight Up
-                        life = 1f
-                    ))
-                }
-
-                // UPDATE
-                val iter = debugParticles.iterator()
+                val iter = sweatDrops.iterator()
                 while (iter.hasNext()) {
                     val p = iter.next()
                     p.life -= dt
                     p.x += p.vx * dt
                     p.y += p.vy * dt
+                    // No gravity for short burst - looks snappier
                     if (p.life <= 0) iter.remove()
                 }
 
@@ -563,11 +503,51 @@ fun FrogVisual(timeLeft: Float, isCritical: Boolean) {
         }
     }
 
-    Box(contentAlignment = Alignment.Center, modifier = Modifier.size(boxSize)) {
+    // Step 5 Logic: Geometry calculated INSIDE the Draw Loop
+    Box(contentAlignment = Alignment.Center, modifier = Modifier.size(300.dp)) {
         Canvas(modifier = Modifier.fillMaxSize()) {
             if (frame >= 0) Unit
 
-            // DRAW FROG (Layers)
+            // 1. CALCULATE GEOMETRY (The "Step 5" Way - Inside Canvas)
+            val cx = size.width / 2
+            val cy = size.height / 2
+            val mainRadius = size.width * 0.35f
+            val bumpRadius = mainRadius * 0.45f
+            val bumpY = cy - mainRadius * 0.65f
+            val bumpXOffset = mainRadius * 0.5f
+
+            val rightBumpCenterX = cx + bumpXOffset
+            val rightBumpCenterY = bumpY
+
+            // POSITION ADJUSTMENT (Manual Tweak 1.2x, 1.5x) - "NAILED IT" POSITION
+            val spawnX = rightBumpCenterX + (bumpRadius * 1.2f)
+            val spawnY = rightBumpCenterY - (bumpRadius * 1.5f)
+
+            // 2. SPAWN PARTICLES (BURST MODE: 3 Drops, 1:30 Angle)
+            if (currentIsCritical && Math.random() < 0.025) { // 2.5% chance per frame for burst
+                repeat(3) { i ->
+                    // DIRECTION: -PI/4 is -45 degrees (1:30 Clock Position)
+                    val baseAngle = -PI / 4
+                    val spreadOffset = (i - 1) * 0.25
+                    val angle = baseAngle + spreadOffset + ((Math.random() - 0.5) * 0.1)
+
+                    // DISTANCE: Travel roughly 1.0x eye radius (Short Path)
+                    val lifeSpan = 0.5f
+                    val targetDist = bumpRadius * 1.0f
+                    val speed = (targetDist / lifeSpan) * (0.9f + Math.random().toFloat() * 0.2f)
+
+                    sweatDrops.add(FrogSweatParticle(
+                        x = spawnX,
+                        y = spawnY,
+                        vx = (cos(angle) * speed).toFloat(),
+                        vy = (sin(angle) * speed).toFloat(),
+                        life = lifeSpan,
+                        maxLife = lifeSpan
+                    ))
+                }
+            }
+
+            // 3. DRAW FROG (Layers)
             val outlineColor = Color.Black
             val outlineStroke = Stroke(width = 6.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
 
@@ -687,25 +667,40 @@ fun FrogVisual(timeLeft: Float, isCritical: Boolean) {
                 drawPath(path = mouthPath, color = Color.Black, style = Stroke(width = 8f, cap = StrokeCap.Round, join = StrokeJoin.Round))
             }
 
-            // DRAW PARTICLES (Water Drop Shape)
-            debugParticles.forEach { p ->
+            // --- DRAW PARTICLES ---
+            sweatDrops.forEach { p ->
                 val dropSize = mainRadius * 0.08f
                 val dropColor = Color(0xFF60A5FA)
 
-                // Calculate Rotation
-                val rotation = (atan2(p.vy, p.vx) * (180f / PI)).toFloat() + 90f
+                // FIXED ROTATION PIVOT: Use Offset.Zero to rotate around the particle itself.
+                // This prevents the "Orbiting Offset" bug.
+                // +45 degrees aligns the Up-Facing droplet to the 1:30 direction (-45 + 90 = 45).
 
                 withTransform({
                     translate(p.x, p.y)
-                    rotate(rotation)
+                    rotate(45f, pivot = Offset.Zero)
                 }) {
+                    // DEFINE PATH CENTERED ON (0,0) AND POINTING UP (Ice Cream Cone Shape)
+                    val w = dropSize
+                    val h = dropSize * 1.3f
+                    val alpha = (p.life / p.maxLife).coerceIn(0f, 1f) // Fade out
+
                     val path = Path().apply {
-                        moveTo(-dropSize, 0f)
-                        cubicTo(-dropSize * 0.5f, -dropSize, dropSize, -dropSize, dropSize, 0f)
-                        cubicTo(dropSize, dropSize, -dropSize * 0.5f, dropSize, -dropSize, 0f)
+                        // 1. Start at Top Center (Round Head)
+                        moveTo(-w, -w * 0.2f)
+                        // 2. Arc for Top (Semi-Circle)
+                        arcTo(
+                            rect = Rect(topLeft = Offset(-w, -w), bottomRight = Offset(w, w)),
+                            startAngleDegrees = 180f,
+                            sweepAngleDegrees = 180f,
+                            forceMoveTo = false
+                        )
+                        // 3. Line to Bottom Tip (Sharp Tail)
+                        lineTo(0f, h)
+                        // 4. Close path back to left start
                         close()
                     }
-                    drawPath(path, dropColor)
+                    drawPath(path, dropColor.copy(alpha = alpha))
                 }
             }
         }
