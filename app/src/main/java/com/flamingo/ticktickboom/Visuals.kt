@@ -56,7 +56,6 @@ import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.atan2
-import kotlin.math.pow
 import kotlin.math.sqrt
 import kotlin.math.ceil
 
@@ -363,7 +362,7 @@ fun C4Visual(isLedOn: Boolean, isDarkMode: Boolean, isPaused: Boolean, onToggleP
         Spacer(modifier = Modifier.height(24.dp))
         Surface(color = Color(0x33F59E0B), border = BorderStroke(1.dp, Color(0xFFF59E0B).copy(alpha=0.5f)), shape = RoundedCornerShape(4.dp)) {
             Row(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Filled.Refresh, null, tint = Color(0xFFF59E0B), modifier = Modifier.size(16.dp))
+                Icon(Icons.Filled.Warning, null, tint = Color(0xFFF59E0B), modifier = Modifier.size(16.dp))
                 Spacer(modifier = Modifier.width(8.dp))
                 Text("HIGH VOLTAGE // DO NOT TAMPER", color = Color(0xFFF59E0B), fontSize = 10.sp, fontFamily = CustomFont, fontWeight = FontWeight.Bold)
             }
@@ -503,6 +502,7 @@ fun DynamiteVisual(timeLeft: Float, isPaused: Boolean, onTogglePause: () -> Unit
                     if (newLife <= 0) {
                         iter.remove()
                     } else {
+                        // FORCE UPDATE by creating a new object and setting it
                         val newY = effect.y - (15f * dt)
                         val newAlpha = (newLife / 1.0f).coerceIn(0f, 1f)
 
@@ -607,13 +607,13 @@ fun DynamiteVisual(timeLeft: Float, isPaused: Boolean, onTogglePause: () -> Unit
     }
 }
 
-// ... ExplosionScreen and FrogVisual are unchanged, but included for completeness
+// ... ExplosionScreen and FrogVisual included ...
 @Composable
 fun ExplosionScreen(colors: AppColors, style: String?, explosionOrigin: Offset? = null, onReset: () -> Unit) {
     val context = LocalContext.current
     val particles = remember {
         val colorsList = listOf(NeonRed, NeonOrange, Color.Yellow, Color.White)
-        List(100) { i -> Particle(i, Math.random() * 360, (200 + Math.random() * 800).toFloat(), (3 + Math.random() * 5).toFloat(), colorsList.random(), 0f, (Math.random() * 20 - 10).toFloat()) }
+        List(100) { i -> Particle(i, Math.random() * 360, (200 + Math.random() * 800).toFloat(), (3 + Math.random() * 5).toFloat(), colorsList.random(), (Math.random() * 20 - 10).toFloat()) }
     }
     val smoke = remember {
         List(30) { _ -> SmokeParticle(x = 0f, y = 0f, vx = (Math.random() * 100 - 50).toFloat(), vy = (Math.random() * 100 - 50).toFloat(), size = (20 + Math.random() * 40).toFloat(), alpha = 0.8f, life = 1f, maxLife = 1f) }
@@ -684,7 +684,7 @@ fun ExplosionScreen(colors: AppColors, style: String?, explosionOrigin: Offset? 
 // --- UPDATED FROG VISUAL (Final: Timed Spray + Wider Spread + Correct Geometry + Specular + Nudge + Gravity + Alert + PauseLogic) ---
 @Composable
 fun FrogVisual(timeLeft: Float, isCritical: Boolean, isPaused: Boolean, onTogglePause: () -> Unit) {
-    val density = LocalDensity.current
+    // Removed unused density
 
     val isPanic = timeLeft <= 1.05f
 

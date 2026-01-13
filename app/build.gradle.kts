@@ -6,14 +6,12 @@ plugins {
 
 android {
     namespace = "com.flamingo.ticktickboom"
-    compileSdk {
-        version = release(36)
-    }
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "com.flamingo.ticktickboom"
         minSdk = 24
-        targetSdk = 36
+        targetSdk = 35
         versionCode = 1
         versionName = "1.0"
 
@@ -42,7 +40,9 @@ android {
 }
 
 dependencies {
-    implementation("androidx.compose.material:material-icons-extended:1.7.8")
+    // FIXED: Now using the Version Catalog alias
+    implementation(libs.androidx.material.icons.extended)
+
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)

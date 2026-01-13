@@ -12,7 +12,6 @@ data class Particle(
     val velocity: Float,
     val size: Float,
     val color: Color,
-    val delay: Float,
     val rotationSpeed: Float
 )
 

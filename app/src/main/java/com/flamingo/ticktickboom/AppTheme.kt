@@ -37,7 +37,6 @@ val SmokeDark = Color(0xFF334155)  // Dark smoke for light mode
 val FrogBody = Color(0xFFAED581)   // Muted pastel green
 val FrogBelly = Color(0xFFFFF59D)  // Creamy light yellow
 val FrogBlush = Color(0xFFFFAB91)  // Soft pastel pink
-val FrogFeatures = Color(0xFF455A64) // Dark charcoal for eyes/mouth
 
 // --- FONTS ---
 val CustomFont = FontFamily(
