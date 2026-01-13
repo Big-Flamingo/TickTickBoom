@@ -5,18 +5,26 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.rounded.DeveloperBoard
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -33,6 +41,8 @@ import androidx.compose.ui.graphics.asComposePath
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.drawscope.withTransform
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
@@ -46,8 +56,11 @@ import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.atan2
+import kotlin.math.pow
+import kotlin.math.sqrt
+import kotlin.math.ceil
 
-// --- PARTICLE CLASS ---
+// --- PARTICLE CLASSES ---
 data class FrogSweatParticle(
     var x: Float,
     var y: Float,
@@ -57,8 +70,19 @@ data class FrogSweatParticle(
     val maxLife: Float
 )
 
+data class VisualTextEffect(
+    val text: String,
+    val x: Float,
+    val y: Float,
+    val color: Color,
+    val gradientColors: List<Color>? = null,
+    val alpha: Float = 1f,
+    val life: Float = 1.0f,
+    val fontSize: Float
+)
+
 @Composable
-fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors) {
+fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors, isPaused: Boolean, onTogglePause: () -> Unit) {
     val sparks = remember { mutableListOf<Spark>() }
     val smokePuffs = remember { mutableListOf<SmokeParticle>() }
     var frame by remember { mutableLongStateOf(0L) }
@@ -72,7 +96,6 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors) {
 
     val density = LocalDensity.current
 
-    // Hoisted dimensions
     val fuseYOffset = with(density) { 5.dp.toPx() }
     val protrusionW = with(density) { 16.dp.toPx() }
     val protrusionH = with(density) { 8.dp.toPx() }
@@ -95,7 +118,7 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors) {
     val particleRad = with(density) { 3.dp.toPx() }
     val particleRadS = with(density) { 1.5.dp.toPx() }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(isPaused) {
         while (true) {
             withFrameNanos { nanos ->
                 val dt = if (lastFrameTime == 0L) 0.016f else (nanos - lastFrameTime) / 1_000_000_000f
@@ -129,7 +152,22 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors) {
     }
 
     Box(contentAlignment = Alignment.Center, modifier = Modifier.size(300.dp)) {
-        Canvas(modifier = Modifier.fillMaxSize()) {
+        var currentSparkCenter by remember { mutableStateOf(Offset.Zero) }
+
+        Canvas(
+            modifier = Modifier
+                .fillMaxSize()
+                .pointerInput(Unit) {
+                    detectTapGestures { tapOffset ->
+                        val dx = tapOffset.x - currentSparkCenter.x
+                        val dy = tapOffset.y - currentSparkCenter.y
+                        val dist = sqrt(dx * dx + dy * dy)
+                        if (dist < 60.dp.toPx()) {
+                            onTogglePause()
+                        }
+                    }
+                }
+        ) {
             if (frame >= 0) Unit
 
             val width = size.width
@@ -160,7 +198,8 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors) {
             drawOval(color = Color(0xFF64748B), topLeft = rimRect.topLeft, size = rimRect.size)
 
             val fuseBase = Offset(bombCenterX, protrusionTopY)
-            if (isCritical) {
+
+            if (isCritical && !isPaused) {
                 drawCircle(
                     brush = Brush.radialGradient(
                         colors = listOf(NeonRed.copy(alpha=0.6f), NeonRed.copy(alpha=0f)),
@@ -199,20 +238,24 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors) {
             androidMeasure.getPosTan(currentBurnPoint, pos, null)
             val sparkCenter = Offset(pos[0], pos[1])
 
-            if (Math.random() < 0.3) {
-                val angle = Math.random() * Math.PI * 2
-                val speed = (2f + Math.random() * 4f).toFloat()
-                val sx = if (isCritical) fuseBase.x else sparkCenter.x
-                val sy = if (isCritical) fuseBase.y else sparkCenter.y
-                sparks.add(Spark(x = sx, y = sy, vx = cos(angle).toFloat() * speed, vy = sin(angle).toFloat() * speed - 2f, life = (0.2f + Math.random() * 0.3f).toFloat(), maxLife = 0.5f))
-            }
-            if (Math.random() < 0.2) {
-                val angle = -Math.PI / 2 + (Math.random() - 0.5) * 0.5
-                val speed = (1f + Math.random() * 2f).toFloat()
-                val sx = if (isCritical) fuseBase.x else sparkCenter.x
-                val sy = if (isCritical) fuseBase.y else sparkCenter.y
-                val smokeVy = if (isCritical) sin(angle).toFloat() * speed * 2f else sin(angle).toFloat() * speed
-                smokePuffs.add(SmokeParticle(x = sx, y = sy - fuseYOffset, vx = cos(angle).toFloat() * speed, vy = smokeVy, size = 10f, alpha = 0.6f, life = (1f + Math.random().toFloat() * 0.5f), maxLife = 1.5f))
+            currentSparkCenter = sparkCenter
+
+            if (!isPaused) {
+                if (Math.random() < 0.3) {
+                    val angle = Math.random() * Math.PI * 2
+                    val speed = (2f + Math.random() * 4f).toFloat()
+                    val sx = if (isCritical) fuseBase.x else sparkCenter.x
+                    val sy = if (isCritical) fuseBase.y else sparkCenter.y
+                    sparks.add(Spark(x = sx, y = sy, vx = cos(angle).toFloat() * speed, vy = sin(angle).toFloat() * speed - 2f, life = (0.2f + Math.random() * 0.3f).toFloat(), maxLife = 0.5f))
+                }
+                if (Math.random() < 0.2) {
+                    val angle = -Math.PI / 2 + (Math.random() - 0.5) * 0.5
+                    val speed = (1f + Math.random() * 2f).toFloat()
+                    val sx = if (isCritical) fuseBase.x else sparkCenter.x
+                    val sy = if (isCritical) fuseBase.y else sparkCenter.y
+                    val smokeVy = if (isCritical) sin(angle).toFloat() * speed * 2f else sin(angle).toFloat() * speed
+                    smokePuffs.add(SmokeParticle(x = sx, y = sy - fuseYOffset, vx = cos(angle).toFloat() * speed, vy = smokeVy, size = 10f, alpha = 0.6f, life = (1f + Math.random().toFloat() * 0.5f), maxLife = 1.5f))
+                }
             }
 
             smokePuffs.forEach { puff -> drawCircle(color = colors.smokeColor.copy(alpha = puff.alpha), radius = puff.size, center = Offset(puff.x, puff.y)) }
@@ -222,7 +265,7 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors) {
                 drawCircle(color = Color.Yellow.copy(alpha = alpha), radius = particleRadS * alpha, center = Offset(spark.x, spark.y))
             }
 
-            if (!isCritical) {
+            if (!isCritical && !isPaused) {
                 drawCircle(brush = Brush.radialGradient(colors = listOf(NeonOrange.copy(alpha = 0.5f), Color.Transparent), center = sparkCenter, radius = glowRadius), radius = glowRadius, center = sparkCenter)
                 drawCircle(color = NeonOrange.copy(alpha=0.8f), radius = coreRadius, center = sparkCenter)
                 drawCircle(color = Color.White, radius = whiteRadius, center = sparkCenter)
@@ -245,7 +288,7 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors) {
 }
 
 @Composable
-fun C4Visual(isLedOn: Boolean, isDarkMode: Boolean) {
+fun C4Visual(isLedOn: Boolean, isDarkMode: Boolean, isPaused: Boolean, onTogglePause: () -> Unit) {
     val density = LocalDensity.current
     val ledSize = with(density) { 12.dp.toPx() }
     val ledRadius = with(density) { 6.dp.toPx() }
@@ -273,7 +316,33 @@ fun C4Visual(isLedOn: Boolean, isDarkMode: Boolean) {
                 Column(Modifier.fillMaxSize().padding(vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     Box(Modifier.weight(0.6f).fillMaxWidth().padding(horizontal = 16.dp).background(LcdDarkBackground, RoundedCornerShape(4.dp)).border(2.dp, Slate800, RoundedCornerShape(4.dp))) {
                         Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
-                            Icon(Icons.Rounded.DeveloperBoard, null, tint = Color(0xFF64748B), modifier = Modifier.size(32.dp))
+
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier
+                                    .clickable { onTogglePause() }
+                                    .padding(8.dp)
+                            ) {
+                                // Chip Icon
+                                Icon(
+                                    Icons.Rounded.DeveloperBoard,
+                                    null,
+                                    tint = if (isPaused) Color(0xFF3B82F6) else Color(0xFF64748B),
+                                    modifier = Modifier.size(32.dp)
+                                )
+                                // Stable Text (Fixed style to prevent jumping)
+                                Text(
+                                    "PAUSED",
+                                    color = if (isPaused) Color(0xFF3B82F6) else Color(0xFF1E293B),
+                                    fontSize = 8.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    fontFamily = CustomFont,
+                                    style = TextStyle(
+                                        shadow = if (isPaused) Shadow(color = Color(0xFF3B82F6), blurRadius = 20f) else Shadow.None
+                                    )
+                                )
+                            }
+
                             Spacer(modifier = Modifier.width(16.dp))
                             Text("--:--", color = NeonRed, fontSize = 56.sp, fontWeight = FontWeight.Black, fontFamily = CustomFont, letterSpacing = (-1).sp, modifier = Modifier.padding(bottom = 6.dp).offset(y = (-5).dp), style = TextStyle(shadow = Shadow(color = NeonRed, offset = Offset.Zero, blurRadius = 12f)))
                         }
@@ -294,7 +363,7 @@ fun C4Visual(isLedOn: Boolean, isDarkMode: Boolean) {
         Spacer(modifier = Modifier.height(24.dp))
         Surface(color = Color(0x33F59E0B), border = BorderStroke(1.dp, Color(0xFFF59E0B).copy(alpha=0.5f)), shape = RoundedCornerShape(4.dp)) {
             Row(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Filled.Bolt, null, tint = Color(0xFFF59E0B), modifier = Modifier.size(16.dp))
+                Icon(Icons.Filled.Refresh, null, tint = Color(0xFFF59E0B), modifier = Modifier.size(16.dp))
                 Spacer(modifier = Modifier.width(8.dp))
                 Text("HIGH VOLTAGE // DO NOT TAMPER", color = Color(0xFFF59E0B), fontSize = 10.sp, fontFamily = CustomFont, fontWeight = FontWeight.Bold)
             }
@@ -303,7 +372,7 @@ fun C4Visual(isLedOn: Boolean, isDarkMode: Boolean) {
 }
 
 @Composable
-fun DynamiteVisual(timeLeft: Float) {
+fun DynamiteVisual(timeLeft: Float, isPaused: Boolean, onTogglePause: () -> Unit) {
     val density = LocalDensity.current
     val stickW = with(density) { 60.dp.toPx() }
     val stickH = with(density) { 220.dp.toPx() }
@@ -335,6 +404,119 @@ fun DynamiteVisual(timeLeft: Float) {
         style = TextStyle(color = Color.Black.copy(alpha=0.3f), fontSize = 14.sp, fontWeight = FontWeight.Black, fontFamily = CustomFont)
     )
 
+    // Explicitly typed Saver to fix type inference errors
+    val textEffectsSaver = listSaver<SnapshotStateList<VisualTextEffect>, List<Any>>(
+        save = { stateList ->
+            stateList.map { effect ->
+                listOf(
+                    effect.text,
+                    effect.x,
+                    effect.y,
+                    effect.color.toArgb(),
+                    effect.gradientColors?.map { it.toArgb() } ?: emptyList<Int>(),
+                    effect.alpha,
+                    effect.life,
+                    effect.fontSize
+                )
+            }
+        },
+        restore = { savedList ->
+            val mutableList = mutableStateListOf<VisualTextEffect>()
+            savedList.forEach { item ->
+                @Suppress("UNCHECKED_CAST")
+                val props = item as List<Any>
+                @Suppress("UNCHECKED_CAST")
+                val gradInts = props[4] as List<Int>
+
+                mutableList.add(VisualTextEffect(
+                    text = props[0] as String,
+                    x = (props[1] as Number).toFloat(),
+                    y = (props[2] as Number).toFloat(),
+                    color = Color(props[3] as Int),
+                    gradientColors = if (gradInts.isEmpty()) null else gradInts.map { Color(it) },
+                    alpha = (props[5] as Number).toFloat(),
+                    life = (props[6] as Number).toFloat(),
+                    fontSize = (props[7] as Number).toFloat()
+                ))
+            }
+            mutableList
+        }
+    )
+
+    val textEffects = rememberSaveable(saver = textEffectsSaver) { mutableStateListOf<VisualTextEffect>() }
+
+    // Initialize to -1 to force the very first tick to register immediately
+    var lastTriggerStep by rememberSaveable { mutableIntStateOf(-1) }
+    var hasShownDing by rememberSaveable { mutableStateOf(false) }
+
+    val tickOffsetY = with(density) { -130.dp.toPx() }
+    val dingOffsetY = with(density) { -160.dp.toPx() }
+
+    LaunchedEffect(timeLeft) {
+        val currentStep = ceil(timeLeft * 2).toInt()
+        val isFast = timeLeft <= 5f
+
+        val stepChanged = currentStep != lastTriggerStep
+        val shouldTrigger = stepChanged && (isFast || currentStep % 2 == 0)
+
+        // FIX: Always update the tracker silently if paused
+        if (stepChanged) {
+            if (shouldTrigger && timeLeft > 1.1f && !isPaused) {
+                textEffects.add(VisualTextEffect(
+                    text = "TICK",
+                    x = (Math.random() * 100 - 50).toFloat(),
+                    y = tickOffsetY,
+                    color = if (isFast) NeonRed else TextGray,
+                    fontSize = 20f
+                ))
+            }
+            lastTriggerStep = currentStep
+        }
+
+        if (timeLeft <= 1.0f && !hasShownDing && timeLeft > 0 && !isPaused) {
+            textEffects.add(VisualTextEffect(
+                text = "DING!",
+                x = 0f,
+                y = dingOffsetY,
+                color = Color(0xFFFFD700),
+                gradientColors = listOf(Color(0xFFFFFACD), Color(0xFFFFD700)),
+                life = 2.0f,
+                fontSize = 48f
+            ))
+            hasShownDing = true
+        }
+    }
+
+    // ANIMATION LOOP
+    LaunchedEffect(Unit) {
+        var lastTime = 0L
+        while(true) {
+            withFrameNanos { nanos ->
+                val dt = if (lastTime == 0L) 0.016f else (nanos - lastTime) / 1_000_000_000f
+                lastTime = nanos
+
+                val iter = textEffects.listIterator()
+                while (iter.hasNext()) {
+                    val effect = iter.next()
+                    val newLife = effect.life - dt
+
+                    if (newLife <= 0) {
+                        iter.remove()
+                    } else {
+                        val newY = effect.y - (15f * dt)
+                        val newAlpha = (newLife / 1.0f).coerceIn(0f, 1f)
+
+                        iter.set(effect.copy(
+                            y = newY,
+                            life = newLife,
+                            alpha = newAlpha
+                        ))
+                    }
+                }
+            }
+        }
+    }
+
     Box(contentAlignment = Alignment.Center, modifier = Modifier.size(300.dp)) {
         Canvas(modifier = Modifier.fillMaxSize()) {
             val totalSticksWidth = 3 * stickW + 2 * spacing
@@ -356,30 +538,76 @@ fun DynamiteVisual(timeLeft: Float) {
             drawRect(color = Color.Black.copy(alpha=0.9f), topLeft = Offset(startX - tapeOver, startY + stickH - 40), size = Size(totalSticksWidth + (tapeOver * 2), tapeH))
         }
 
-        Canvas(modifier = Modifier.size(160.dp).offset(y = 15.dp)) {
-            val clockCenter = center
-            drawCircle(brush = Brush.radialGradient(colors = listOf(MetallicLight, MetallicDark), center = clockCenter, radius = clockRad), center = clockCenter, radius = clockRad)
-            drawCircle(color = Slate800, style = Stroke(width = clockStroke), center = clockCenter)
-            drawText(textLayoutResult = textLayoutResult, topLeft = Offset(clockCenter.x - textLayoutResult.size.width / 2, clockCenter.y + textYOffset))
-            for (index in 0 until 60) {
-                val isHour = index % 5 == 0
-                val length = if (isHour) tickL else tickS
-                val width = if (isHour) tickWidthLong else tickWidthShort
-                rotate(index * 6f, pivot = clockCenter) {
-                    drawLine(color = Slate800, start = Offset(clockCenter.x, clockCenter.y - clockRad + tickGap), end = Offset(clockCenter.x, clockCenter.y - clockRad + tickGap + length), strokeWidth = width)
+        Box(
+            modifier = Modifier
+                .offset(y = 15.dp)
+                .size(160.dp)
+                .clip(CircleShape)
+                .clickable { onTogglePause() }
+        ) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val clockCenter = center
+                drawCircle(brush = Brush.radialGradient(colors = listOf(MetallicLight, MetallicDark), center = clockCenter, radius = clockRad), center = clockCenter, radius = clockRad)
+                drawCircle(color = Slate800, style = Stroke(width = clockStroke), center = clockCenter)
+                drawText(textLayoutResult = textLayoutResult, topLeft = Offset(clockCenter.x - textLayoutResult.size.width / 2, clockCenter.y + textYOffset))
+                for (index in 0 until 60) {
+                    val isHour = index % 5 == 0
+                    val length = if (isHour) tickL else tickS
+                    val width = if (isHour) tickWidthLong else tickWidthShort
+                    rotate(index * 6f, pivot = clockCenter) {
+                        drawLine(color = Slate800, start = Offset(clockCenter.x, clockCenter.y - clockRad + tickGap), end = Offset(clockCenter.x, clockCenter.y - clockRad + tickGap + length), strokeWidth = width)
+                    }
                 }
+                val secondAngle = (timeLeft % 60) * 6f
+                val minuteAngle = (timeLeft / 60) * 6f
+                rotate(-minuteAngle, pivot = clockCenter) { drawLine(color = Slate800, start = clockCenter, end = Offset(clockCenter.x, clockCenter.y - handS), strokeWidth = 8f, cap = StrokeCap.Round) }
+                rotate(-secondAngle, pivot = clockCenter) { drawLine(color = NeonRed, start = clockCenter, end = Offset(clockCenter.x, clockCenter.y - handL), strokeWidth = 4f, cap = StrokeCap.Round) }
+                drawCircle(color = Slate800, radius = pinL, center = clockCenter)
+                drawCircle(color = NeonRed, radius = pinS, center = clockCenter)
             }
-            val secondAngle = (timeLeft % 60) * 6f
-            val minuteAngle = (timeLeft / 60) * 6f
-            rotate(-minuteAngle, pivot = clockCenter) { drawLine(color = Slate800, start = clockCenter, end = Offset(clockCenter.x, clockCenter.y - handS), strokeWidth = 8f, cap = StrokeCap.Round) }
-            rotate(-secondAngle, pivot = clockCenter) { drawLine(color = NeonRed, start = clockCenter, end = Offset(clockCenter.x, clockCenter.y - handL), strokeWidth = 4f, cap = StrokeCap.Round) }
-            drawCircle(color = Slate800, radius = pinL, center = clockCenter)
-            drawCircle(color = NeonRed, radius = pinS, center = clockCenter)
+        }
+
+        // OVERLAY CANVAS with Gradient Support
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val cx = size.width / 2
+            val cy = size.height / 2
+
+            textEffects.forEach { effect ->
+                val style = if (effect.gradientColors != null) {
+                    val fadedColors = effect.gradientColors.map { it.copy(alpha = effect.alpha) }
+                    TextStyle(
+                        brush = Brush.verticalGradient(fadedColors),
+                        fontSize = effect.fontSize.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = CustomFont
+                    )
+                } else {
+                    TextStyle(
+                        color = effect.color.copy(alpha = effect.alpha),
+                        fontSize = effect.fontSize.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = CustomFont
+                    )
+                }
+
+                val textResult = textMeasurer.measure(
+                    text = effect.text,
+                    style = style
+                )
+
+                val drawX = cx + effect.x - (textResult.size.width / 2)
+                val drawY = cy + effect.y - (textResult.size.height / 2)
+
+                drawText(
+                    textLayoutResult = textResult,
+                    topLeft = Offset(drawX, drawY)
+                )
+            }
         }
     }
 }
 
-// UPDATED: Now uses rememberSaveable for hasPlayedExplosion to survive rotation
+// ... ExplosionScreen and FrogVisual are unchanged, but included for completeness
 @Composable
 fun ExplosionScreen(colors: AppColors, style: String?, explosionOrigin: Offset? = null, onReset: () -> Unit) {
     val context = LocalContext.current
@@ -391,15 +619,12 @@ fun ExplosionScreen(colors: AppColors, style: String?, explosionOrigin: Offset? 
         List(30) { _ -> SmokeParticle(x = 0f, y = 0f, vx = (Math.random() * 100 - 50).toFloat(), vy = (Math.random() * 100 - 50).toFloat(), size = (20 + Math.random() * 40).toFloat(), alpha = 0.8f, life = 1f, maxLife = 1f) }
     }
 
-    // FIX: Track if explosion has played so we don't replay it on rotation
     var hasPlayedExplosion by rememberSaveable { mutableStateOf(false) }
     val animationProgress = remember { Animatable(if (hasPlayedExplosion) 1f else 0f) }
 
     LaunchedEffect(Unit) {
         if (!hasPlayedExplosion) {
-            // Play Audio/Vibration
             AudioService.playExplosion(context)
-            // Animate
             launch { animationProgress.animateTo(1f, tween(1500, easing = LinearOutSlowInEasing)) }
             hasPlayedExplosion = true
         }
@@ -409,7 +634,6 @@ fun ExplosionScreen(colors: AppColors, style: String?, explosionOrigin: Offset? 
         Box(modifier = Modifier.fillMaxSize().background(Color(0x99DC2626)))
         Canvas(modifier = Modifier.fillMaxSize()) {
             val progress = animationProgress.value
-            // Use the passed origin, or default to center if null/zero
             val center = if (explosionOrigin != null && explosionOrigin != Offset.Zero) explosionOrigin else Offset(size.width / 2, size.height / 2)
 
             smoke.forEach { s ->
@@ -432,7 +656,6 @@ fun ExplosionScreen(colors: AppColors, style: String?, explosionOrigin: Offset? 
             if (shockwaveAlpha > 0) drawCircle(color = Color.White.copy(alpha = shockwaveAlpha * 0.5f), radius = shockwaveRadius, center = center, style = Stroke(width = 50f * (1f - progress)))
         }
 
-        // Only show flash if animation is running/fresh
         val flashAlpha = (1f - (animationProgress.value * 5)).coerceIn(0f, 1f)
         if (flashAlpha > 0f) Box(modifier = Modifier.fillMaxSize().background(Color.White.copy(alpha = flashAlpha)))
 
@@ -458,21 +681,20 @@ fun ExplosionScreen(colors: AppColors, style: String?, explosionOrigin: Offset? 
     }
 }
 
-// ... FrogVisual is same as before, no changes needed ...
-// (Omitted for brevity to keep response clean, but ensure it is included in your file!)
+// --- UPDATED FROG VISUAL (Final: Timed Spray + Wider Spread + Correct Geometry + Specular + Nudge + Gravity + Alert + PauseLogic) ---
 @Composable
-fun FrogVisual(timeLeft: Float, isCritical: Boolean) {
+fun FrogVisual(timeLeft: Float, isCritical: Boolean, isPaused: Boolean, onTogglePause: () -> Unit) {
     val density = LocalDensity.current
 
     val isPanic = timeLeft <= 1.05f
 
     val tickDuration = if (timeLeft <= 5f) 0.5f else 1.0f
 
-    val rawProgress = (timeLeft % tickDuration) / tickDuration
-    val tickProgress = 1f - rawProgress
+    val currentProgress = if (isPaused) 0f else (timeLeft % tickDuration) / tickDuration
+    val tickProgress = 1f - currentProgress
 
     val bellyHeightScale by animateFloatAsState(
-        targetValue = if (tickProgress < 0.2f) 1.15f else 1.0f,
+        targetValue = if (tickProgress < 0.2f && !isPaused) 1.15f else 1.0f,
         animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
         label = "croak"
     )
@@ -507,12 +729,17 @@ fun FrogVisual(timeLeft: Float, isCritical: Boolean) {
     var timeAccumulator by remember { mutableFloatStateOf(0.5f) }
     val currentIsCritical by rememberUpdatedState(isCritical)
 
+    // PARTICLE LOOP: runs continuously regardless of pause
     LaunchedEffect(Unit) {
         while (true) {
             withFrameNanos { nanos ->
+                // Always calculate dt so particles update
                 val dt = if (lastFrameTime == 0L) 0.016f else ((nanos - lastFrameTime) / 1_000_000_000f).coerceAtMost(0.1f)
                 lastFrameTime = nanos
 
+                // Only accumulate time for SPAWNING if not paused.
+                // Physics always run.
+                // FIX: REMOVED !isPaused so it KEEPS SPAWNING if critical, even when paused.
                 if (currentIsCritical) {
                     timeAccumulator += dt
                 }
@@ -532,7 +759,11 @@ fun FrogVisual(timeLeft: Float, isCritical: Boolean) {
         }
     }
 
-    Box(contentAlignment = Alignment.Center, modifier = Modifier.size(300.dp)) {
+    // REMOVED RIPPLE: indication = null
+    Box(contentAlignment = Alignment.Center, modifier = Modifier.size(300.dp).clickable(
+        interactionSource = remember { MutableInteractionSource() },
+        indication = null
+    ) { onTogglePause() }) {
         Canvas(modifier = Modifier.fillMaxSize()) {
             if (frame >= 0) Unit
 
@@ -549,6 +780,7 @@ fun FrogVisual(timeLeft: Float, isCritical: Boolean) {
             val spawnX = rightBumpCenterX + (bumpRadius * 1.05f)
             val spawnY = rightBumpCenterY - (bumpRadius * 1.15f)
 
+            // Spawn check (FIX: REMOVED !isPaused here too so it keeps spawning)
             if (currentIsCritical && timeAccumulator >= 0.5f) {
                 timeAccumulator -= 0.5f
 
@@ -572,6 +804,7 @@ fun FrogVisual(timeLeft: Float, isCritical: Boolean) {
                 }
             }
 
+            // --- DRAW FROG ---
             val outlineColor = Color.Black
             val outlineStroke = Stroke(width = 6.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
 
@@ -614,6 +847,8 @@ fun FrogVisual(timeLeft: Float, isCritical: Boolean) {
             val armHeight = mainRadius * 0.35f
             val armY = cy + mainRadius * 0.2f
             val armXOffset = mainRadius * 0.65f
+
+            // FIXED: Only check isPanic, ignore isPaused so it flails when paused
             val leftArmRot = if (isPanic) flailRotation else 30f
             val rightArmRot = if (isPanic) -flailRotation else -30f
 

@@ -24,6 +24,13 @@ object AudioService {
     private var clickSoundId: Int = 0
     private var alertSoundId: Int = 0
 
+    // Pause Sounds
+    private var beepSoundId: Int = 0
+    private var fizzleSoundId: Int = 0
+    private var flintSoundId: Int = 0
+    private var glassSoundId: Int = 0
+    private var boingSoundId: Int = 0
+
     private var fuseStreamId: Int = 0
     private var flailStreamId: Int = 0
 
@@ -31,7 +38,6 @@ object AudioService {
     var explosionVolume: Float = 1.0f
 
     fun init(context: Context) {
-        // PREVENT RE-INIT: If soundPool exists, keep using it (survives rotation)
         if (soundPool != null) return
 
         val audioAttributes = AudioAttributes.Builder()
@@ -44,7 +50,6 @@ object AudioService {
             .setAudioAttributes(audioAttributes)
             .build()
 
-        // Use applicationContext to avoid leaking the Activity context
         val appContext = context.applicationContext
         soundPool?.let {
             tickSoundId = it.load(appContext, R.raw.tick, 1)
@@ -58,20 +63,18 @@ object AudioService {
             dingSoundId = it.load(appContext, R.raw.ding, 1)
             clickSoundId = it.load(appContext, R.raw.click, 1)
             alertSoundId = it.load(appContext, R.raw.alert, 1)
+
+            beepSoundId = it.load(appContext, R.raw.beep, 1)
+            fizzleSoundId = it.load(appContext, R.raw.fizzle, 1)
+            flintSoundId = it.load(appContext, R.raw.flint, 1)
+            glassSoundId = it.load(appContext, R.raw.glass, 1)
+            boingSoundId = it.load(appContext, R.raw.boing, 1)
         }
     }
 
-    fun playTick() {
-        soundPool?.play(tickSoundId, timerVolume, timerVolume, 1, 0, 1f)
-    }
-
-    fun playClockTick() {
-        soundPool?.play(clockSoundId, timerVolume * 0.5f, timerVolume * 0.5f, 1, 0, 1f)
-    }
-
-    fun playClick() {
-        soundPool?.play(clickSoundId, timerVolume, timerVolume, 1, 0, 1f)
-    }
+    fun playTick() { soundPool?.play(tickSoundId, timerVolume, timerVolume, 1, 0, 1f) }
+    fun playClockTick() { soundPool?.play(clockSoundId, timerVolume * 0.5f, timerVolume * 0.5f, 1, 0, 1f) }
+    fun playClick() { soundPool?.play(clickSoundId, timerVolume, timerVolume, 1, 0, 1f) }
 
     fun playCroak(isFast: Boolean = false) {
         val soundId = if (isFast) croakFastSoundId else croakSoundId
@@ -79,17 +82,14 @@ object AudioService {
         soundPool?.play(soundId, timerVolume, timerVolume, 1, 0, pitch)
     }
 
-    fun playBombCroak() {
-        soundPool?.play(bombCroakSoundId, timerVolume, timerVolume, 1, 0, 1f)
-    }
-
-    fun playAlert() {
-        soundPool?.play(alertSoundId, timerVolume, timerVolume, 1, 0, 1f)
-    }
+    fun playBombCroak() { soundPool?.play(bombCroakSoundId, timerVolume, timerVolume, 1, 0, 1f) }
+    fun playAlert() { soundPool?.play(alertSoundId, timerVolume, timerVolume, 1, 0, 1f) }
+    fun playDing() { soundPool?.play(dingSoundId, timerVolume, timerVolume, 1, 0, 1f) }
 
     fun playFlail() {
         if (flailStreamId != 0) soundPool?.stop(flailStreamId)
-        flailStreamId = soundPool?.play(flailSoundId, timerVolume, timerVolume, 1, 0, 1f) ?: 0
+        // FIX: Set loop to -1 (infinite) so it keeps playing while paused
+        flailStreamId = soundPool?.play(flailSoundId, timerVolume, timerVolume, 1, -1, 1f) ?: 0
     }
 
     fun stopFlail() {
@@ -99,12 +99,19 @@ object AudioService {
         }
     }
 
-    fun playDing() {
-        soundPool?.play(dingSoundId, timerVolume, timerVolume, 1, 0, 1f)
+    fun playPauseInteraction(style: String, isPausing: Boolean) {
+        val soundId = when (style) {
+            "C4" -> beepSoundId
+            "FUSE" -> if (isPausing) fizzleSoundId else flintSoundId
+            "DYNAMITE" -> glassSoundId
+            "FROG" -> boingSoundId
+            else -> clickSoundId
+        }
+        soundPool?.play(soundId, timerVolume, timerVolume, 1, 0, 1f)
     }
 
     fun playExplosion(context: Context) {
-        stopAll() // Silence looping sounds immediately
+        stopAll()
         soundPool?.play(explosionSoundId, explosionVolume, explosionVolume, 2, 0, 1f)
 
         val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -125,10 +132,7 @@ object AudioService {
     }
 
     fun startFuse(startMuffled: Boolean) {
-        // IDEMPOTENCY CHECK: If already playing, do nothing.
-        // This allows 'startFuse' to be called on rotation without restarting the audio track.
         if (fuseStreamId != 0) return
-
         val volume = if (startMuffled) timerVolume * 0.3f else timerVolume
         fuseStreamId = soundPool?.play(fuseSoundId, volume, volume, 1, -1, 1f) ?: 0
     }
@@ -146,7 +150,6 @@ object AudioService {
         }
     }
 
-    // Helper to stop everything (used on Abort/Reset)
     fun stopAll() {
         stopFuse()
         stopFlail()
