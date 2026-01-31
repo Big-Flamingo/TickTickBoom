@@ -108,7 +108,7 @@ class MainActivity : ComponentActivity() {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         AudioService.init(this)
 
-        val prefs = getSharedPreferences("bomb_timer_prefs", Context.MODE_PRIVATE)
+        val prefs = getSharedPreferences("bomb_timer_prefs", MODE_PRIVATE)
         AudioService.timerVolume = prefs.getFloat("vol_timer", 0.8f)
         AudioService.explosionVolume = prefs.getFloat("vol_explode", 1.0f)
 
@@ -229,7 +229,7 @@ fun BombApp() {
                 onTogglePause = { handleTogglePause() },
                 onUpdateExplosionOrigin = { explosionOrigin = it }
             )
-            AppState.EXPLODED -> ExplosionScreen(colors, bombStyle, explosionOrigin, { handleReset() })
+            AppState.EXPLODED -> ExplosionScreen(colors, bombStyle, explosionOrigin) { handleReset() }
         }
     }
 }
@@ -293,12 +293,13 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, onToggleTheme: () -> Uni
             wobbleAnim.snapTo(0f); wobbleAnim.animateTo(-15f, tween(50)); wobbleAnim.animateTo(15f, tween(50)); wobbleAnim.animateTo(0f, spring(stiffness = Spring.StiffnessMediumLow))
             if (easterEggTaps >= 3) {
                 val screenHeight = context.resources.displayMetrics.heightPixels.toFloat()
+                // Frog falls DOWN
                 flyAwayAnim.animateTo(screenHeight + 500f, tween(800, easing = FastOutSlowInEasing))
 
-                var min = minText.toIntOrNull() ?: 5
+                // OPTIMIZATION: 'min' is never modified, so use 'val'
+                val min = minText.toIntOrNull() ?: 5
                 var max = maxText.toIntOrNull() ?: 10
 
-                // FIX: Silent Correction to prevent crash
                 if (max < min) max = min
 
                 prefs.edit { putInt("min", min); putInt("max", max); putFloat("vol_timer", timerVol); putFloat("vol_explode", explodeVol) }
@@ -306,7 +307,7 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, onToggleTheme: () -> Uni
 
                 onStart(TimerSettings(min, max, "FROG"))
 
-                easterEggTaps = 0; delay(500); flyAwayAnim.snapTo(0f)
+                // OPTIMIZATION: Removed dead code (resets) here because the screen is about to be destroyed.
             }
         }
     }
@@ -326,17 +327,15 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, onToggleTheme: () -> Uni
             flyAwayAnim.animateTo(-screenHeight - 500f, tween(800, easing = FastOutSlowInEasing))
 
             // 4. Start Game
-            var min = minText.toIntOrNull() ?: 5
+            // OPTIMIZATION: 'min' is never modified, so use 'val'
+            val min = minText.toIntOrNull() ?: 5
             var max = maxText.toIntOrNull() ?: 10
 
-            // FIX: Silent Correction to prevent crash
             if (max < min) max = min
 
             onStart(TimerSettings(min, max, "HEN"))
 
-            // 5. Reset for next time
-            delay(500)
-            flyAwayAnim.snapTo(0f)
+            // OPTIMIZATION: Removed dead code (resets) here.
         }
     }
 
@@ -704,7 +703,7 @@ fun BombVisualContent(
         "C4" -> C4Visual(isLedOn, isDarkMode, isPaused, onTogglePause)
         "DYNAMITE" -> DynamiteVisual(timeLeft, isPaused, onTogglePause)
         "FROG" -> FrogVisual(timeLeft, isCritical, isPaused, onTogglePause)
-        "HEN" -> HenVisual(timeLeft, isCritical, isPaused, onTogglePause, eggWobbleRotation, henSequenceElapsed)
+        "HEN" -> HenVisual(timeLeft, isPaused, onTogglePause, eggWobbleRotation, henSequenceElapsed)
     }
 }
 
