@@ -301,10 +301,6 @@ fun BombScreen(
     var hasPlayedAlert by rememberSaveable { mutableStateOf(false) }
     var hasPlayedFly by rememberSaveable { mutableStateOf(false) }
 
-    var hasCracked1 by rememberSaveable { mutableStateOf(false) }
-    var hasCracked2 by rememberSaveable { mutableStateOf(false) }
-    var hasCracked3 by rememberSaveable { mutableStateOf(false) }
-
     var lastTickRunTime by rememberSaveable { mutableLongStateOf((initialElapsed * 1000).toLong() - 1000) }
 
     // HEN ANIMATION STATE (Linear, always starts at 0)
@@ -526,7 +522,15 @@ fun BombScreen(
                             )
 
                             // Actual Text Elements
-                            BombTextContent(style, timeLeft, isFuseFinished, isPaused, colors, henSequenceElapsed, modifier = Modifier)
+                            BombTextContent(
+                                style = style,
+                                timeLeft = timeLeft,
+                                isCritical = isFuseFinished,
+                                isPaused = isPaused,
+                                colors = colors,
+                                modifier = Modifier, // Passed explicitly
+                                henSequenceElapsed = henSequenceElapsed // Named argument prevents mix-up
+                            )
 
                             Spacer(modifier = Modifier.height(16.dp))
 
@@ -538,7 +542,14 @@ fun BombScreen(
             } else {
                 // PORTRAIT LAYOUT (Unchanged)
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    BombTextContent(style, timeLeft, isFuseFinished, isPaused, colors, henSequenceElapsed)
+                    BombTextContent(
+                        style = style,
+                        timeLeft = timeLeft,
+                        isCritical = isFuseFinished,
+                        isPaused = isPaused,
+                        colors = colors,
+                        henSequenceElapsed = henSequenceElapsed // Named argument skips over the 'modifier' slot safely
+                    )
                     Spacer(modifier = Modifier.height(32.dp))
                     Box(modifier = Modifier.size(300.dp))
                     Spacer(modifier = Modifier.height(64.dp))

@@ -328,4 +328,16 @@ object AudioService {
         stopWhistle()
         stopLoudCluck()
     }
+
+    fun release() {
+        stopAll()
+        soundPool?.release()
+        soundPool = null
+        slidePlayer?.release()
+        slidePlayer = null
+        wingFlapPlayer?.release()
+        wingFlapPlayer = null
+        whistlePlayer?.release()
+        whistlePlayer = null
+    }
 }

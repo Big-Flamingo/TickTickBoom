@@ -45,6 +45,14 @@ class MainActivity : ComponentActivity() {
             AudioService.stopAll()
         }
     }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        // Only release resources if the app is actually closing (not rotating)
+        if (!isChangingConfigurations) {
+            AudioService.release()
+        }
+    }
 }
 
 @Composable

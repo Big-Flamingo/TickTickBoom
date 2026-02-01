@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.rounded.DeveloperBoard
 import androidx.compose.material3.*
@@ -28,21 +27,9 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.PathOperation
-import androidx.compose.ui.graphics.Shadow
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.StrokeJoin
-import androidx.compose.ui.graphics.asAndroidPath
-import androidx.compose.ui.graphics.asComposePath
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.rotate
-import androidx.compose.ui.graphics.drawscope.withTransform
-import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.*
+import androidx.compose.ui.graphics.drawscope.* // <--- THIS .* FIXES THE PIVOT ERRORS
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
@@ -50,20 +37,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.launch
-import kotlin.math.PI
-import kotlin.math.cos
-import kotlin.math.sin
-import kotlin.math.atan2
-import kotlin.math.sqrt
-import kotlin.math.ceil
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlin.math.*
 import kotlin.random.Random
 
 // --- DEBUG TOGGLE ---
-const val DEBUG_MODE = false // Set to false when done testing
+const val DEBUG_MODE = false
 
-// --- PARTICLE CLASSES ---
+// --- LOCAL DATA CLASSES ---
 data class FrogSweatParticle(
     var x: Float,
     var y: Float,
@@ -85,11 +67,17 @@ data class VisualTextEffect(
 )
 
 @Composable
-fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors, isPaused: Boolean, onTogglePause: () -> Unit, isDarkMode: Boolean) { // <--- Added isDarkMode
+fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors, isPaused: Boolean, onTogglePause: () -> Unit, isDarkMode: Boolean) {
     val sparks = remember { mutableListOf<Spark>() }
     val smokePuffs = remember { mutableListOf<SmokeParticle>() }
     var frame by remember { mutableLongStateOf(0L) }
     var lastFrameTime = remember { 0L }
+
+    // OPTIMIZATION: Cache Paths and Measures
+    val fusePath = remember { Path() }
+    val androidSegmentPath = remember { android.graphics.Path() }
+    val pathMeasure = remember { android.graphics.PathMeasure() }
+    var cachedSize by remember { mutableStateOf(Size.Zero) }
 
     val infiniteTransition = rememberInfiniteTransition("glint")
     val glintScale by infiniteTransition.animateFloat(
@@ -98,7 +86,7 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors, isPaused
     )
 
     val density = LocalDensity.current
-
+    // Dimensions
     val fuseYOffset = with(density) { 5.dp.toPx() }
     val protrusionW = with(density) { 16.dp.toPx() }
     val protrusionH = with(density) { 8.dp.toPx() }
@@ -127,21 +115,21 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors, isPaused
                 val dt = if (lastFrameTime == 0L) 0.016f else (nanos - lastFrameTime) / 1_000_000_000f
                 lastFrameTime = nanos
 
-                val sparkIter = sparks.iterator()
-                while (sparkIter.hasNext()) {
-                    val spark = sparkIter.next()
+                // OPTIMIZATION: Reverse loop to allow removing items without Iterator
+                for (i in sparks.indices.reversed()) {
+                    val spark = sparks[i]
                     spark.life -= dt
                     spark.x += spark.vx * dt * 100
                     spark.y += spark.vy * dt * 100 + (9.8f * dt * dt * 50)
-                    if (spark.life <= 0) sparkIter.remove()
+                    if (spark.life <= 0) sparks.removeAt(i)
                 }
 
-                val smokeIter = smokePuffs.iterator()
-                while (smokeIter.hasNext()) {
-                    val puff = smokeIter.next()
+                for (i in smokePuffs.indices.reversed()) {
+                    val puff = smokePuffs[i]
                     puff.life -= dt
-                    if (puff.life <= 0) smokeIter.remove()
-                    else {
+                    if (puff.life <= 0) {
+                        smokePuffs.removeAt(i)
+                    } else {
                         puff.x += puff.vx * dt * 50 + (Math.random() - 0.5f).toFloat() * 10f * dt
                         puff.y += puff.vy * dt * 50
                         val p = 1f - (puff.life / puff.maxLife)
@@ -171,25 +159,42 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors, isPaused
                     }
                 }
         ) {
-            if (frame >= 0) Unit
+            if (frame >= 0) Unit // Force redraw on frame change
 
             val width = size.width
             val height = size.height
+
+            // OPTIMIZATION: Only rebuild path if size changes
+            if (size != cachedSize) {
+                fusePath.reset()
+                val bombCenterX = width / 2
+                val bombCenterY = height * 0.6f
+                val bodyRadius = width * 0.28f
+                val neckTopY = bombCenterY - bodyRadius - holeOffset
+                val protrusionTopY = neckTopY - protrusionH + neckGap
+                val fuseBaseX = bombCenterX
+                val fuseBaseY = protrusionTopY
+
+                fusePath.moveTo(fuseBaseX, fuseBaseY)
+                fusePath.quadraticTo(width * 0.6f, height * 0.1f, width * 0.75f, height * 0.15f)
+                fusePath.quadraticTo(width * 0.85f, height * 0.2f, width * 0.8f, height * 0.3f)
+
+                cachedSize = size
+            }
+
             val bombCenterX = width / 2
             val bombCenterY = height * 0.6f
             val bodyRadius = width * 0.28f
             val neckTopY = bombCenterY - bodyRadius - holeOffset
-
             val shadowW = width * 0.6f
             val shadowH = 20.dp.toPx()
             val shadowCenterY = bombCenterY + bodyRadius
 
-            // FIX: Reflect the Gray Body in Dark Mode
             val shadowColor = if (isDarkMode) Color(0xFF475569) else Color.Black
             val shadowAlpha = if (isDarkMode) 0.2f else 0.2f
 
             drawOval(
-                color = shadowColor.copy(alpha = shadowAlpha), // <--- MUST USE VARIABLES HERE
+                color = shadowColor.copy(alpha = shadowAlpha),
                 topLeft = Offset(bombCenterX - shadowW / 2, shadowCenterY - shadowH / 2),
                 size = Size(shadowW, shadowH)
             )
@@ -207,44 +212,37 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors, isPaused
             val fuseBase = Offset(bombCenterX, protrusionTopY)
 
             if (isCritical && !isPaused) {
-                drawCircle(
-                    brush = Brush.radialGradient(
-                        colors = listOf(NeonRed.copy(alpha=0.6f), NeonRed.copy(alpha=0f)),
-                        center = fuseBase,
-                        radius = 20.dp.toPx()
-                    ),
-                    radius = 20.dp.toPx(),
-                    center = fuseBase
-                )
+                drawCircle(brush = Brush.radialGradient(colors = listOf(NeonRed.copy(alpha=0.6f), NeonRed.copy(alpha=0f)), center = fuseBase, radius = 20.dp.toPx()), radius = 20.dp.toPx(), center = fuseBase)
                 drawCircle(color = Color.Black, radius = fuseHoleRad, center = fuseBase)
             } else {
                 drawCircle(color = Color(0xFF0F172A), radius = fuseHoleRad, center = fuseBase)
             }
 
-            val path = Path().apply {
-                moveTo(fuseBase.x, fuseBase.y)
-                quadraticTo(width * 0.6f, height * 0.1f, width * 0.75f, height * 0.15f)
-                quadraticTo(width * 0.85f, height * 0.2f, width * 0.8f, height * 0.3f)
-            }
-
-            val androidMeasure = android.graphics.PathMeasure(path.asAndroidPath(), false)
-            val length = androidMeasure.length
+            // MEASURE PATH
+            // Use cached path, no new allocations
+            pathMeasure.setPath(fusePath.asAndroidPath(), false)
+            val length = pathMeasure.length
             val effectiveProgress = if (isCritical) 1f else progress
             val currentBurnPoint = length * (1f - effectiveProgress)
 
             if (!isCritical) {
-                val androidSegmentPath = android.graphics.Path()
-                androidMeasure.getSegment(0f, currentBurnPoint, androidSegmentPath, true)
-                drawPath(path = androidSegmentPath.asComposePath(), color = Color(0xFFD6D3D1), style = Stroke(width = strokeW, cap = StrokeCap.Round))
+                androidSegmentPath.rewind()
+                pathMeasure.getSegment(0f, currentBurnPoint, androidSegmentPath, true)
+
+                // FIXED: Direct Compose Draw call
+                drawPath(
+                    path = androidSegmentPath.asComposePath(),
+                    color = Color(0xFFD6D3D1),
+                    style = Stroke(width = strokeW, cap = StrokeCap.Round)
+                )
             }
 
             drawArc(color = Color(0xFF64748B), startAngle = 0f, sweepAngle = 180f, useCenter = false, topLeft = rimRect.topLeft, size = rimRect.size, style = Stroke(width = rimStrokeW))
             drawArc(color = Color(0xFF94A3B8), startAngle = 20f, sweepAngle = 140f, useCenter = false, topLeft = rimRect.topLeft, size = rimRect.size, style = Stroke(width = rimHighlightStrokeW))
 
             val pos = floatArrayOf(0f, 0f)
-            androidMeasure.getPosTan(currentBurnPoint, pos, null)
+            pathMeasure.getPosTan(currentBurnPoint, pos, null)
             val sparkCenter = Offset(pos[0], pos[1])
-
             currentSparkCenter = sparkCenter
 
             if (!isPaused) {
@@ -411,6 +409,7 @@ fun DynamiteVisual(timeLeft: Float, isPaused: Boolean, onTogglePause: () -> Unit
         style = TextStyle(color = Color.Black.copy(alpha=0.3f), fontSize = 14.sp, fontWeight = FontWeight.Black, fontFamily = CustomFont)
     )
 
+    // OPTIMIZATION: Custom saver for the visual effects list
     val textEffectsSaver = listSaver(
         save = { stateList: SnapshotStateList<VisualTextEffect> ->
             stateList.map { effect ->
@@ -431,7 +430,6 @@ fun DynamiteVisual(timeLeft: Float, isPaused: Boolean, onTogglePause: () -> Unit
             savedList.forEach { item ->
                 @Suppress("UNCHECKED_CAST")
                 val props = item as List<Any>
-
                 @Suppress("UNCHECKED_CAST")
                 val gradInts = props[4] as List<Int>
 
@@ -499,22 +497,16 @@ fun DynamiteVisual(timeLeft: Float, isPaused: Boolean, onTogglePause: () -> Unit
                 val dt = if (lastTime == 0L) 0.016f else (nanos - lastTime) / 1_000_000_000f
                 lastTime = nanos
 
-                val iter = textEffects.listIterator()
-                while (iter.hasNext()) {
-                    val effect = iter.next()
+                for (i in textEffects.indices.reversed()) {
+                    val effect = textEffects[i]
                     val newLife = effect.life - dt
 
                     if (newLife <= 0) {
-                        iter.remove()
+                        textEffects.removeAt(i)
                     } else {
                         val newY = effect.y - (15f * dt)
                         val newAlpha = (newLife / 1.0f).coerceIn(0f, 1f)
-
-                        iter.set(effect.copy(
-                            y = newY,
-                            life = newLife,
-                            alpha = newAlpha
-                        ))
+                        textEffects[i] = effect.copy(y = newY, life = newLife, alpha = newAlpha)
                     }
                 }
             }
@@ -543,11 +535,7 @@ fun DynamiteVisual(timeLeft: Float, isPaused: Boolean, onTogglePause: () -> Unit
         }
 
         Box(
-            modifier = Modifier
-                .offset(y = 15.dp)
-                .size(160.dp)
-                .clip(CircleShape)
-                .clickable { onTogglePause() }
+            modifier = Modifier.offset(y = 15.dp).size(160.dp).clip(CircleShape).clickable { onTogglePause() }
         ) {
             Canvas(modifier = Modifier.fillMaxSize()) {
                 val clockCenter = center
@@ -574,37 +562,17 @@ fun DynamiteVisual(timeLeft: Float, isPaused: Boolean, onTogglePause: () -> Unit
         Canvas(modifier = Modifier.fillMaxSize()) {
             val cx = size.width / 2
             val cy = size.height / 2
-
             textEffects.forEach { effect ->
                 val style = if (effect.gradientColors != null) {
                     val fadedColors = effect.gradientColors.map { it.copy(alpha = effect.alpha) }
-                    TextStyle(
-                        brush = Brush.verticalGradient(fadedColors),
-                        fontSize = effect.fontSize.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = CustomFont
-                    )
+                    TextStyle(brush = Brush.verticalGradient(fadedColors), fontSize = effect.fontSize.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont)
                 } else {
-                    TextStyle(
-                        color = effect.color.copy(alpha = effect.alpha),
-                        fontSize = effect.fontSize.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = CustomFont
-                    )
+                    TextStyle(color = effect.color.copy(alpha = effect.alpha), fontSize = effect.fontSize.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont)
                 }
-
-                val textResult = textMeasurer.measure(
-                    text = effect.text,
-                    style = style
-                )
-
+                val textResult = textMeasurer.measure(text = effect.text, style = style)
                 val drawX = cx + effect.x - (textResult.size.width / 2)
                 val drawY = cy + effect.y - (textResult.size.height / 2)
-
-                drawText(
-                    textLayoutResult = textResult,
-                    topLeft = Offset(drawX, drawY)
-                )
+                drawText(textLayoutResult = textResult, topLeft = Offset(drawX, drawY))
             }
         }
     }

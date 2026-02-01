@@ -202,8 +202,8 @@ fun BombTextContent(
     isCritical: Boolean,
     isPaused: Boolean,
     colors: AppColors,
-    henSequenceElapsed: Float = 0f,
-    modifier: Modifier = Modifier.padding(bottom = 48.dp)
+    modifier: Modifier = Modifier.padding(bottom = 48.dp),
+    henSequenceElapsed: Float = 0f
 ) {
     if (isPaused) {
         when (style) {
