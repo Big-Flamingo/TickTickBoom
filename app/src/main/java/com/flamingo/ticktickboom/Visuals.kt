@@ -24,7 +24,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -61,6 +60,9 @@ import kotlin.math.ceil
 import kotlinx.coroutines.delay
 import kotlin.random.Random
 
+// --- DEBUG TOGGLE ---
+const val DEBUG_MODE = false // Set to false when done testing
+
 // --- PARTICLE CLASSES ---
 data class FrogSweatParticle(
     var x: Float,
@@ -83,7 +85,7 @@ data class VisualTextEffect(
 )
 
 @Composable
-fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors, isPaused: Boolean, onTogglePause: () -> Unit) {
+fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors, isPaused: Boolean, onTogglePause: () -> Unit, isDarkMode: Boolean) { // <--- Added isDarkMode
     val sparks = remember { mutableListOf<Spark>() }
     val smokePuffs = remember { mutableListOf<SmokeParticle>() }
     var frame by remember { mutableLongStateOf(0L) }
@@ -152,7 +154,7 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors, isPaused
         }
     }
 
-    Box(contentAlignment = Alignment.Center, modifier = Modifier.size(300.dp)) {
+    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
         var currentSparkCenter by remember { mutableStateOf(Offset.Zero) }
 
         Canvas(
@@ -182,8 +184,12 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors, isPaused
             val shadowH = 20.dp.toPx()
             val shadowCenterY = bombCenterY + bodyRadius
 
+            // FIX: Reflect the Gray Body in Dark Mode
+            val shadowColor = if (isDarkMode) Color(0xFF475569) else Color.Black
+            val shadowAlpha = if (isDarkMode) 0.2f else 0.2f
+
             drawOval(
-                color = Color.Black.copy(alpha = 0.2f),
+                color = shadowColor.copy(alpha = shadowAlpha), // <--- MUST USE VARIABLES HERE
                 topLeft = Offset(bombCenterX - shadowW / 2, shadowCenterY - shadowH / 2),
                 size = Size(shadowW, shadowH)
             )
@@ -405,7 +411,6 @@ fun DynamiteVisual(timeLeft: Float, isPaused: Boolean, onTogglePause: () -> Unit
         style = TextStyle(color = Color.Black.copy(alpha=0.3f), fontSize = 14.sp, fontWeight = FontWeight.Black, fontFamily = CustomFont)
     )
 
-    // FIX: Removed explicit type arguments <...> (Line 415 warning)
     val textEffectsSaver = listSaver(
         save = { stateList: SnapshotStateList<VisualTextEffect> ->
             stateList.map { effect ->
@@ -427,7 +432,6 @@ fun DynamiteVisual(timeLeft: Float, isPaused: Boolean, onTogglePause: () -> Unit
                 @Suppress("UNCHECKED_CAST")
                 val props = item as List<Any>
 
-                // FIX: Inline access to props[4] to avoid intermediate variable warnings (Line 470/483)
                 @Suppress("UNCHECKED_CAST")
                 val gradInts = props[4] as List<Int>
 
@@ -607,80 +611,7 @@ fun DynamiteVisual(timeLeft: Float, isPaused: Boolean, onTogglePause: () -> Unit
 }
 
 @Composable
-fun ExplosionScreen(colors: AppColors, style: String?, explosionOrigin: Offset? = null, onReset: () -> Unit) {
-    val context = LocalContext.current
-    val particles = remember {
-        val colorsList = listOf(NeonRed, NeonOrange, Color.Yellow, Color.White)
-        List(100) { i -> Particle(i, Math.random() * 360, (200 + Math.random() * 800).toFloat(), (3 + Math.random() * 5).toFloat(), colorsList.random(), (Math.random() * 20 - 10).toFloat()) }
-    }
-    val smoke = remember {
-        List(30) { _ -> SmokeParticle(x = 0f, y = 0f, vx = (Math.random() * 100 - 50).toFloat(), vy = (Math.random() * 100 - 50).toFloat(), size = (20 + Math.random() * 40).toFloat(), alpha = 0.8f, life = 1f, maxLife = 1f) }
-    }
-
-    var hasPlayedExplosion by rememberSaveable { mutableStateOf(false) }
-    val animationProgress = remember { Animatable(if (hasPlayedExplosion) 1f else 0f) }
-
-    LaunchedEffect(Unit) {
-        if (!hasPlayedExplosion) {
-            AudioService.playExplosion(context)
-            launch { animationProgress.animateTo(1f, tween(1500, easing = LinearOutSlowInEasing)) }
-            hasPlayedExplosion = true
-        }
-    }
-
-    Box(modifier = Modifier.fillMaxSize().background(Color(0xFF431407)), contentAlignment = Alignment.Center) {
-        Box(modifier = Modifier.fillMaxSize().background(Color(0x99DC2626)))
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val progress = animationProgress.value
-            val center = if (explosionOrigin != null && explosionOrigin != Offset.Zero) explosionOrigin else Offset(size.width / 2, size.height / 2)
-
-            smoke.forEach { s ->
-                val currentX = center.x + (s.vx * progress * 3f)
-                val currentY = center.y + (s.vy * progress * 3f)
-                val currentSize = s.size + (progress * 150f)
-                val currentAlpha = (s.alpha * (1f - progress)).coerceIn(0f, 1f)
-                drawCircle(color = colors.smokeColor.copy(alpha = currentAlpha), radius = currentSize, center = Offset(currentX, currentY))
-            }
-            particles.forEach { p ->
-                val rad = p.angle * (PI / 180)
-                val dist = p.velocity * progress * 2f
-                val x = center.x + (cos(rad) * dist).toFloat()
-                val y = center.y + (sin(rad) * dist).toFloat()
-                val alpha = (1f - progress).coerceIn(0f, 1f)
-                if (alpha > 0) drawCircle(color = p.color.copy(alpha = alpha), radius = p.size, center = Offset(x, y))
-            }
-            val shockwaveRadius = progress * size.width * 0.8f
-            val shockwaveAlpha = (1f - progress).coerceIn(0f, 1f)
-            if (shockwaveAlpha > 0) drawCircle(color = Color.White.copy(alpha = shockwaveAlpha * 0.5f), radius = shockwaveRadius, center = center, style = Stroke(width = 50f * (1f - progress)))
-        }
-
-        val flashAlpha = (1f - (animationProgress.value * 5)).coerceIn(0f, 1f)
-        if (flashAlpha > 0f) Box(modifier = Modifier.fillMaxSize().background(Color.White.copy(alpha = flashAlpha)))
-
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            val titleText = if (style == "FROG") "CROAKED" else "BOOM"
-            val titleSize = if (style == "FROG") 72.sp else 96.sp
-            Text(titleText, fontSize = titleSize, fontWeight = FontWeight.Black, style = TextStyle(brush = Brush.verticalGradient(listOf(Color.Yellow, NeonRed)), shadow = Shadow(color = NeonOrange, blurRadius = 40f)), fontFamily = CustomFont)
-            Spacer(modifier = Modifier.height(80.dp))
-
-            ActionButton(
-                text = "RESTART",
-                icon = Icons.Filled.Refresh,
-                color = Slate900.copy(alpha = 0.5f),
-                textColor = NeonOrange,
-                borderColor = NeonOrange,
-                borderWidth = 2.dp,
-                onClick = {
-                    AudioService.playClick()
-                    onReset()
-                }
-            )
-        }
-    }
-}
-
-@Composable
-fun FrogVisual(timeLeft: Float, isCritical: Boolean, isPaused: Boolean, onTogglePause: () -> Unit) {
+fun FrogVisual(timeLeft: Float, isCritical: Boolean, isPaused: Boolean, onTogglePause: () -> Unit, isDarkMode: Boolean) { // <--- Added isDarkMode
 
     val isPanic = timeLeft <= 1.05f
 
@@ -799,8 +730,12 @@ fun FrogVisual(timeLeft: Float, isCritical: Boolean, isPaused: Boolean, onToggle
             val shadowHeight = bodyRadius * 0.4f
             val floorY = cy + bodyRadius * 1.05f
 
+            // FIX: Reflect the Green Body in Dark Mode
+            val shadowColor = if (isDarkMode) frogGreen else Color.Black
+            val shadowAlpha = if (isDarkMode) 0.2f else 0.2f
+
             drawOval(
-                color = Color.Black.copy(alpha = 0.2f),
+                color = shadowColor.copy(alpha = shadowAlpha), // <--- MUST USE VARIABLES HERE
                 topLeft = Offset(cx - shadowWidth / 2, floorY - shadowHeight / 2),
                 size = Size(shadowWidth, shadowHeight)
             )
@@ -1025,7 +960,13 @@ fun HenVisual(
     isPaused: Boolean,
     onTogglePause: () -> Unit,
     eggWobbleRotation: Float,
-    henSequenceElapsed: Float
+    henSequenceElapsed: Float,
+    showEgg: Boolean = true,
+    crackStage: Int = 0, // NEW: Explicit stage (0, 1, 2, 3)
+    isPainedBeakOpen: Boolean = false, // NEW PARAM
+    isPainedBeakClosed: Boolean = false, // <--- NEW PARAM
+    isDarkMode: Boolean = false, // <--- NEW PARAM
+    modifier: Modifier = Modifier.fillMaxSize() // FIX: Default to full size
 ) {
     val infiniteTransition = rememberInfiniteTransition(label = "hen_anim")
     val wingFlapRotation by infiniteTransition.animateFloat(
@@ -1034,29 +975,21 @@ fun HenVisual(
         label = "wing"
     )
 
-    // --- BOING ANIMATION SETUP ---
     val scope = rememberCoroutineScope()
     val boingAnim = remember { Animatable(1f) }
 
-    // --- BEAK LOGIC ---
     val fraction = timeLeft % 1f
-
-    // 1. Standard Ticking
     var isStandardBeakOpen = !isPaused && (fraction > 0.8f && fraction < 0.95f)
+    if (henSequenceElapsed > 0.0f) isStandardBeakOpen = false
 
-    if (henSequenceElapsed > 0.0f) {
-        isStandardBeakOpen = false
-    }
-
-    // 2. Rapid Cluck
     val isRapidCluck = if (henSequenceElapsed > 0.35f && henSequenceElapsed < 0.85f) {
         (henSequenceElapsed % 0.166f) < 0.08f
     } else {
         false
     }
 
-    // While in the launch window (0.3 - 1.0), use rapid cluck. Otherwise use standard (which is now false).
-    val isBeakOpen = if (henSequenceElapsed > 0.3f && henSequenceElapsed < 1.0f) isRapidCluck else isStandardBeakOpen
+    // LOGIC UPDATE: Calculate base open state, then apply Forced Close override
+    val baseBeakOpen = isPainedBeakOpen || (if (henSequenceElapsed > 0.3f && henSequenceElapsed < 1.0f) isRapidCluck else isStandardBeakOpen)
 
     // --- ANIMATION CALCULATOR ---
     var animOffsetY: Float
@@ -1066,7 +999,6 @@ fun HenVisual(
     var isFlapping = false
     var isSmushed = false
 
-    // Shadow Logic
     var henShadowAlpha = 1.0f
     var henShadowScale = 1.0f
     var eggShadowAlpha = 0.0f
@@ -1089,14 +1021,21 @@ fun HenVisual(
         animOffsetY = -2000f
         drawHenShadow = false
         eggShadowAlpha = 1.0f
-    } else if (henSequenceElapsed <= 2.75f) {
-        val t = (henSequenceElapsed - 2.5f) / 0.25f
-        animOffsetY = -1000f * (1f - t)
+    } else if (henSequenceElapsed <= 4.2f) {
+        // FIX 2: EXTENDED HOVER (Wait for 4.2s)
+        animOffsetY = -2000f
+        drawHenShadow = false
+        eggShadowAlpha = 1.0f
+    } else if (henSequenceElapsed <= 4.5f) {
+        // Fast Drop (Ends at 4.5s)
+        val t = (henSequenceElapsed - 4.2f) / 0.3f
+        animOffsetY = -2000f * (1f - t * t)
         glassScale = 1.0f + (t * 0.4f)
         isSliding = true
         drawHenShadow = false
         eggShadowAlpha = 1.0f
-    } else if (henSequenceElapsed <= 3.25f) {
+    } else if (henSequenceElapsed <= 6.0f) {
+        // FIX: EXTENDED SPLAT (4.5s to 6.0s = 1.5s gap)
         animOffsetY = 0f
         isSliding = true
         isSmushed = true
@@ -1105,7 +1044,8 @@ fun HenVisual(
         drawHenShadow = false
         eggShadowAlpha = 1.0f
     } else {
-        val t = (henSequenceElapsed - 3.25f) / 3.0f
+        // SLIDE (Starts at 6.0s)
+        val t = (henSequenceElapsed - 6.0f) / 3.0f
         animOffsetY = 4000f * t
         isSliding = true
         isSmushed = true
@@ -1115,52 +1055,105 @@ fun HenVisual(
         eggShadowAlpha = 1.0f
     }
 
-    val crackProgress = if (timeLeft <= 5f) (5f - timeLeft) / 5f else 0f
+    // The beak is effectively open if (Base Open OR Sliding) AND (NOT Forced Closed)
+    val effectiveBeakOpen = (baseBeakOpen || isSliding) && !isPainedBeakClosed
+
+    // FIX 3: ROBUST OFFSET TRACKING
+    val currentAnimOffsetY = remember { mutableFloatStateOf(0f) }
+    currentAnimOffsetY.floatValue = animOffsetY
+
     val density = LocalDensity.current
 
+    // FIX: SHADOW COLORS
+    // Hen reflects White (Body), Egg reflects Yellow (Shell)
+    val henShadowColor = if (isDarkMode) Color.White else Color.Black // <--- CHANGED FROM NeonRed
+    val eggShadowColor = if (isDarkMode) Color(0xFFFEF3C7) else Color.Black
+
+    val baseShadowAlpha = if (isDarkMode) 0.2f else 0.3f
+    val baseEggShadowAlpha = if (isDarkMode) 0.15f else 0.2f
+
+    // DEBUG STATE
+    var lastTapOffset by remember { mutableStateOf(Offset.Zero) }
+
+    // FIX: Using the passed modifier (fillMaxSize)
     Box(
         contentAlignment = Alignment.Center,
-        modifier = Modifier
-            .size(300.dp)
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null
-            ) {
-                // TRIGGER BOING ON CLICK
-                scope.launch {
-                    boingAnim.snapTo(1f)
-                    boingAnim.animateTo(0.9f, tween(50))
-                    boingAnim.animateTo(1.05f, tween(100))
-                    boingAnim.animateTo(1.0f, spring(dampingRatio = 0.4f, stiffness = 400f))
-                }
-                onTogglePause()
-            }
+        modifier = modifier
     ) {
-        Canvas(modifier = Modifier.fillMaxSize()) {
+        Canvas(modifier = Modifier
+            .fillMaxSize()
+            .pointerInput(Unit) {
+                detectTapGestures { tapOffset ->
+                    lastTapOffset = tapOffset
+                    val cx = size.width / 2
+                    val cy = size.height / 2
+                    val henBodyRadius = 110.dp.toPx()
+
+                    // 1. Hen Hitbox
+                    val henCenterY = cy + currentAnimOffsetY.floatValue
+                    val dxHen = tapOffset.x - cx
+                    val dyHen = tapOffset.y - henCenterY
+                    val distHen = sqrt(dxHen*dxHen + dyHen*dyHen)
+                    val hitHen = distHen <= henBodyRadius * 1.2f
+
+                    // 2. Egg Hitbox
+                    var hitEgg = false
+                    if (showEgg) {
+                        val eggCenterY = cy + henBodyRadius - 10.dp.toPx() - (75.dp.toPx())
+                        val dxEgg = tapOffset.x - cx
+                        val dyEgg = tapOffset.y - eggCenterY
+                        val distEgg = sqrt(dxEgg*dxEgg + dyEgg*dyEgg)
+                        if (distEgg <= 80.dp.toPx()) {
+                            hitEgg = true
+                        }
+                    }
+
+                    if (hitHen || hitEgg) {
+                        scope.launch {
+                            boingAnim.snapTo(1f)
+                            boingAnim.animateTo(0.9f, tween(50))
+                            boingAnim.animateTo(1.05f, tween(100))
+                            boingAnim.animateTo(1.0f, spring(dampingRatio = 0.4f, stiffness = 400f))
+                        }
+                        onTogglePause()
+                    }
+                }
+            }
+        ) {
             val cx = size.width / 2
             val cy = size.height / 2
             val henBodyRadius = 110.dp.toPx()
             val floorY = cy + henBodyRadius - 10.dp.toPx()
 
             with(density) {
-                // --- SHADOWS LAYER ---
                 if (drawHenShadow && henShadowAlpha > 0f) {
                     val hShadowW = henBodyRadius * 2.2f * henShadowScale
                     val hShadowH = henBodyRadius * 0.6f * henShadowScale
-                    drawOval(color = Color.Black.copy(alpha = 0.3f * henShadowAlpha), topLeft = Offset(cx - hShadowW/2, floorY - hShadowH/2), size = Size(hShadowW, hShadowH))
+
+                    // Use Dynamic Color
+                    drawOval(
+                        color = henShadowColor.copy(alpha = baseShadowAlpha * henShadowAlpha),
+                        topLeft = Offset(cx - hShadowW/2, floorY - hShadowH/2),
+                        size = Size(hShadowW, hShadowH)
+                    )
                 }
 
-                if (eggShadowAlpha > 0f) {
+                if (showEgg && eggShadowAlpha > 0f) {
                     val eggWidth = 120.dp.toPx()
                     val eShadowW = eggWidth * 0.8f
                     val eShadowH = 15.dp.toPx()
                     val wobbleX = if (!isPaused) eggWobbleRotation * 1.0f else 0f
-                    drawOval(color = Color.Black.copy(alpha = 0.2f * eggShadowAlpha), topLeft = Offset(cx - eShadowW/2 + wobbleX, floorY - eShadowH/2), size = Size(eShadowW, eShadowH))
+
+                    // Use Dynamic Color
+                    drawOval(
+                        color = eggShadowColor.copy(alpha = baseEggShadowAlpha * eggShadowAlpha),
+                        topLeft = Offset(cx - eShadowW/2 + wobbleX, floorY - eShadowH/2),
+                        size = Size(eShadowW, eShadowH)
+                    )
                 }
 
-                // --- EGG LAYER ---
-                val showEgg = henSequenceElapsed > 0.0f
-                if (showEgg) {
+                val shouldShowEgg = showEgg && henSequenceElapsed > 0.0f
+                if (shouldShowEgg) {
                     val eggScale = 1.0f
                     val currentRotation = if (!isPaused) eggWobbleRotation else 0f
                     val eggWidth = 120.dp.toPx()
@@ -1173,10 +1166,8 @@ fun HenVisual(
                         scale(eggScale, eggScale, pivot = Offset(cx, eggCenterY))
                         rotate(currentRotation, pivot = Offset(cx, floorY))
                     }) {
-                        // 1. Egg Body (Just the fill)
                         drawOval(color = eggColor, topLeft = Offset(cx - eggWidth/2, eggTop), size = Size(eggWidth, eggHeight))
 
-                        // 2. Specular Highlight (Shine)
                         withTransform({
                             rotate(-20f, pivot = Offset(cx - eggWidth * 0.2f, eggTop + eggHeight * 0.25f))
                         }) {
@@ -1187,28 +1178,26 @@ fun HenVisual(
                             )
                         }
 
-                        // 3. Cracks
                         val crackStroke = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
-                        if (crackProgress > 0.2f) {
+
+                        if (crackStage >= 1) { // Stage 1
                             val path1 = Path().apply { moveTo(cx, eggTop + eggHeight * 0.1f); lineTo(cx + 5, eggTop + eggHeight * 0.3f); lineTo(cx - 5, eggCenterY) }
                             drawPath(path1, Color.Black, style = crackStroke)
                         }
-                        if (crackProgress > 0.5f) {
+                        if (crackStage >= 2) { // Stage 2
                             val path2 = Path().apply { moveTo(cx - 5, eggCenterY); lineTo(cx - 25, eggCenterY + eggHeight * 0.2f); lineTo(cx - 15, eggCenterY + eggHeight * 0.35f) }
                             drawPath(path2, Color.Black, style = crackStroke)
                         }
-                        if (crackProgress > 0.8f) {
+                        if (crackStage >= 3) { // Stage 3
                             val path3 = Path().apply { moveTo(cx - 25, eggCenterY + eggHeight * 0.2f); lineTo(cx + 10, eggCenterY + eggHeight * 0.25f); lineTo(cx + 35, eggCenterY + eggHeight * 0.4f) }
                             drawPath(path3, Color.Black, style = crackStroke)
                         }
                     }
                 }
 
-                // --- HEN LAYER ---
                 val henY = cy + animOffsetY
 
-                if (henY > -2200f && henY < size.height + 5000f) {
-
+                if (henY > -3000f && henY < size.height + 5000f) {
                     val squashY = boingAnim.value
                     val stretchX = 2f - squashY
 
@@ -1222,9 +1211,7 @@ fun HenVisual(
                         val beakH = 24.dp.toPx()
                         val beakBaseHalfH = beakH / 2
 
-                        // 1. HEART COMB
                         val combPath = Path().apply {
-                            // FIX: Inlined 'bottomX' variable which was just 'cx' (Line 1221 warning)
                             val bottomY = henY - henBodyRadius + 35.dp.toPx()
                             val topY = henY - henBodyRadius - 45.dp.toPx()
                             val cpWidth = 45.dp.toPx()
@@ -1235,18 +1222,14 @@ fun HenVisual(
                         }
                         drawPath(combPath, NeonRed)
 
-                        // 2. Body White Fill
                         drawCircle(color = Color.White, radius = henBodyRadius, center = Offset(cx, henY))
 
-                        // SMUSH CONTACT PATCH
                         if (isSmushed) {
                             drawCircle(color = Color(0xFFE0E0E0), radius = henBodyRadius * 0.75f, center = Offset(cx, henY))
                         }
 
-                        // 3. Body Outline
                         drawCircle(color = Color.Black, radius = henBodyRadius, center = Offset(cx, henY), style = Stroke(width = 4.dp.toPx()))
 
-                        // 4. Wattle
                         val wattleTopX = faceEdgeX - 6.dp.toPx()
                         val wattleTopY = beakYBase + beakBaseHalfH - 2.dp.toPx()
                         val wattleWidth = 24.dp.toPx()
@@ -1259,18 +1242,16 @@ fun HenVisual(
                         }
                         drawPath(wattlePath, NeonRed)
 
-                        // 5. Beak
                         val beakLen = 26.dp.toPx()
                         val lowerBeakLen = beakLen * 0.6f
                         val beakPivot = Offset(faceEdgeX, beakYBase)
                         val upperBeak = Path().apply { moveTo(faceEdgeX, beakYBase - beakBaseHalfH); lineTo(faceEdgeX + beakLen, beakYBase); lineTo(faceEdgeX, beakYBase); close() }
                         val lowerBeak = Path().apply { moveTo(faceEdgeX, beakYBase); lineTo(faceEdgeX + lowerBeakLen, beakYBase); lineTo(faceEdgeX, beakYBase + beakBaseHalfH); close() }
-                        val upperRot = if (isBeakOpen || isSliding) -25f else 0f
-                        val lowerRot = if (isBeakOpen || isSliding) 15f else 0f
+                        val upperRot = if (effectiveBeakOpen) -25f else 0f
+                        val lowerRot = if (effectiveBeakOpen) 15f else 0f
                         withTransform({ rotate(degrees = upperRot, pivot = beakPivot) }) { drawPath(upperBeak, NeonOrange) }
                         withTransform({ rotate(degrees = lowerRot, pivot = beakPivot) }) { drawPath(lowerBeak, NeonOrange) }
 
-                        // 6. Eye
                         val eyeX = faceEdgeX - 25.dp.toPx()
                         val eyeYBase = henY - 25.dp.toPx()
 
@@ -1288,7 +1269,6 @@ fun HenVisual(
                             drawCircle(color = Color.White, radius = 2.dp.toPx(), center = Offset(eyeX - 3.dp.toPx(), eyeYBase + 3.dp.toPx()))
                         }
 
-                        // 7. Wing
                         val currentWingRot = if (isFlapping) wingFlapRotation else if (isSliding) -20f else 0f
                         val wingPivot = Offset(cx - 40.dp.toPx(), henY + 10.dp.toPx())
 
@@ -1298,6 +1278,21 @@ fun HenVisual(
                             drawArc(color = wingColor, startAngle = 10f, sweepAngle = 160f, useCenter = false, topLeft = Offset(wingPivot.x - 10.dp.toPx(), wingPivot.y - 30.dp.toPx()), size = Size(60.dp.toPx(), 65.dp.toPx()))
                             drawArc(color = Color.Black, startAngle = 10f, sweepAngle = 160f, useCenter = false, topLeft = Offset(wingPivot.x - 10.dp.toPx(), wingPivot.y - 30.dp.toPx()), size = Size(60.dp.toPx(), 65.dp.toPx()), style = Stroke(width = 4.dp.toPx(), cap = StrokeCap.Round))
                         }
+                    }
+                }
+
+                // --- DEBUG OVERLAY ---
+                if (DEBUG_MODE) {
+                    val henCenterY = cy + currentAnimOffsetY.floatValue
+                    drawCircle(color = Color.Red, radius = henBodyRadius * 1.2f, center = Offset(cx, henCenterY), style = Stroke(width = 3.dp.toPx()))
+
+                    if (showEgg) {
+                        val eggCenterY = cy + henBodyRadius - 10.dp.toPx() - (75.dp.toPx())
+                        drawCircle(color = Color.Blue, radius = 80.dp.toPx(), center = Offset(cx, eggCenterY), style = Stroke(width = 3.dp.toPx()))
+                    }
+
+                    if (lastTapOffset != Offset.Zero) {
+                        drawCircle(color = Color.Green, radius = 10.dp.toPx(), center = lastTapOffset)
                     }
                 }
             }

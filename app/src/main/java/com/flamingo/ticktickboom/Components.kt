@@ -24,6 +24,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.ui.text.input.ImeAction
 
 @Composable
 fun ActionButton(
@@ -90,7 +92,8 @@ fun TimeInput(
     onValueChange: (String) -> Unit,
     color: Color,
     colors: AppColors,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onDone: () -> Unit = {} // NEW: Action callback
 ) {
     Column(modifier = modifier.background(colors.surface.copy(alpha = 0.5f), RoundedCornerShape(16.dp)).border(1.dp, colors.border, RoundedCornerShape(16.dp)).padding(16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -99,8 +102,12 @@ fun TimeInput(
             Text(label, color = color, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont)
         }
         BasicTextField(
-            value = value, onValueChange = { if (it.all { char -> char.isDigit() }) onValueChange(it) },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            value = value,
+            onValueChange = { if (it.all { char -> char.isDigit() }) onValueChange(it) },
+            // NEW: Add ImeAction.Done
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+            // NEW: Trigger onDone when Enter is pressed
+            keyboardActions = KeyboardActions(onDone = { onDone() }),
             textStyle = TextStyle(color = colors.text, fontSize = 32.sp, fontWeight = FontWeight.Black, fontFamily = CustomFont),
             modifier = Modifier.padding(top = 8.dp)
         )
