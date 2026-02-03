@@ -660,7 +660,12 @@ fun ExplosionScreen(colors: AppColors, style: String?, explosionOrigin: Offset? 
         Box(modifier = Modifier.fillMaxSize().background(Color(0x99DC2626)))
         Canvas(modifier = Modifier.fillMaxSize()) {
             val progress = animationProgress.value
-            val center = if (explosionOrigin != null && explosionOrigin != Offset.Zero) explosionOrigin else Offset(size.width / 2, size.height / 2)
+            var center = if (explosionOrigin != null && explosionOrigin != Offset.Zero) explosionOrigin else Offset(size.width / 2, size.height / 2)
+
+            if (style == "HEN") {
+                val eggOffset = with(density) { 35.dp.toPx() }
+                center = center.copy(y = center.y + eggOffset)
+            }
 
             smoke.forEach { s ->
                 val currentX = center.x + (s.vx * progress * 3f)
