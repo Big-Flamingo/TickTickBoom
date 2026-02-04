@@ -629,12 +629,15 @@ fun FrogVisual(timeLeft: Float, isCritical: Boolean, isPaused: Boolean, onToggle
                     drawOval(color = FrogBelly, topLeft = Offset(cx - bellyWidth / 2, cy - (bodyRadius * 1.0f) * 0.05f), size = Size(bellyWidth, currentBellyHeight * 0.9f))
                     drawOval(color = Color.White.copy(alpha = 0.3f), topLeft = Offset(cx - bellyWidth * 0.3f, cy + (bodyRadius * 1.0f) * 0.1f), size = Size(bellyWidth * 0.2f, currentBellyHeight * 0.15f))
                     val armW = bodyRadius * 0.25f; val armH = bodyRadius * 0.35f; val armY = cy + bodyRadius * 0.2f; val armX = bodyRadius * 0.65f
+                    // Left Arm (sweepAngle 180f shows right side only)
                     rotate(if (isPanic) flailRotation else 30f, pivot = Offset(cx - armX, armY)) {
-                        drawArc(color = Color.Black, startAngle = -90f, sweepAngle = 270f, useCenter = false, topLeft = Offset(cx - armX - armW, armY - armH/2), size = Size(armW*2, armH), style = outlineStroke)
+                        drawArc(color = Color.Black, startAngle = -90f, sweepAngle = 180f, useCenter = false, topLeft = Offset(cx - armX - armW, armY - armH/2), size = Size(armW*2, armH), style = outlineStroke)
                         drawOval(color = FrogBody, topLeft = Offset(cx - armX - armW, armY - armH/2), size = Size(armW*2, armH))
                     }
+
+                    // Right Arm (sweepAngle 180f shows left side only)
                     rotate(if (isPanic) -flailRotation else -30f, pivot = Offset(cx + armX, armY)) {
-                        drawArc(color = Color.Black, startAngle = -90f, sweepAngle = -270f, useCenter = false, topLeft = Offset(cx + armX - armW, armY - armH/2), size = Size(armW*2, armH), style = outlineStroke)
+                        drawArc(color = Color.Black, startAngle = 90f, sweepAngle = 180f, useCenter = false, topLeft = Offset(cx + armX - armW, armY - armH/2), size = Size(armW*2, armH), style = outlineStroke)
                         drawOval(color = FrogBody, topLeft = Offset(cx + armX - armW, armY - armH/2), size = Size(armW*2, armH))
                     }
                     val eyeW = bumpRadius * 0.7f; val pupil = eyeW * 0.9f
@@ -684,6 +687,19 @@ fun FrogVisual(timeLeft: Float, isCritical: Boolean, isPaused: Boolean, onToggle
 @Composable
 fun HenVisual(modifier: Modifier = Modifier, timeLeft: Float, isPaused: Boolean, onTogglePause: () -> Unit, eggWobbleRotation: Float, henSequenceElapsed: Float, showEgg: Boolean = true, crackStage: Int = 0, isPainedBeakOpen: Boolean = false, isPainedBeakClosed: Boolean = false, isDarkMode: Boolean = false) {
     val infiniteTransition = rememberInfiniteTransition("hen_anim")
+
+    // 1. BLINK STATE & TIMER
+    var isBlinking by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            // Blink every 2-4 seconds
+            delay(Random.nextLong(2000, 4000))
+            isBlinking = true
+            delay(150)
+            isBlinking = false
+        }
+    }
+
     val wingFlapRotation by infiniteTransition.animateFloat(0f, 45f, infiniteRepeatable(tween(150, easing = LinearEasing), RepeatMode.Reverse), "wing")
     val combPath = remember { Path() }; val wattlePath = remember { Path() }; val upperBeakPath = remember { Path() }; val lowerBeakPath = remember { Path() }; val wincePath = remember { Path() }; val crack1Path = remember { Path() }; val crack2Path = remember { Path() }; val crack3Path = remember { Path() }
     var cachedSize by remember { mutableStateOf(Size.Zero) }
@@ -728,12 +744,82 @@ fun HenVisual(modifier: Modifier = Modifier, timeLeft: Float, isPaused: Boolean,
 
             // OPTIMIZATION: path rebuilding only happens on size change (Good).
             if (size != cachedSize) {
-                val henBodyRadius = 110f * d; val cpWidth = 45f * d; val bottomY = -henBodyRadius + 35f * d; val topY = -henBodyRadius - 45f * d
-                combPath.reset(); combPath.moveTo(0f, bottomY); combPath.cubicTo(-cpWidth, bottomY - 30f * d, -cpWidth, topY, 0f, topY + 25f * d); combPath.cubicTo(cpWidth, topY, cpWidth, bottomY - 30f * d, 0f, bottomY); combPath.close()
-                val faceEdgeX = henBodyRadius * 0.82f; val beakYBase = -6f * d; val beakH = 24f * d; val wattleTopX = faceEdgeX - 6f * d; val wattleTopY = beakYBase + beakH/2 - 2f * d; val wattleWidth = 24f * d; val wattleHeight = 32f * d
-                wattlePath.reset(); wattlePath.moveTo(wattleTopX, wattleTopY); wattlePath.cubicTo(wattleTopX - wattleWidth, wattleTopY + wattleHeight * 0.5f, wattleTopX - (wattleWidth * 0.5f), wattleTopY + wattleHeight, wattleTopX, wattleTopY + wattleHeight); wattlePath.cubicTo(wattleTopX + (wattleWidth * 0.5f), wattleTopY + wattleHeight, wattleTopX + wattleWidth, wattleTopY + wattleHeight * 0.5f, wattleTopX, wattleTopY); wattlePath.close()
-                val beakLen = 26f * d; upperBeakPath.reset(); upperBeakPath.moveTo(faceEdgeX, beakYBase - beakH/2); upperBeakPath.lineTo(faceEdgeX + beakLen, beakYBase); upperBeakPath.lineTo(faceEdgeX, beakYBase); upperBeakPath.close()
-                lowerBeakPath.reset(); lowerBeakPath.moveTo(faceEdgeX, beakYBase); lowerBeakPath.lineTo(faceEdgeX + beakLen * 0.6f, beakYBase); lowerBeakPath.lineTo(faceEdgeX, beakYBase + beakH/2); lowerBeakPath.close()
+                val henBodyRadius = 110f * d
+
+                // 1. COMB UPDATE: Your settled values
+                val combRadius = 32f * d
+                val headTopY = -henBodyRadius
+                val centerCircleY = headTopY + 5f * d
+                val sideCircleY = headTopY + 15f * d
+                val sideOffsetX = 40f * d
+
+                combPath.reset()
+                combPath.addOval(Rect(center = Offset(0f, centerCircleY), radius = combRadius))
+                combPath.addOval(Rect(center = Offset(-sideOffsetX, sideCircleY), radius = combRadius))
+                combPath.addOval(Rect(center = Offset(sideOffsetX, sideCircleY), radius = combRadius))
+
+                // 2. BEAK UPDATE: Curved Hypotenuses
+                val faceEdgeX = henBodyRadius * 0.82f
+                val beakYBase = -6f * d
+                val beakH = 24f * d
+                val beakLen = 26f * d
+
+                // UPPER BEAK
+                upperBeakPath.reset()
+                upperBeakPath.moveTo(faceEdgeX, beakYBase - beakH/2) // Start at Top-Left of beak
+                // Curve OUTWARDS to the tip
+                // Control point is pushed slightly UP (-beakH * 0.7 instead of * 0.5)
+                upperBeakPath.quadraticTo(
+                    faceEdgeX + beakLen * 0.5f,
+                    beakYBase - beakH * 0.7f,
+                    faceEdgeX + beakLen,
+                    beakYBase
+                )
+                upperBeakPath.lineTo(faceEdgeX, beakYBase)
+                upperBeakPath.close()
+
+                // LOWER BEAK
+                lowerBeakPath.reset()
+                lowerBeakPath.moveTo(faceEdgeX, beakYBase) // Start at Top-Left of lower beak
+                lowerBeakPath.lineTo(faceEdgeX + beakLen * 0.8f, beakYBase) // Flat top edge
+                // Curve OUTWARDS back to the chin
+                // Control point is pushed slightly DOWN (beakH * 0.7 instead of * 0.5)
+                lowerBeakPath.quadraticTo(
+                    faceEdgeX + beakLen * 0.3f,
+                    beakYBase + beakH * 0.7f,
+                    faceEdgeX,
+                    beakYBase + beakH / 2
+                )
+                lowerBeakPath.close()
+
+                // 3. WATTLE UPDATE: Snap to bottom-left of beak
+
+                // Define where the bottom beak ends (Match this to your lowerBeakPath logic!)
+                val lowerBeakBottomY = beakYBase + beakH / 2
+
+                // Set the anchor point (Top of wattle)
+                val wattleTopX = faceEdgeX            // Was 'faceEdgeX - 6f'. Now exact.
+                val wattleTopY = lowerBeakBottomY     // Was '... - 2f'. Now exact.
+
+                val wattleWidth = 24f * d
+                val wattleHeight = 32f * d
+
+                wattlePath.reset()
+                wattlePath.moveTo(wattleTopX, wattleTopY)
+                // Curve down and left
+                wattlePath.cubicTo(
+                    wattleTopX - wattleWidth, wattleTopY + wattleHeight * 0.5f,
+                    wattleTopX - (wattleWidth * 0.5f), wattleTopY + wattleHeight,
+                    wattleTopX, wattleTopY + wattleHeight
+                )
+                // Curve up and right
+                wattlePath.cubicTo(
+                    wattleTopX + (wattleWidth * 0.5f), wattleTopY + wattleHeight,
+                    wattleTopX + wattleWidth, wattleTopY + wattleHeight * 0.5f,
+                    wattleTopX, wattleTopY
+                )
+                wattlePath.close()
+
                 val eyeX = faceEdgeX - 25f * d; val eyeYBase = -25f * d; wincePath.reset(); wincePath.moveTo(eyeX - 8f * d, eyeYBase - 8f * d); wincePath.lineTo(eyeX, eyeYBase); wincePath.lineTo(eyeX - 8f * d, eyeYBase + 8f * d)
                 val eggHeight = 150f * d; val eggTop = (cy + henBodyRadius - 10f * d) - eggHeight; val eggCenterY = eggTop + eggHeight/2
                 crack1Path.reset(); crack1Path.moveTo(0f, eggTop + eggHeight * 0.1f); crack1Path.lineTo(5f, eggTop + eggHeight * 0.3f); crack1Path.lineTo(-5f, eggCenterY)
@@ -741,6 +827,7 @@ fun HenVisual(modifier: Modifier = Modifier, timeLeft: Float, isPaused: Boolean,
                 crack3Path.reset(); crack3Path.moveTo(-25f, eggCenterY + eggHeight * 0.2f); crack3Path.lineTo(10f, eggCenterY + eggHeight * 0.25f); crack3Path.lineTo(35f, eggCenterY + eggHeight * 0.4f)
                 cachedSize = size
             }
+
             val henBodyRadius = 110f * d
             val floorY = cy + henBodyRadius
 
@@ -795,14 +882,39 @@ fun HenVisual(modifier: Modifier = Modifier, timeLeft: Float, isPaused: Boolean,
                                     withTransform({ translate(cx, henY); rotate(if (effectiveBeakOpen) -15f else 0f, pivot = Offset(relFaceEdgeX, relBeakY)) }) { drawPath(upperBeakPath, NeonOrange) }
                                     withTransform({ translate(cx, henY); rotate(if (effectiveBeakOpen) 10f else 0f, pivot = Offset(relFaceEdgeX, relBeakY)) }) { drawPath(lowerBeakPath, NeonOrange) }
 
-                                    val eyeXRel = relFaceEdgeX - 25f * d; val eyeYRel = -25f * d; val eyeCenter = Offset(cx + eyeXRel, henY + eyeYRel)
-                                    drawCircle(color = Color.Black, radius = 12f * d, center = eyeCenter)
-                                    drawCircle(color = Color.White, radius = 4f * d, center = Offset(eyeCenter.x + 3f * d, eyeCenter.y - 3f * d))
+                                    // 2. EYE LOGIC (REFLECTION): Match the main body!
+                                    if (isSmushed) {
+                                        withTransform({ translate(cx, henY) }) {
+                                            drawPath(wincePath, Color.Black, style = Stroke(5f * d, cap = StrokeCap.Round, join = StrokeJoin.Round))
+                                        }
+                                    } else if (isBlinking) {
+                                        val eyeXRel = relFaceEdgeX - 25f * d; val eyeYRel = -25f * d; val eyeCenter = Offset(cx + eyeXRel, henY + eyeYRel)
+                                        drawLine(
+                                            color = Color.Black,
+                                            start = Offset(eyeCenter.x - 12f * d, eyeCenter.y),
+                                            end = Offset(eyeCenter.x + 12f * d, eyeCenter.y),
+                                            strokeWidth = 5f * d,
+                                            cap = StrokeCap.Round
+                                        )
+                                    } else {
+                                        val eyeXRel = relFaceEdgeX - 25f * d; val eyeYRel = -25f * d; val eyeCenter = Offset(cx + eyeXRel, henY + eyeYRel)
+                                        drawCircle(color = Color.Black, radius = 12f * d, center = eyeCenter)
+                                        drawCircle(color = Color.White, radius = 4f * d, center = Offset(eyeCenter.x + 3f * d, eyeCenter.y - 3f * d))
+                                        // Include the second highlight if you added it to the main body
+                                        drawCircle(color = Color.White, radius = 2f * d, center = Offset(eyeCenter.x - 3f * d, eyeCenter.y + 3f * d))
+                                    }
 
                                     val wingP = Offset(cx - 40f * d, henY + 10f * d); val wingRot = if (isFlapping) wingFlapRotation else if (isSliding) -20f else 0f
                                     withTransform({ rotate(wingRot, pivot = wingP) }) {
-                                        drawArc(color = if(isSmushed) Color(0xFFE0E0E0) else Color.White, startAngle = 10f, sweepAngle = 160f, useCenter = false, topLeft = Offset(wingP.x - 10f * d, wingP.y - 30f * d), size = Size(60f * d, 65f * d))
-                                        drawArc(color = Color.Black, startAngle = 10f, sweepAngle = 160f, useCenter = false, topLeft = Offset(wingP.x - 10f * d, wingP.y - 30f * d), size = Size(60f * d, 65f * d), style = Stroke(4f * d, cap = StrokeCap.Round))
+                                        // 2. WING UPDATE: Layer Order Swap (Fill First, then Outline)
+                                        val wW = 40f * d; val wH = 60f * d
+                                        val wTopLeft = Offset(wingP.x - 10f * d, wingP.y - 30f * d)
+
+                                        // Draw Fill (Behind)
+                                        drawOval(color = if(isSmushed) Color(0xFFE0E0E0) else Color.White, topLeft = wTopLeft, size = Size(wW, wH))
+
+                                        // Draw Outline (Front)
+                                        drawArc(color = Color.Black, startAngle = 0f, sweepAngle = 180f, useCenter = false, topLeft = wTopLeft, size = Size(wW, wH), style = Stroke(4f * d, cap = StrokeCap.Round, join = StrokeJoin.Round))
                                     }
 
                                     drawIntoCanvas { it.nativeCanvas.restore() }
@@ -853,15 +965,42 @@ fun HenVisual(modifier: Modifier = Modifier, timeLeft: Float, isPaused: Boolean,
                     val relFaceEdgeX = henBodyRadius * 0.82f; val relBeakY = -6f * d
                     withTransform({ translate(cx, henY); rotate(if (effectiveBeakOpen) -15f else 0f, pivot = Offset(relFaceEdgeX, relBeakY)) }) { drawPath(upperBeakPath, NeonOrange) }
                     withTransform({ translate(cx, henY); rotate(if (effectiveBeakOpen) 10f else 0f, pivot = Offset(relFaceEdgeX, relBeakY)) }) { drawPath(lowerBeakPath, NeonOrange) }
-                    if (isSmushed) withTransform({ translate(cx, henY) }) { drawPath(wincePath, Color.Black, style = Stroke(5f * d, cap = StrokeCap.Round, join = StrokeJoin.Round)) }
-                    else {
-                        val eyeXRel = relFaceEdgeX - 25f * d; val eyeYRel = -25f * d; val eyeCenter = Offset(cx + eyeXRel, henY + eyeYRel)
+                    // 2. EYE LOGIC: Smushed (Wince) > Blinking (Dash) > Normal (Open)
+                    if (isSmushed) {
+                        // Wince (keeps existing logic)
+                        withTransform({ translate(cx, henY) }) {
+                            drawPath(wincePath, Color.Black, style = Stroke(5f * d, cap = StrokeCap.Round, join = StrokeJoin.Round))
+                        }
+                    } else if (isBlinking) {
+                        // BLINK: Draw a simple horizontal dash "-"
+                        val eyeXRel = relFaceEdgeX - 25f * d
+                        val eyeYRel = -25f * d
+                        val eyeCenter = Offset(cx + eyeXRel, henY + eyeYRel)
+
+                        drawLine(
+                            color = Color.Black,
+                            start = Offset(eyeCenter.x - 12f * d, eyeCenter.y), // 12f radius width
+                            end = Offset(eyeCenter.x + 12f * d, eyeCenter.y),
+                            strokeWidth = 5f * d,
+                            cap = StrokeCap.Round
+                        )
+                    } else {
+                        // NORMAL: Open Eye
+                        val eyeXRel = relFaceEdgeX - 25f * d
+                        val eyeYRel = -25f * d
+                        val eyeCenter = Offset(cx + eyeXRel, henY + eyeYRel)
+
                         drawCircle(color = Color.Black, radius = 12f * d, center = eyeCenter)
                         drawCircle(color = Color.White, radius = 4f * d, center = Offset(eyeCenter.x + 3f * d, eyeCenter.y - 3f * d))
                         drawCircle(color = Color.White, radius = 2f * d, center = Offset(eyeCenter.x - 3f * d, eyeCenter.y + 3f * d))
                     }
                     val wingP = Offset(cx - 40f * d, henY + 10f * d); val wingRot = if (isFlapping) wingFlapRotation else if (isSliding) -20f else 0f
-                    withTransform({ rotate(wingRot, pivot = wingP) }) { drawArc(color = if (isSmushed) Color(0xFFE0E0E0) else Color.White, startAngle = 10f, sweepAngle = 160f, useCenter = false, topLeft = Offset(wingP.x - 10f * d, wingP.y - 30f * d), size = Size(60f * d, 65f * d)); drawArc(color = Color.Black, startAngle = 10f, sweepAngle = 160f, useCenter = false, topLeft = Offset(wingP.x - 10f * d, wingP.y - 30f * d), size = Size(60f * d, 65f * d), style = Stroke(4f * d, cap = StrokeCap.Round)) }
+                    withTransform({ rotate(wingRot, pivot = wingP) }) {
+                        val wW = 40f * d; val wH = 60f * d
+                        val wTopLeft = Offset(wingP.x - 10f * d, wingP.y - 30f * d)
+                        drawOval(color = if(isSmushed) Color(0xFFE0E0E0) else Color.White, topLeft = wTopLeft, size = Size(wW, wH))
+                        drawArc(color = Color.Black, startAngle = 0f, sweepAngle = 180f, useCenter = false, topLeft = wTopLeft, size = Size(wW, wH), style = Stroke(4f * d, cap = StrokeCap.Round, join = StrokeJoin.Round))
+                    }
                 }
             }
         }
