@@ -91,30 +91,50 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, onToggleTheme: () -> Uni
     fun saveTimerVol(vol: Float) { timerVol = vol; AudioService.timerVolume = vol; prefs.edit { putFloat("vol_timer", vol) } }
     fun saveExplodeVol(vol: Float) { explodeVol = vol; AudioService.explosionVolume = vol; prefs.edit { putFloat("vol_explode", vol) } }
 
-    fun validateInputs() {
-        val min = minText.toIntOrNull() ?: 0
-        val max = maxText.toIntOrNull() ?: 0
+    fun validateMin() {
+        var min = minText.toIntOrNull() ?: 1
+        if (min <= 0) min = 1
+        minText = min.toString()
+        prefs.edit { putInt("min", min) }
 
-        if (min <= 0) {
-            val correctedMin = 1
-            minText = correctedMin.toString()
-            prefs.edit { putInt("min", correctedMin) }
+        val max = maxText.toIntOrNull() ?: min
+        // Rule 1: If Min is higher than Max, push Max UP to match Min
+        if (min > max) {
+            maxText = min.toString()
+            prefs.edit { putInt("max", min) }
         }
+        focusManager.clearFocus()
+    }
 
-        val finalMin = minText.toIntOrNull() ?: 1
-        if (max < finalMin) {
-            maxText = finalMin.toString()
-            prefs.edit { putInt("max", finalMin) }
+    fun validateMax() {
+        var max = maxText.toIntOrNull() ?: 1
+        if (max <= 0) max = 1
+        maxText = max.toString()
+        prefs.edit { putInt("max", max) }
+
+        val min = minText.toIntOrNull() ?: max
+        // Rule 2: If Max is lower than Min, pull Min DOWN to match Max
+        if (max < min) {
+            minText = max.toString()
+            prefs.edit { putInt("min", max) }
         }
-
         focusManager.clearFocus()
     }
 
     fun tryStart() {
         AudioService.playClick()
-        validateInputs()
-        val min = minText.toIntOrNull() ?: 5
-        val max = maxText.toIntOrNull() ?: 10
+
+        // Final Safety Check before starting
+        // We re-run the logic just to ensure no weird states if the user tapped 'Start' while typing
+        var min = minText.toIntOrNull() ?: 1
+        if (min <= 0) min = 1
+        var max = maxText.toIntOrNull() ?: 1
+        if (max < min) max = min // Default safety: ensure range is valid
+
+        minText = min.toString()
+        maxText = max.toString()
+        prefs.edit { putInt("min", min); putInt("max", max) }
+
         onStart(TimerSettings(min, max, style))
     }
 
@@ -229,8 +249,11 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, onToggleTheme: () -> Uni
             Spacer(modifier = Modifier.height(24.dp))
 
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                TimeInput("MIN SECS", minText, { saveMin(it) }, NeonCyan, colors, Modifier.weight(1f), { validateInputs() })
-                TimeInput("MAX SECS", maxText, { saveMax(it) }, NeonRed, colors, Modifier.weight(1f), { validateInputs() })
+                // UPDATE: Use validateMin() for the first input
+                TimeInput("MIN SECS", minText, { saveMin(it) }, NeonCyan, colors, Modifier.weight(1f), { validateMin() })
+
+                // UPDATE: Use validateMax() for the second input
+                TimeInput("MAX SECS", maxText, { saveMax(it) }, NeonRed, colors, Modifier.weight(1f), { validateMax() })
             }
             Spacer(modifier = Modifier.height(32.dp))
 
@@ -663,7 +686,7 @@ fun ExplosionScreen(colors: AppColors, style: String?, explosionOrigin: Offset? 
             var center = if (explosionOrigin != null && explosionOrigin != Offset.Zero) explosionOrigin else Offset(size.width / 2, size.height / 2)
 
             if (style == "HEN") {
-                val eggOffset = with(density) { 35.dp.toPx() }
+                val eggOffset = 35.dp.toPx()
                 center = center.copy(y = center.y + eggOffset)
             }
 
