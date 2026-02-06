@@ -368,7 +368,7 @@ fun BombScreen(
             AudioService.stopWingFlap()
             AudioService.stopLoudCluck()
         } else {
-            if (style == "FUSE") AudioService.startFuse(false)
+            if (style == "FUSE") AudioService.startFuse(isCritical)
 
             // FIX: Resume flapping with correct volume
             if (style == "HEN" && henSequenceElapsed > 0.5f && henSequenceElapsed < 2.5f) {

@@ -746,17 +746,30 @@ fun HenVisual(modifier: Modifier = Modifier, timeLeft: Float, isPaused: Boolean,
             if (size != cachedSize) {
                 val henBodyRadius = 110f * d
 
-                // 1. COMB UPDATE: Your settled values
-                val combRadius = 32f * d
-                val headTopY = -henBodyRadius
-                val centerCircleY = headTopY + 5f * d
-                val sideCircleY = headTopY + 15f * d
-                val sideOffsetX = 40f * d
+                // 1. COMB UPDATE: Manual Control for All 3 Circles
+
+                // --- CENTER CIRCLE ---
+                val cRadius = 28f * d
+                val cX = 0f * d             // 0 is centered horizontally
+                val cY = -henBodyRadius + 5f * d
+
+                // --- LEFT CIRCLE ---
+                val lRadius = 20f * d
+                val lX = -38f * d           // Negative = Left
+                val lY = -henBodyRadius + 10f * d
+
+                // --- RIGHT CIRCLE ---
+                val rRadius = 32f * d
+                val rX = 50f * d            // Positive = Right
+                val rY = -henBodyRadius + 5f * d
 
                 combPath.reset()
-                combPath.addOval(Rect(center = Offset(0f, centerCircleY), radius = combRadius))
-                combPath.addOval(Rect(center = Offset(-sideOffsetX, sideCircleY), radius = combRadius))
-                combPath.addOval(Rect(center = Offset(sideOffsetX, sideCircleY), radius = combRadius))
+                // Center
+                combPath.addOval(Rect(center = Offset(cX, cY), radius = cRadius))
+                // Left
+                combPath.addOval(Rect(center = Offset(lX, lY), radius = lRadius))
+                // Right
+                combPath.addOval(Rect(center = Offset(rX, rY), radius = rRadius))
 
                 // 2. BEAK UPDATE: Curved Hypotenuses
                 val faceEdgeX = henBodyRadius * 0.82f
@@ -907,14 +920,28 @@ fun HenVisual(modifier: Modifier = Modifier, timeLeft: Float, isPaused: Boolean,
                                     val wingP = Offset(cx - 40f * d, henY + 10f * d); val wingRot = if (isFlapping) wingFlapRotation else if (isSliding) -20f else 0f
                                     withTransform({ rotate(wingRot, pivot = wingP) }) {
                                         // 2. WING UPDATE: Layer Order Swap (Fill First, then Outline)
-                                        val wW = 40f * d; val wH = 60f * d
+                                        val wW = 60f * d; val wH = 60f * d
                                         val wTopLeft = Offset(wingP.x - 10f * d, wingP.y - 30f * d)
 
-                                        // Draw Fill (Behind)
-                                        drawOval(color = if(isSmushed) Color(0xFFE0E0E0) else Color.White, topLeft = wTopLeft, size = Size(wW, wH))
-
-                                        // Draw Outline (Front)
-                                        drawArc(color = Color.Black, startAngle = 0f, sweepAngle = 180f, useCenter = false, topLeft = wTopLeft, size = Size(wW, wH), style = Stroke(4f * d, cap = StrokeCap.Round, join = StrokeJoin.Round))
+                                        // 1. Fill (Half Circle)
+                                        drawArc(
+                                            color = if(isSmushed) Color(0xFFE0E0E0) else Color.White,
+                                            startAngle = 0f,
+                                            sweepAngle = 180f,
+                                            useCenter = true, // Closes the arc to make a half-circle
+                                            topLeft = wTopLeft,
+                                            size = Size(wW, wH)
+                                        )
+                                        // 2. Outline (Half Circle)
+                                        drawArc(
+                                            color = Color.Black,
+                                            startAngle = 0f,
+                                            sweepAngle = 180f,
+                                            useCenter = false,
+                                            topLeft = wTopLeft,
+                                            size = Size(wW, wH),
+                                            style = Stroke(4f * d, cap = StrokeCap.Round, join = StrokeJoin.Round)
+                                        )
                                     }
 
                                     drawIntoCanvas { it.nativeCanvas.restore() }
@@ -996,10 +1023,27 @@ fun HenVisual(modifier: Modifier = Modifier, timeLeft: Float, isPaused: Boolean,
                     }
                     val wingP = Offset(cx - 40f * d, henY + 10f * d); val wingRot = if (isFlapping) wingFlapRotation else if (isSliding) -20f else 0f
                     withTransform({ rotate(wingRot, pivot = wingP) }) {
-                        val wW = 40f * d; val wH = 60f * d
+                        val wW = 60f * d; val wH = 60f * d
                         val wTopLeft = Offset(wingP.x - 10f * d, wingP.y - 30f * d)
-                        drawOval(color = if(isSmushed) Color(0xFFE0E0E0) else Color.White, topLeft = wTopLeft, size = Size(wW, wH))
-                        drawArc(color = Color.Black, startAngle = 0f, sweepAngle = 180f, useCenter = false, topLeft = wTopLeft, size = Size(wW, wH), style = Stroke(4f * d, cap = StrokeCap.Round, join = StrokeJoin.Round))
+                        // 1. Fill (Half Circle)
+                        drawArc(
+                            color = if(isSmushed) Color(0xFFE0E0E0) else Color.White,
+                            startAngle = 0f,
+                            sweepAngle = 180f,
+                            useCenter = true, // Closes the arc to make a half-circle
+                            topLeft = wTopLeft,
+                            size = Size(wW, wH)
+                        )
+                        // 2. Outline (Half Circle)
+                        drawArc(
+                            color = Color.Black,
+                            startAngle = 0f,
+                            sweepAngle = 180f,
+                            useCenter = false,
+                            topLeft = wTopLeft,
+                            size = Size(wW, wH),
+                            style = Stroke(4f * d, cap = StrokeCap.Round, join = StrokeJoin.Round)
+                        )
                     }
                 }
             }
