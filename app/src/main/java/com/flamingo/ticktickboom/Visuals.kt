@@ -60,7 +60,7 @@ private data class LocalVisualText(
 )
 
 // --- HELPER FOR REFLECTIONS ---
-private fun DrawScope.drawReflection(
+fun DrawScope.drawReflection(
     isDarkMode: Boolean,
     pivotY: Float,
     alpha: Float = 0.25f,
@@ -102,7 +102,6 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors, isPaused
 
     val fusePath = remember { Path() }
     val frontRimPath = remember { Path() }
-    val androidSegmentPath = remember { android.graphics.Path() }
     val pathMeasure = remember { android.graphics.PathMeasure() }
     var cachedSize by remember { mutableStateOf(Size.Zero) }
 
@@ -115,51 +114,27 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors, isPaused
     val density = LocalDensity.current
     val d = density.density
 
-    // --- MEASUREMENTS ---
+    // Measurements
     val protrusionW = 40f * d
     val protrusionH = 24f * d
     val cylinderOvalH = 14f * d
-    // FIX 1: Reduced offset to 3f so it stays hidden BEHIND the front rim (which is ~7f tall)
     val fuseInnerOffset = 3f * d
-
-    // Hole dimensions
     val holeW = 12f * d
-    val holeH = holeW * (cylinderOvalH / protrusionW) // Aspect ratio match
-
+    val holeH = holeW * (cylinderOvalH / protrusionW)
     val strokeW = 6f * d
 
-    val glintSizeL = 24f * d
-    val glintSizeS = 4f * d
-    val glintOffsetL = 12f * d
-    val glintOffsetS = 2f * d
-    val glowRadius = 25f * d
-    val coreRadius = 8f * d
-    val whiteRadius = 4f * d
-    val particleRad = 3f * d
-    val particleRadS = 1.5f * d
-    val tapThreshold = 60f * d
-    val fuseYOffset = 5f * d
+    // Particles/Glint configs...
+    val glintSizeL = 24f * d; val glintSizeS = 4f * d; val glintOffsetL = 12f * d; val glintOffsetS = 2f * d
+    val glowRadius = 25f * d; val coreRadius = 8f * d; val whiteRadius = 4f * d
+    val particleRad = 3f * d; val particleRadS = 1.5f * d; val tapThreshold = 60f * d; val fuseYOffset = 5f * d
 
     LaunchedEffect(isPaused) {
         while (true) {
             withFrameNanos { nanos ->
                 val dt = if (lastFrameTime == 0L) 0.016f else (nanos - lastFrameTime) / 1_000_000_000f
                 lastFrameTime = nanos
-                for (i in sparks.indices.reversed()) {
-                    val spark = sparks[i]
-                    spark.life -= dt
-                    spark.x += spark.vx * dt * 100
-                    spark.y += spark.vy * dt * 100 + (9.8f * dt * dt * 50)
-                    if (spark.life <= 0) sparks.removeAt(i)
-                }
-                for (i in smokePuffs.indices.reversed()) {
-                    val puff = smokePuffs[i]
-                    puff.life -= dt
-                    if (puff.life <= 0) smokePuffs.removeAt(i) else {
-                        puff.x += puff.vx * dt * 50 + (Math.random() - 0.5f).toFloat() * 10f * dt
-                        puff.y += puff.vy * dt * 50
-                    }
-                }
+                for (i in sparks.indices.reversed()) { val s = sparks[i]; s.life -= dt; s.x += s.vx * dt * 100; s.y += s.vy * dt * 100 + (9.8f * dt * dt * 50); if (s.life <= 0) sparks.removeAt(i) }
+                for (i in smokePuffs.indices.reversed()) { val p = smokePuffs[i]; p.life -= dt; if (p.life <= 0) smokePuffs.removeAt(i) else { p.x += p.vx * dt * 50; p.y += p.vy * dt * 50 } }
                 frame++
             }
         }
@@ -169,15 +144,7 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors, isPaused
         var currentSparkCenter by remember { mutableStateOf(Offset.Zero) }
 
         Canvas(
-            modifier = Modifier
-                .fillMaxSize()
-                .pointerInput(Unit) {
-                    detectTapGestures { tapOffset ->
-                        val dx = tapOffset.x - currentSparkCenter.x
-                        val dy = tapOffset.y - currentSparkCenter.y
-                        if (sqrt(dx * dx + dy * dy) < tapThreshold) onTogglePause()
-                    }
-                }
+            modifier = Modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures { tapOffset -> val dx = tapOffset.x - currentSparkCenter.x; val dy = tapOffset.y - currentSparkCenter.y; if (sqrt(dx * dx + dy * dy) < tapThreshold) onTogglePause() } }
         ) {
             if (frame >= 0) Unit
             val width = size.width
@@ -189,7 +156,6 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors, isPaused
             val halfNeckW = protrusionW / 2
             val verticalDrop = sqrt(bodyRadius.pow(2) - halfNeckW.pow(2))
             val neckBaseY = bombCenterY - verticalDrop
-
             val neckTopY = neckBaseY - protrusionH
             val floorY = bombCenterY + bodyRadius
 
@@ -197,146 +163,168 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors, isPaused
                 fusePath.reset()
                 fusePath.moveTo(bombCenterX, neckTopY + fuseInnerOffset)
                 fusePath.lineTo(bombCenterX, neckTopY - 20f * d)
-                fusePath.cubicTo(
-                    bombCenterX, neckTopY - 70f * d,
-                    bombCenterX + 70f * d, neckTopY - 70f * d,
-                    bombCenterX + 80f * d, neckTopY + 10f * d
-                )
+                fusePath.cubicTo(bombCenterX, neckTopY - 70f * d, bombCenterX + 70f * d, neckTopY - 70f * d, bombCenterX + 80f * d, neckTopY + 10f * d)
                 cachedSize = size
             }
 
             drawReflection(isDarkMode, floorY, 0.25f) { isReflection ->
                 if (!isDarkMode && !isReflection) {
-                    val shadowW = width * 0.6f
-                    val shadowH = 20f * d
+                    val shadowW = width * 0.6f; val shadowH = 20f * d
                     drawOval(color = Color.Black.copy(alpha = 0.2f), topLeft = Offset(bombCenterX - shadowW / 2, floorY - shadowH / 2), size = Size(shadowW, shadowH))
                 }
 
-                // --- BOMB BODY ---
-                drawCircle(
-                    brush = Brush.radialGradient(
-                        colors = listOf(Color(0xFF475569), Color(0xFF0F172A)),
-                        center = Offset(bombCenterX - 20, bombCenterY - 20),
-                        radius = bodyRadius
-                    ),
-                    radius = bodyRadius,
-                    center = Offset(bombCenterX, bombCenterY)
-                )
+                // --- BOMB BODY (Base) ---
+                drawCircle(brush = Brush.radialGradient(colors = listOf(Color(0xFF475569), Color(0xFF0F172A)), center = Offset(bombCenterX - 20, bombCenterY - 20), radius = bodyRadius), radius = bodyRadius, center = Offset(bombCenterX, bombCenterY))
 
-                val specularCenter = Offset(bombCenterX - bodyRadius * 0.4f, bombCenterY - bodyRadius * 0.4f)
-                drawCircle(brush = Brush.radialGradient(colors = listOf(Color.White.copy(alpha = 0.5f), Color.Transparent), center = specularCenter, radius = bodyRadius * 0.3f), radius = bodyRadius * 0.3f, center = specularCenter)
-
-                // --- DEFINE RIM RECTS ---
-                val outerRimRect = Rect(offset = Offset(bombCenterX - protrusionW / 2, neckTopY - cylinderOvalH / 2), size = Size(protrusionW, cylinderOvalH))
-                val innerHoleRect = Rect(center = outerRimRect.center, radius = holeW / 2).copy(top = outerRimRect.center.y - holeH / 2, bottom = outerRimRect.center.y + holeH / 2)
-                val rimGradient = Brush.horizontalGradient(
-                    colors = listOf(Color(0xFF1E293B), Color(0xFF64748B), Color(0xFF1E293B)),
-                    startX = outerRimRect.left, endX = outerRimRect.right
-                )
-
-                // FIX 2: LAYER ORDER - Neck (1) -> Back Rim (2) -> Fuse (3) -> Front Rim (4)
-
-                // LAYER 1: NECK (CYLINDER) - Drawn first as the background
-                val neckGradient = Brush.horizontalGradient(
-                    colors = listOf(Color(0xFF0F172A), Color(0xFF475569), Color(0xFF0F172A)),
-                    startX = bombCenterX - protrusionW / 2,
-                    endX = bombCenterX + protrusionW / 2
-                )
-                drawOval(brush = neckGradient, topLeft = Offset(bombCenterX - protrusionW / 2, neckBaseY - cylinderOvalH / 2), size = Size(protrusionW, cylinderOvalH))
-                drawRect(brush = neckGradient, topLeft = Offset(bombCenterX - protrusionW / 2, neckTopY), size = Size(protrusionW, neckBaseY - neckTopY))
-
-                // LAYER 2: BACK RIM & HOLE - Drawn on top of the neck
-                drawOval(brush = rimGradient, topLeft = outerRimRect.topLeft, size = outerRimRect.size)
-                drawOval(color = Color(0xFF0F172A), topLeft = innerHoleRect.topLeft, size = innerHoleRect.size)
-
-                // LAYER 3: FUSE CORD - Drawn on top of the hole/neck
+                // === 1. LIGHTING MATH ===
                 pathMeasure.setPath(fusePath.asAndroidPath(), false)
                 val totalLength = pathMeasure.length
                 val visibleLength = totalLength - fuseInnerOffset
                 val effectiveProgress = if (isCritical) 1f else progress
-                // Remap burn point so it stops at the hole entrance
                 val currentBurnPoint = fuseInnerOffset + (visibleLength * (1f - effectiveProgress))
 
+                // A. GEOMETRY (Symmetry)
+                val straightLen = 23f * d
+                val curveLen = (totalLength - straightLen).coerceAtLeast(1f)
+                val distOnCurve = (currentBurnPoint - straightLen).coerceAtLeast(0f)
+                val curveProgress = distOnCurve / curveLen
+                val symmetry = (1f - curveProgress).coerceIn(0f, 1f) // 0.0 (Tip) -> 1.0 (Straight)
+
+                // B. INTENSITY (Fade Out at Hole)
+                // We start fading when the spark gets within 15dp of the hole
+                val fadeThreshold = 15f * d
+                val distToHole = (currentBurnPoint - fuseInnerOffset).coerceAtLeast(0f)
+                // 1.0 = Full Brightness (High Up), 0.0 = Extinguished (In Hole)
+                val lightIntensity = if (!isCritical && !isPaused) {
+                    (distToHole / fadeThreshold).coerceIn(0f, 1f)
+                } else {
+                    0f
+                }
+
+                // === 2. DYNAMIC BODY HIGHLIGHT ===
+                if (lightIntensity > 0f) {
+                    // X Position Interpolation (Right -> Center)
+                    val startHighlightX = bodyRadius * 0.8f
+                    val endHighlightX = 0f
+                    val currentHighlightX = startHighlightX + (endHighlightX - startHighlightX) * symmetry
+
+                    // Mask Position Interpolation (Left -> Center)
+                    val startMaskX = -30f * d
+                    val endMaskX = 0f
+                    val currentMaskX = startMaskX + (endMaskX - startMaskX) * symmetry
+
+                    val startMaskY = 30f * d
+                    val endMaskY = 40f * d
+                    val currentMaskY = startMaskY + (endMaskY - startMaskY) * symmetry
+
+                    drawIntoCanvas { canvas -> canvas.saveLayer(Rect(0f, 0f, size.width, size.height), androidx.compose.ui.graphics.Paint()) }
+
+                    // A. Glow (Fade alpha with lightIntensity)
+                    drawCircle(
+                        brush = Brush.radialGradient(
+                            colors = listOf(
+                                Color(0xFFFF9800).copy(alpha = 1f * lightIntensity),
+                                Color(0xFFFF5722).copy(alpha = 0.5f * lightIntensity),
+                                Color.Transparent
+                            ),
+                            center = Offset(bombCenterX + currentHighlightX, bombCenterY - bodyRadius * 0.8f),
+                            radius = bodyRadius * 1.5f
+                        ),
+                        radius = bodyRadius, center = Offset(bombCenterX, bombCenterY)
+                    )
+
+                    // B. Mask
+                    drawCircle(
+                        brush = Brush.radialGradient(0.0f to Color.Black, 0.75f to Color.Black, 1.0f to Color.Transparent,
+                            center = Offset(bombCenterX + currentMaskX, bombCenterY + currentMaskY),
+                            radius = bodyRadius * 1.2f),
+                        radius = bodyRadius * 1.2f,
+                        center = Offset(bombCenterX + currentMaskX, bombCenterY + currentMaskY),
+                        blendMode = BlendMode.DstOut
+                    )
+                    drawIntoCanvas { canvas -> canvas.restore() }
+                }
+
+                // Specular Glint
+                val specularCenter = Offset(bombCenterX - bodyRadius * 0.4f, bombCenterY - bodyRadius * 0.4f)
+                drawCircle(brush = Brush.radialGradient(colors = listOf(Color.White.copy(alpha = 0.5f), Color.Transparent), center = specularCenter, radius = bodyRadius * 0.3f), radius = bodyRadius * 0.3f, center = specularCenter)
+
+                // === 3. DYNAMIC NECK & RIMS ===
+                val baseDark = Color(0xFF0F172A)
+                val baseLight = Color(0xFF475569)
+                val rimDark = Color(0xFF1E293B)
+                val rimLight = Color(0xFF64748B)
+                val orangeDark = Color(0xFFD97706)
+                val orangeLight = Color(0xFFFFB74D)
+
+                // We lerp from "Base Color" to "Orange Color" based on lightIntensity.
+                // symmetry determines IF a side gets to be orange.
+
+                // Left: Only lit if Symmetric AND Intensity is high
+                val neckLeft = lerp(baseDark, orangeDark, symmetry * lightIntensity)
+                val rimLeft = lerp(rimDark, orangeDark, symmetry * lightIntensity)
+
+                // Center: Transitions from BaseLight to OrangeLight
+                val neckCenter = lerp(baseLight, orangeLight, symmetry * lightIntensity)
+                val rimCenter = lerp(rimLight, orangeLight, symmetry * lightIntensity)
+
+                // Right: Always lit (until intensity drops)
+                val neckRight = lerp(baseDark, orangeDark, lightIntensity)
+                val rimRight = lerp(rimDark, orangeDark, lightIntensity)
+
+                // Center Offset
+                val centerOffset = 0.7f - (0.2f * symmetry) // 0.7 -> 0.5
+
+                val outerRimRect = Rect(offset = Offset(bombCenterX - protrusionW / 2, neckTopY - cylinderOvalH / 2), size = Size(protrusionW, cylinderOvalH))
+                val innerHoleRect = Rect(center = outerRimRect.center, radius = holeW / 2).copy(top = outerRimRect.center.y - holeH / 2, bottom = outerRimRect.center.y + holeH / 2)
+
+                // Dynamic Gradients
+                val neckGradient = Brush.horizontalGradient(0.0f to neckLeft, centerOffset to neckCenter, 1.0f to neckRight, startX = bombCenterX - protrusionW / 2, endX = bombCenterX + protrusionW / 2)
+                val rimGradient = Brush.horizontalGradient(0.0f to rimLeft, centerOffset to rimCenter, 1.0f to rimRight, startX = outerRimRect.left, endX = outerRimRect.right)
+
+                // Draw Neck & Rims
+                drawOval(brush = neckGradient, topLeft = Offset(bombCenterX - protrusionW / 2, neckBaseY - cylinderOvalH / 2), size = Size(protrusionW, cylinderOvalH))
+                drawRect(brush = neckGradient, topLeft = Offset(bombCenterX - protrusionW / 2, neckTopY), size = Size(protrusionW, neckBaseY - neckTopY))
+                drawOval(brush = rimGradient, topLeft = outerRimRect.topLeft, size = outerRimRect.size)
+                drawOval(color = Color(0xFF0F172A), topLeft = innerHoleRect.topLeft, size = innerHoleRect.size)
+
+                // === SIMPLE WHITE FUSE ===
                 if (!isCritical) {
-                    androidSegmentPath.rewind()
+                    val androidSegmentPath = android.graphics.Path()
                     pathMeasure.getSegment(0f, currentBurnPoint, androidSegmentPath, true)
                     drawPath(path = androidSegmentPath.asComposePath(), color = Color(0xFFD6D3D1), style = Stroke(width = strokeW, cap = StrokeCap.Round))
                 }
 
-                // LAYER 4: FRONT RIM MASK - Drawn last to cover the base of the fuse
-                frontRimPath.reset()
-                frontRimPath.arcTo(outerRimRect, 0f, 180f, false)
-                frontRimPath.lineTo(innerHoleRect.left, innerHoleRect.center.y)
-                frontRimPath.arcTo(innerHoleRect, 180f, -180f, false)
-                frontRimPath.close()
+                // Draw Rim Mask
+                frontRimPath.reset(); frontRimPath.arcTo(outerRimRect, 0f, 180f, false); frontRimPath.lineTo(innerHoleRect.left, innerHoleRect.center.y); frontRimPath.arcTo(innerHoleRect, 180f, -180f, false); frontRimPath.close()
                 drawPath(path = frontRimPath, brush = rimGradient)
 
-                // --- HOT BLOOM (Critical) ---
+                // --- CRITICAL BLOOM ---
                 if (isCritical && !isPaused) {
                     val fuseBase = innerHoleRect.center
-                    // 1. Inner White Hot Core
-                    drawOval(
-                        brush = Brush.radialGradient(colors = listOf(Color(0xFFFFFFE0), Color(0xFFFFD700)), center = fuseBase, radius = holeW),
-                        topLeft = innerHoleRect.topLeft,
-                        size = innerHoleRect.size
-                    )
-                    // 2. Outer Bloom (Red Fade)
-                    val bloomRect = innerHoleRect.inflate(20f * d)
-                    val bloomAspectRatio = bloomRect.height / bloomRect.width
+                    drawOval(brush = Brush.radialGradient(colors = listOf(Color(0xFFFFFFE0), Color(0xFFFFD700)), center = fuseBase, radius = holeW), topLeft = innerHoleRect.topLeft, size = innerHoleRect.size)
+                    val bloomRect = innerHoleRect.inflate(20f * d); val bloomAspectRatio = bloomRect.height / bloomRect.width
                     withTransform({ scale(1f, bloomAspectRatio, pivot = fuseBase) }) {
                         val drawRadius = bloomRect.width / 2f
-                        drawCircle(
-                            brush = Brush.radialGradient(
-                                colors = listOf(NeonRed.copy(alpha = 0.6f), NeonRed.copy(alpha = 0f)),
-                                center = fuseBase, radius = drawRadius, tileMode = TileMode.Clamp
-                            ),
-                            radius = drawRadius, center = fuseBase
-                        )
+                        drawCircle(brush = Brush.radialGradient(colors = listOf(NeonRed.copy(alpha = 0.6f), NeonRed.copy(alpha = 0f)), center = fuseBase, radius = drawRadius, tileMode = TileMode.Clamp), radius = drawRadius, center = fuseBase)
                     }
                 }
 
-                // --- SPARKS & SMOKE ---
-                val pos = floatArrayOf(0f, 0f)
-                pathMeasure.getPosTan(currentBurnPoint, pos, null)
-                val sparkCenter = Offset(pos[0], pos[1])
-                if (!isReflection) currentSparkCenter = sparkCenter
-
+                // --- SPARKS & PARTICLES ---
+                val pos = floatArrayOf(0f, 0f); pathMeasure.getPosTan(currentBurnPoint, pos, null); val sparkCenter = Offset(pos[0], pos[1]); if (!isReflection) currentSparkCenter = sparkCenter
                 if (!isPaused && !isReflection) {
-                    if (Math.random() < 0.3) {
-                        val angle = Math.random() * Math.PI * 2
-                        val speed = (2f + Math.random() * 4f).toFloat()
-                        val sx = if (isCritical) innerHoleRect.center.x else sparkCenter.x
-                        val sy = if (isCritical) innerHoleRect.center.y else sparkCenter.y
-                        sparks.add(LocalVisualParticle(x = sx, y = sy, vx = cos(angle).toFloat() * speed, vy = (sin(angle) * speed - 2f).toFloat(), life = (0.2f + Math.random() * 0.3f).toFloat(), maxLife = 0.5f))
-                    }
-                    if (Math.random() < 0.2) {
-                        val angle = -Math.PI / 2 + (Math.random() - 0.5) * 0.5
-                        val speed = (1f + Math.random() * 2f).toFloat()
-                        val sx = if (isCritical) innerHoleRect.center.x else sparkCenter.x
-                        val sy = if (isCritical) innerHoleRect.center.y else sparkCenter.y
-                        val smokeVy = if (isCritical) sin(angle).toFloat() * speed * 2f else sin(angle).toFloat() * speed
-                        smokePuffs.add(LocalVisualParticle(x = sx, y = sy - fuseYOffset, vx = (cos(angle) * speed).toFloat(), vy = smokeVy, life = (1f + Math.random().toFloat() * 0.5f), maxLife = 1.5f))
-                    }
+                    if (Math.random() < 0.3) { val angle = Math.random() * Math.PI * 2; val speed = (2f + Math.random() * 4f).toFloat(); val sx = if (isCritical) innerHoleRect.center.x else sparkCenter.x; val sy = if (isCritical) innerHoleRect.center.y else sparkCenter.y; sparks.add(LocalVisualParticle(x = sx, y = sy, vx = cos(angle).toFloat() * speed, vy = (sin(angle) * speed - 2f).toFloat(), life = (0.2f + Math.random() * 0.3f).toFloat(), maxLife = 0.5f)) }
+                    if (Math.random() < 0.2) { val angle = -Math.PI / 2 + (Math.random() - 0.5) * 0.5; val speed = (1f + Math.random() * 2f).toFloat(); val sx = if (isCritical) innerHoleRect.center.x else sparkCenter.x; val sy = if (isCritical) innerHoleRect.center.y else sparkCenter.y; val smokeVy = if (isCritical) sin(angle).toFloat() * speed * 2f else sin(angle).toFloat() * speed; smokePuffs.add(LocalVisualParticle(x = sx, y = sy - fuseYOffset, vx = (cos(angle) * speed).toFloat(), vy = smokeVy, life = (1f + Math.random().toFloat() * 0.5f), maxLife = 1.5f)) }
                 }
-                // Draw Particles
-                smokePuffs.forEach { puff ->
-                    val p = 1f - (puff.life / puff.maxLife)
-                    val size = 10f + p * 20f
-                    val alpha = (1f - p).coerceIn(0f, 0.6f)
-                    drawCircle(color = colors.smokeColor.copy(alpha = alpha), radius = size, center = Offset(puff.x, puff.y))
-                }
-                sparks.forEach { spark ->
-                    val alpha = (spark.life / spark.maxLife).coerceIn(0f, 1f)
-                    drawCircle(color = NeonOrange.copy(alpha = alpha), radius = particleRad * alpha, center = Offset(spark.x, spark.y))
-                    drawCircle(color = Color.Yellow.copy(alpha = alpha), radius = particleRadS * alpha, center = Offset(spark.x, spark.y))
-                }
-                // Fuse Glint
+                smokePuffs.forEach { puff -> val p = 1f - (puff.life / puff.maxLife); val size = 10f + p * 20f; val alpha = (1f - p).coerceIn(0f, 0.6f); drawCircle(color = colors.smokeColor.copy(alpha = alpha), radius = size, center = Offset(puff.x, puff.y)) }
+                sparks.forEach { spark -> val alpha = (spark.life / spark.maxLife).coerceIn(0f, 1f); drawCircle(color = NeonOrange.copy(alpha = alpha), radius = particleRad * alpha, center = Offset(spark.x, spark.y)); drawCircle(color = Color.Yellow.copy(alpha = alpha), radius = particleRadS * alpha, center = Offset(spark.x, spark.y)) }
                 if (!isCritical && !isPaused) {
-                    drawCircle(brush = Brush.radialGradient(colors = listOf(NeonOrange.copy(alpha = 0.5f), Color.Transparent), center = sparkCenter, radius = glowRadius), radius = glowRadius, center = sparkCenter)
-                    drawCircle(color = NeonOrange.copy(alpha=0.8f), radius = coreRadius, center = sparkCenter)
-                    drawCircle(color = Color.White, radius = whiteRadius, center = sparkCenter)
-                    withTransform({ rotate(45f, pivot = sparkCenter); scale(glintScale, glintScale, pivot = sparkCenter) }) { drawOval(color = Color.White.copy(alpha=0.8f), topLeft = Offset(sparkCenter.x - glintOffsetL, sparkCenter.y - glintOffsetS), size = Size(glintSizeL, glintSizeS)) }
-                    withTransform({ rotate(-45f, pivot = sparkCenter); scale(glintScale, glintScale, pivot = sparkCenter) }) { drawOval(color = Color.White.copy(alpha=0.8f), topLeft = Offset(sparkCenter.x - glintOffsetL, sparkCenter.y - glintOffsetS), size = Size(glintSizeL, glintSizeS)) }
+                    // APPLY FADE (lightIntensity) to the spark glow itself so it also fades out nicely
+                    val sparkAlpha = lightIntensity
+                    drawCircle(brush = Brush.radialGradient(colors = listOf(NeonOrange.copy(alpha = 0.5f * sparkAlpha), Color.Transparent), center = sparkCenter, radius = glowRadius), radius = glowRadius, center = sparkCenter)
+                    drawCircle(color = NeonOrange.copy(alpha=0.8f * sparkAlpha), radius = coreRadius, center = sparkCenter); drawCircle(color = Color.White.copy(alpha=sparkAlpha), radius = whiteRadius, center = sparkCenter)
+                    withTransform({ rotate(45f, pivot = sparkCenter); scale(glintScale, glintScale, pivot = sparkCenter) }) { drawOval(color = Color.White.copy(alpha=0.8f * sparkAlpha), topLeft = Offset(sparkCenter.x - glintOffsetL, sparkCenter.y - glintOffsetS), size = Size(glintSizeL, glintSizeS)) }
+                    withTransform({ rotate(-45f, pivot = sparkCenter); scale(glintScale, glintScale, pivot = sparkCenter) }) { drawOval(color = Color.White.copy(alpha=0.8f * sparkAlpha), topLeft = Offset(sparkCenter.x - glintOffsetL, sparkCenter.y - glintOffsetS), size = Size(glintSizeL, glintSizeS)) }
                 }
             }
         }

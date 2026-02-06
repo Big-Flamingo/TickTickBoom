@@ -185,10 +185,16 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, onToggleTheme: () -> Uni
         ) {
             Spacer(modifier = Modifier.height(48.dp))
 
+            // In Screens.kt -> SetupScreen
+
+            // In Screens.kt -> SetupScreen
+
+            // Capture the rotation value outside the Canvas
+            val currentRotation = if (isHoldingBomb) holdingShakeOffset else wobbleAnim.value
+
             Box(
                 modifier = Modifier
                     .size(80.dp)
-                    .clip(CircleShape)
                     .pointerInput(Unit) {
                         detectTapGestures(
                             onPress = {
@@ -209,27 +215,63 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, onToggleTheme: () -> Uni
                         )
                     }
                     .graphicsLayer {
-                        rotationZ = if (isHoldingBomb) holdingShakeOffset else wobbleAnim.value
+                        // FIX: Only handle SCALE here. Rotation is now handled inside the Canvas.
                         scaleX = if (isHoldingBomb) 1.1f else 1f
                         scaleY = if (isHoldingBomb) 1.1f else 1f
                     },
                 contentAlignment = Alignment.Center
             ) {
-                val path = remember { Path() }
-                Canvas(modifier = Modifier.size(32.dp).offset(y = 10.dp)) {
-                    val shadowOffsetX = 10.dp.toPx(); val shadowOffsetY = 10.dp.toPx(); val shadowW = 20.dp.toPx(); val shadowH = 6.dp.toPx()
-                    val fuseMoveToY = 14.dp.toPx(); val fuseQuadX = 8.dp.toPx(); val fuseQuadY = 20.dp.toPx(); val fuseEndX = 12.dp.toPx(); val fuseEndY = 12.dp.toPx(); val fuseStroke = 2.dp.toPx()
-                    val neckOffsetX = 4.dp.toPx(); val neckOffsetY = 14.dp.toPx(); val neckW = 8.dp.toPx(); val neckH = 4.dp.toPx()
-                    val bodyOffsetX = 4.dp.toPx(); val bodyOffsetY = 4.dp.toPx(); val gradRadius = 16.dp.toPx(); val bodyRadius = 12.dp.toPx()
-                    val glintPivot = 3.dp.toPx(); val glintOffsetX = 8.dp.toPx(); val glintOffsetY = 8.dp.toPx(); val glintW = 8.dp.toPx(); val glintH = 5.dp.toPx()
+                Canvas(modifier = Modifier.size(40.dp).offset(y = 10.dp)) {
+                    val bodyRadius = 12.dp.toPx()
+                    val floorY = center.y + bodyRadius
 
-                    drawOval(brush = Brush.radialGradient(colors = listOf(Color.Black.copy(0.6f), Color.Transparent)), topLeft = Offset(center.x - shadowOffsetX, center.y + shadowOffsetY), size = Size(shadowW, shadowH))
-                    path.reset(); path.moveTo(center.x, center.y - fuseMoveToY); path.quadraticTo(center.x + fuseQuadX, center.y - fuseQuadY, center.x + fuseEndX, center.y - fuseEndY)
-                    drawPath(path = path, brush = Brush.linearGradient(colors = listOf(Color(0xFFB91C1C), NeonRed, Color(0xFFB91C1C))), style = Stroke(width = fuseStroke, cap = StrokeCap.Round))
-                    drawRoundRect(brush = Brush.linearGradient(colors = listOf(NeonRed, Color(0xFF7F1D1D))), topLeft = Offset(center.x - neckOffsetX, center.y - neckOffsetY), size = Size(neckW, neckH), cornerRadius = CornerRadius(2f, 2f))
-                    drawCircle(brush = Brush.radialGradient(colors = listOf(Color(0xFFFF6B6B), NeonRed, Color(0xFF991B1B)), center = Offset(center.x - bodyOffsetX, center.y - bodyOffsetY), radius = gradRadius), radius = bodyRadius, center = center)
-                    withTransform({ rotate(-20f, pivot = Offset(center.x - glintPivot, center.y - glintPivot)) }) {
-                        drawOval(brush = Brush.linearGradient(colors = listOf(Color.White.copy(0.4f), Color.White.copy(0.05f))), topLeft = Offset(center.x - glintOffsetX, center.y - glintOffsetY), size = Size(glintW, glintH))
+                    val neckOffsetX = 4.dp.toPx(); val neckOffsetY = 14.dp.toPx()
+                    val neckW = 8.dp.toPx(); val neckH = 4.dp.toPx()
+                    val fuseStroke = 2.dp.toPx()
+
+                    drawReflection(isDarkMode, floorY, 0.25f) { isReflection ->
+
+                        // 1. SHADOW (Stays flat! Outside the rotation block)
+                        if (!isReflection) {
+                            val shadowW = 28.dp.toPx()
+                            val shadowH = 6.dp.toPx()
+                            drawOval(
+                                color = Color.Black.copy(alpha = 0.2f),
+                                topLeft = Offset(center.x - shadowW / 2, floorY - shadowH / 2),
+                                size = Size(shadowW, shadowH)
+                            )
+                        }
+
+                        // 2. ROTATING BOMB PARTS
+                        // We apply rotation around the bomb's center.
+                        // Since drawReflection flips the context, this automatically creates the correct "mirrored pivot" effect.
+                        withTransform({ rotate(currentRotation, pivot = center) }) {
+
+                            // A. FUSE
+                            val fuseStart = Offset(center.x, center.y - 14.dp.toPx())
+                            val path = Path() // Create local path
+                            path.moveTo(fuseStart.x, fuseStart.y)
+                            path.lineTo(fuseStart.x, fuseStart.y - 2.dp.toPx())
+                            path.cubicTo(
+                                fuseStart.x, fuseStart.y - 7.dp.toPx(),
+                                fuseStart.x + 7.dp.toPx(), fuseStart.y - 7.dp.toPx(),
+                                fuseStart.x + 8.dp.toPx(), fuseStart.y + 1.dp.toPx()
+                            )
+                            drawPath(path = path, brush = Brush.linearGradient(colors = listOf(Color(0xFFB91C1C), NeonRed, Color(0xFFB91C1C))), style = Stroke(width = fuseStroke, cap = StrokeCap.Round))
+
+                            // B. NECK
+                            drawRoundRect(brush = Brush.linearGradient(colors = listOf(NeonRed, Color(0xFF7F1D1D))), topLeft = Offset(center.x - neckOffsetX, center.y - neckOffsetY), size = Size(neckW, neckH), cornerRadius = CornerRadius(2f, 2f))
+
+                            // C. BODY
+                            val bodyOffsetX = 4.dp.toPx(); val bodyOffsetY = 4.dp.toPx(); val gradRadius = 16.dp.toPx()
+                            drawCircle(brush = Brush.radialGradient(colors = listOf(Color(0xFFFF6B6B), NeonRed, Color(0xFF991B1B)), center = Offset(center.x - bodyOffsetX, center.y - bodyOffsetY), radius = gradRadius), radius = bodyRadius, center = center)
+
+                            // D. GLINT
+                            val glintPivot = 3.dp.toPx(); val glintOffsetX = 8.dp.toPx(); val glintOffsetY = 8.dp.toPx(); val glintW = 8.dp.toPx(); val glintH = 5.dp.toPx()
+                            withTransform({ rotate(-20f, pivot = Offset(center.x - glintPivot, center.y - glintPivot)) }) {
+                                drawOval(brush = Brush.linearGradient(colors = listOf(Color.White.copy(0.4f), Color.White.copy(0.05f))), topLeft = Offset(center.x - glintOffsetX, center.y - glintOffsetY), size = Size(glintW, glintH))
+                            }
+                        }
                     }
                 }
             }
