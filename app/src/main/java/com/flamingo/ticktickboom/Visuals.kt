@@ -286,7 +286,29 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors, isPaused
                 drawOval(brush = neckGradient, topLeft = Offset(bombCenterX - protrusionW / 2, neckBaseY - cylinderOvalH / 2), size = Size(protrusionW, cylinderOvalH))
                 drawRect(brush = neckGradient, topLeft = Offset(bombCenterX - protrusionW / 2, neckTopY), size = Size(protrusionW, neckBaseY - neckTopY))
                 drawOval(brush = rimGradient, topLeft = outerRimRect.topLeft, size = outerRimRect.size)
-                drawOval(color = Color(0xFF0F172A), topLeft = innerHoleRect.topLeft, size = innerHoleRect.size)
+
+                // 1. Define a separate, larger threshold for the heat (Start earlier!)
+                // fadeThreshold is 15f * d. We use 60f * d to start heating up much sooner.
+                val heatThreshold = 60f * d
+
+                // 2. Calculate Heat Factor based on distance
+                // 0.0 = Far away (Cold), 1.0 = At the hole (Hot)
+                val heatFactor = when {
+                    isPaused -> 0f
+                    isCritical -> 1f
+                    else -> {
+                        val dist = (currentBurnPoint - fuseInnerOffset).coerceAtLeast(0f)
+                        (1f - (dist / heatThreshold)).coerceIn(0f, 1f)
+                    }
+                }
+
+                val holeDark = Color(0xFF0F172A)
+                val holeHot = Color(0xFFFFD700)
+
+                // 3. Interpolate
+                val currentHoleColor = lerp(holeDark, holeHot, heatFactor)
+
+                drawOval(color = currentHoleColor, topLeft = innerHoleRect.topLeft, size = innerHoleRect.size)
 
                 // === SIMPLE WHITE FUSE ===
                 if (!isCritical) {
@@ -370,7 +392,10 @@ fun C4Visual(isLedOn: Boolean, isDarkMode: Boolean, isPaused: Boolean, onToggleP
                     }
                     Box(Modifier.weight(0.4f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.offset(y = 5.dp)) {
-                            Canvas(modifier = Modifier.size(12.dp)) {
+                            Canvas(modifier = Modifier
+                                .size(12.dp)
+                                .offset(x = 3.5.dp, y = 0.dp) // <--- Add this! Change X/Y to move just the LED
+                            ) {
                                 if (isLedOn) drawCircle(brush = Brush.radialGradient(colors = listOf(NeonRed.copy(alpha=0.8f), Color.Transparent), center = center, radius = ledSize), radius = ledSize)
                                 drawCircle(color = if (isLedOn) NeonRed else Color(0xFF450a0a), radius = ledRadius)
                             }
@@ -511,6 +536,41 @@ fun DynamiteVisual(timeLeft: Float, isPaused: Boolean, onTogglePause: () -> Unit
                 rotate(-((timeLeft % 60) * 6f), pivot = clockCenter) { drawLine(color = NeonRed, start = clockCenter, end = Offset(clockCenter.x, clockCenter.y - handL), strokeWidth = 4f, cap = StrokeCap.Round) }
                 drawCircle(color = Slate800, radius = pinL, center = clockCenter)
                 drawCircle(color = NeonRed, radius = pinS, center = clockCenter)
+
+                // --- [UPDATED GLASS SHADOW & HIGHLIGHT] ---
+
+                // 1. Main Lens Glare (Keep the Ice Blue tint for glass feel)
+                val glareCenter = Offset(clockCenter.x - clockRad * 0.35f, clockCenter.y - clockRad * 0.35f)
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(Color(0xFFE0F7FA).copy(alpha = 0.3f), Color.Transparent),
+                        center = glareCenter,
+                        radius = clockRad * 0.8f
+                    ),
+                    radius = clockRad * 0.7f,
+                    center = glareCenter
+                )
+
+                // 2. Upper Rim Shadow (The "Overhang" Effect)
+                // Gradient: Gray at the top (shadow) -> Transparent White downwards
+                val shadowBrush = Brush.verticalGradient(
+                    colors = listOf(
+                        Color.Gray.copy(alpha = 0.6f),  // Top: Darker Gray Shadow
+                        Color.White.copy(alpha = 0f)    // Bottom: Fades to transparent
+                    ),
+                    startY = clockCenter.y - clockRad,  // Starts at the very top of the clock
+                    endY = clockCenter.y - (clockRad * 0.4f) // Fades out by the middle of the top half
+                )
+
+                drawArc(
+                    brush = shadowBrush, // <--- Using the gradient brush now
+                    startAngle = 200f,
+                    sweepAngle = 140f,
+                    useCenter = false,
+                    topLeft = Offset(clockCenter.x - (clockRad * 0.92f), clockCenter.y - (clockRad * 0.92f)),
+                    size = Size(clockRad * 1.84f, clockRad * 1.84f),
+                    style = Stroke(width = 6f * d, cap = StrokeCap.Round) // Increased width (4->6) to make the shadow softer
+                )
             }
         }
         Canvas(modifier = Modifier.fillMaxSize()) {
