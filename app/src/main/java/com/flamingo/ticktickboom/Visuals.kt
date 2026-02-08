@@ -111,6 +111,16 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors, isPaused
         animationSpec = infiniteRepeatable(tween(200, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "glint"
     )
 
+    // Start fading in the bloom when the fuse is > 90% burnt ("Pre-Critical"),
+    // OR if the system explicitly flags 'isCritical'.
+    val showBloom = isCritical || progress > 0.95f
+
+    val criticalAlpha by animateFloatAsState(
+        targetValue = if (showBloom) 1f else 0f,
+        animationSpec = tween(durationMillis = 1000, easing = FastOutSlowInEasing),
+        label = "criticalBloom"
+    )
+
     val density = LocalDensity.current
     val d = density.density
 
@@ -339,11 +349,36 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors, isPaused
                 val currentHoleColor = lerp(holeDark, holeHot, heatFactor)
                 drawOval(color = currentHoleColor, topLeft = innerHoleRect.topLeft, size = innerHoleRect.size)
 
-                // === SIMPLE WHITE FUSE ===
+                // === 3D FUSE (Layered Stroke Technique) ===
                 if (!isCritical) {
                     val androidSegmentPath = android.graphics.Path()
                     pathMeasure.getSegment(0f, currentBurnPoint, androidSegmentPath, true)
-                    drawPath(path = androidSegmentPath.asComposePath(), color = Color(0xFFD6D3D1), style = Stroke(width = strokeW, cap = StrokeCap.Round))
+                    val composePath = androidSegmentPath.asComposePath()
+
+                    // 1. Dark Base (Shadow/Sides)
+                    // CHANGED: "Ghost Grey" (0xFFCCC9C6).
+                    // This is the faintest possible shadow, just enough to show it's round.
+                    drawPath(
+                        path = composePath,
+                        color = Color(0xFFCCC9C6),
+                        style = Stroke(width = strokeW, cap = StrokeCap.Round)
+                    )
+
+                    // 2. Main Body (Midtone)
+                    // Drawn at 80% width.
+                    drawPath(
+                        path = composePath,
+                        color = Color(0xFFD6D3D1),
+                        style = Stroke(width = strokeW * 0.8f, cap = StrokeCap.Round)
+                    )
+
+                    // 3. Specular Highlight (The "Roundness")
+                    // Drawn at 40% width.
+                    drawPath(
+                        path = composePath,
+                        color = Color.White.copy(alpha = 0.5f),
+                        style = Stroke(width = strokeW * 0.4f, cap = StrokeCap.Round)
+                    )
                 }
 
                 // Draw Rim Mask
@@ -351,13 +386,43 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors, isPaused
                 drawPath(path = frontRimPath, brush = rimGradient)
 
                 // --- CRITICAL BLOOM ---
-                if (isCritical && !isPaused) {
+                // We check if alpha > 0 so it draws while fading out even if isCritical becomes false
+                if (criticalAlpha > 0f && !isPaused) {
                     val fuseBase = innerHoleRect.center
-                    drawOval(brush = Brush.radialGradient(colors = listOf(Color(0xFFFFFFE0), Color(0xFFFFD700)), center = fuseBase, radius = holeW), topLeft = innerHoleRect.topLeft, size = innerHoleRect.size)
-                    val bloomRect = innerHoleRect.inflate(20f * d); val bloomAspectRatio = bloomRect.height / bloomRect.width
+
+                    // 1. Inner Hot Glow (Fade in opacity)
+                    drawOval(
+                        brush = Brush.radialGradient(
+                            colors = listOf(
+                                Color(0xFFFFFFE0).copy(alpha = criticalAlpha),
+                                Color(0xFFFFD700).copy(alpha = criticalAlpha)
+                            ),
+                            center = fuseBase,
+                            radius = holeW
+                        ),
+                        topLeft = innerHoleRect.topLeft,
+                        size = innerHoleRect.size
+                    )
+
+                    // 2. Outer Red Halo (Fade in opacity)
+                    val bloomRect = innerHoleRect.inflate(20f * d)
+                    val bloomAspectRatio = bloomRect.height / bloomRect.width
+
                     withTransform({ scale(1f, bloomAspectRatio, pivot = fuseBase) }) {
                         val drawRadius = bloomRect.width / 2f
-                        drawCircle(brush = Brush.radialGradient(colors = listOf(NeonRed.copy(alpha = 0.6f), NeonRed.copy(alpha = 0f)), center = fuseBase, radius = drawRadius, tileMode = TileMode.Clamp), radius = drawRadius, center = fuseBase)
+                        drawCircle(
+                            brush = Brush.radialGradient(
+                                colors = listOf(
+                                    NeonRed.copy(alpha = 0.6f * criticalAlpha), // Scales with animation
+                                    NeonRed.copy(alpha = 0f)
+                                ),
+                                center = fuseBase,
+                                radius = drawRadius,
+                                tileMode = TileMode.Clamp
+                            ),
+                            radius = drawRadius,
+                            center = fuseBase
+                        )
                     }
                 }
 
