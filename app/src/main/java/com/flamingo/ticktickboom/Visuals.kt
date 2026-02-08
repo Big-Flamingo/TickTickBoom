@@ -257,42 +257,95 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors, isPaused
                 val orangeDark = Color(0xFFD97706)
                 val orangeLight = Color(0xFFFFB74D)
 
-                // We lerp from "Base Color" to "Orange Color" based on lightIntensity.
-                // symmetry determines IF a side gets to be orange.
-
-                // Left: Only lit if Symmetric AND Intensity is high
-                val neckLeft = lerp(baseDark, orangeDark, symmetry * lightIntensity)
+                // 1. RIM LOGIC
                 val rimLeft = lerp(rimDark, orangeDark, symmetry * lightIntensity)
-
-                // Center: Transitions from BaseLight to OrangeLight
-                val neckCenter = lerp(baseLight, orangeLight, symmetry * lightIntensity)
                 val rimCenter = lerp(rimLight, orangeLight, symmetry * lightIntensity)
-
-                // Right: Always lit (until intensity drops)
-                val neckRight = lerp(baseDark, orangeDark, lightIntensity)
                 val rimRight = lerp(rimDark, orangeDark, lightIntensity)
+                val rimCenterOffset = 0.7f - (0.2f * symmetry)
 
-                // Center Offset
-                val centerOffset = 0.7f - (0.2f * symmetry) // 0.7 -> 0.5
+                // 2. NECK GRADIENTS
+                val rectLeft = bombCenterX - protrusionW / 2
+                val rectRight = bombCenterX + protrusionW / 2
+
+                // Base: Unlit Metal
+                val metalGradient = Brush.horizontalGradient(
+                    0.0f to baseDark, 0.5f to baseLight, 1.0f to baseDark,
+                    startX = rectLeft, endX = rectRight
+                )
+
+                // Overlay: Lit Orange
+                val neckRightColor = lerp(baseDark, orangeDark, lightIntensity)
+                val litGradient = Brush.horizontalGradient(
+                    0.0f to baseDark, 0.5f to baseLight, 1.0f to neckRightColor,
+                    startX = rectLeft, endX = rectRight
+                )
 
                 val outerRimRect = Rect(offset = Offset(bombCenterX - protrusionW / 2, neckTopY - cylinderOvalH / 2), size = Size(protrusionW, cylinderOvalH))
                 val innerHoleRect = Rect(center = outerRimRect.center, radius = holeW / 2).copy(top = outerRimRect.center.y - holeH / 2, bottom = outerRimRect.center.y + holeH / 2)
 
-                // Dynamic Gradients
-                val neckGradient = Brush.horizontalGradient(0.0f to neckLeft, centerOffset to neckCenter, 1.0f to neckRight, startX = bombCenterX - protrusionW / 2, endX = bombCenterX + protrusionW / 2)
-                val rimGradient = Brush.horizontalGradient(0.0f to rimLeft, centerOffset to rimCenter, 1.0f to rimRight, startX = outerRimRect.left, endX = outerRimRect.right)
+                // 3. DRAW BASE LAYER (Permanent Unlit Background)
+                drawOval(brush = metalGradient, topLeft = Offset(bombCenterX - protrusionW / 2, neckBaseY - cylinderOvalH / 2), size = Size(protrusionW, cylinderOvalH))
+                drawRect(brush = metalGradient, topLeft = Offset(bombCenterX - protrusionW / 2, neckTopY), size = Size(protrusionW, neckBaseY - neckTopY))
 
-                // Draw Neck & Rims
-                drawOval(brush = neckGradient, topLeft = Offset(bombCenterX - protrusionW / 2, neckBaseY - cylinderOvalH / 2), size = Size(protrusionW, cylinderOvalH))
-                drawRect(brush = neckGradient, topLeft = Offset(bombCenterX - protrusionW / 2, neckTopY), size = Size(protrusionW, neckBaseY - neckTopY))
+                // 4. DRAW LIT LAYER WITH "HORIZONTAL SLIDING ERASER" MASK
+                val shadowPos = floatArrayOf(0f, 0f)
+                pathMeasure.getPosTan(currentBurnPoint, shadowPos, null)
+                val sparkX = shadowPos[0]
+                val neckRightEdge = bombCenterX + protrusionW / 2
+                val triggerDist = 40f * d
+                val distToEdge = (sparkX - neckRightEdge)
+
+                val curtainProgress = if (isPaused) 1f else {
+                    (1f - (distToEdge / triggerDist)).coerceIn(0f, 1f)
+                }
+
+                // Only draw if not fully erased
+                if (curtainProgress < 1f) {
+                    // FIX: Removed 'val neckWidth = protrusionW'
+                    val fadeWidth = 20f * d
+
+                    // Used 'protrusionW' directly here
+                    val maxSweep = protrusionW + fadeWidth
+                    val currentSweep = maxSweep * curtainProgress
+
+                    drawIntoCanvas { canvas ->
+                        canvas.saveLayer(Rect(outerRimRect.left, neckTopY, outerRimRect.right, neckBaseY + 15f * d), Paint())
+
+                        // A. Draw Full Lit Orange Layer
+                        drawOval(brush = litGradient, topLeft = Offset(bombCenterX - protrusionW / 2, neckBaseY - cylinderOvalH / 2), size = Size(protrusionW, cylinderOvalH))
+                        drawRect(brush = litGradient, topLeft = Offset(bombCenterX - protrusionW / 2, neckTopY), size = Size(protrusionW, neckBaseY - neckTopY))
+
+                        // B. Erase Left-to-Right
+                        if (curtainProgress > 0f) {
+                            val eraserRight = outerRimRect.left + currentSweep
+
+                            val slidingEraserBrush = Brush.horizontalGradient(
+                                0.0f to Color.Black,
+                                1.0f to Color.Transparent,
+                                startX = eraserRight - fadeWidth,
+                                endX = eraserRight
+                            )
+
+                            // Draw the eraser rect
+                            val drawHeight = (neckBaseY - neckTopY) + 20f * d
+
+                            drawRect(
+                                brush = slidingEraserBrush,
+                                topLeft = Offset(outerRimRect.left, neckTopY),
+                                size = Size(currentSweep, drawHeight),
+                                blendMode = BlendMode.DstOut
+                            )
+                        }
+                        canvas.restore()
+                    }
+                }
+
+                // 5. DRAW RIM (Sits on top)
+                val rimGradient = Brush.horizontalGradient(0.0f to rimLeft, rimCenterOffset to rimCenter, 1.0f to rimRight, startX = outerRimRect.left, endX = outerRimRect.right)
                 drawOval(brush = rimGradient, topLeft = outerRimRect.topLeft, size = outerRimRect.size)
 
-                // 1. Define a separate, larger threshold for the heat (Start earlier!)
-                // fadeThreshold is 15f * d. We use 60f * d to start heating up much sooner.
+                // 6. HEAT LOGIC
                 val heatThreshold = 60f * d
-
-                // 2. Calculate Heat Factor based on distance
-                // 0.0 = Far away (Cold), 1.0 = At the hole (Hot)
                 val heatFactor = when {
                     isPaused -> 0f
                     isCritical -> 1f
@@ -301,13 +354,9 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors, isPaused
                         (1f - (dist / heatThreshold)).coerceIn(0f, 1f)
                     }
                 }
-
                 val holeDark = Color(0xFF0F172A)
                 val holeHot = Color(0xFFFFD700)
-
-                // 3. Interpolate
                 val currentHoleColor = lerp(holeDark, holeHot, heatFactor)
-
                 drawOval(color = currentHoleColor, topLeft = innerHoleRect.topLeft, size = innerHoleRect.size)
 
                 // === SIMPLE WHITE FUSE ===
