@@ -9,7 +9,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -233,8 +232,12 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, onToggleTheme: () -> Uni
 
                         // 1. SHADOW (Stays flat! Outside the rotation block)
                         if (!isReflection) {
-                            val shadowW = 28.dp.toPx()
-                            val shadowH = 6.dp.toPx()
+                            // --- MODIFIED: CONSISTENT 5:1 RATIO ---
+                            // Width = Body Diameter (Radius * 2)
+                            val shadowW = bodyRadius * 2f
+                            // Height = 20% of Width
+                            val shadowH = shadowW * 0.2f
+
                             drawOval(
                                 color = Color.Black.copy(alpha = 0.2f),
                                 topLeft = Offset(center.x - shadowW / 2, floorY - shadowH / 2),
@@ -502,7 +505,15 @@ fun BombScreen(
                                 AudioService.playHenCluck()
                             }
                         }
-                        lastTickRunTime = currentRunTimeMs
+                        // FIX: Add the interval to the last time instead of resetting to "now".
+                        // This ensures that if we are 10ms late this frame, we are 10ms early next frame to catch up.
+                        if (currentRunTimeMs - lastTickRunTime > tickInterval * 1.5f) {
+                            // Safety: If we are WAY behind (like after a pause or phase change), just reset.
+                            lastTickRunTime = currentRunTimeMs
+                        } else {
+                            // Normal operation: Keep the metronome perfect
+                            lastTickRunTime += tickInterval
+                        }
                     }
                     if (isLedOn && (currentRunTimeMs - lastTickRunTime > 50)) isLedOn = false
                 } else {

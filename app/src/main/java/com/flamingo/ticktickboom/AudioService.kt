@@ -233,7 +233,7 @@ object AudioService {
     fun playCroak(isFast: Boolean = false) {
         val soundId = if (isFast) croakFastSoundId else croakSoundId
         val pitch = 0.9f + Math.random().toFloat() * 0.2f
-        soundPool?.play(soundId, timerVolume, timerVolume, 1, 0, pitch)
+        soundPool?.play(soundId, timerVolume, timerVolume, 2, 0, pitch)
     }
 
     fun playHenCluck() {
