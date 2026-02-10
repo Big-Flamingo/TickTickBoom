@@ -686,22 +686,31 @@ fun DynamiteVisual(timeLeft: Float, isPaused: Boolean, onTogglePause: () -> Unit
 
 @Composable
 fun FrogVisual(timeLeft: Float, isCritical: Boolean, isPaused: Boolean, onTogglePause: () -> Unit, isDarkMode: Boolean) {
+    // --- VARIABLES ---
+    val squishMagnitude = 0.98f
+    val shadowResponseFactor = 1.5f // Controls how much the shadow grows/shrinks
+
     val isPanic = timeLeft <= 1.05f
     val tickDuration = if (timeLeft <= 5f) 0.5f else 1.0f
     val currentProgress = if (isPaused) 0f else (timeLeft % tickDuration) / tickDuration
 
-    // 1. Existing Belly Animation
-    val bellyHeightScale by animateFloatAsState(if ((1f - currentProgress) < 0.2f && !isPaused) 1.15f else 1.0f, spring(stiffness = Spring.StiffnessMediumLow), label = "croak")
+    // 1. Animations
+    val isCroaking = (1f - currentProgress) < 0.2f && !isPaused
+    val bellyHeightScale by animateFloatAsState(if (isCroaking) 1.15f else 1.0f, spring(stiffness = Spring.StiffnessMediumLow), label = "croak")
 
-    // 2. NEW: Mouth Open Animation (Syncs with belly, ranges 0f to 1f)
-    // When belly expands (1.15), mouth opens (1.0). When belly rests (1.0), mouth closes (0.0).
+    val croakSquish by animateFloatAsState(
+        targetValue = if (isCroaking) squishMagnitude else 1.0f,
+        animationSpec = spring(dampingRatio = 0.45f, stiffness = Spring.StiffnessMedium),
+        label = "squish"
+    )
+
     val mouthOpenProgress = (bellyHeightScale - 1.0f) / 0.15f
-
     val infiniteTransition = rememberInfiniteTransition("flail")
     val flailRotation by infiniteTransition.animateFloat(-40f, 40f, infiniteRepeatable(tween(100, easing = LinearEasing), RepeatMode.Reverse), label = "flail")
     val alertScale = remember { Animatable(0f) }
     LaunchedEffect(isPanic) { if (isPanic) alertScale.animateTo(1f, spring(dampingRatio = Spring.DampingRatioHighBouncy)) else alertScale.snapTo(0f) }
 
+    // Paths & State
     val silhouettePath = remember { Path() }
     val bodyCirclePath = remember { Path() }
     val leftBumpPath = remember { Path() }
@@ -718,6 +727,7 @@ fun FrogVisual(timeLeft: Float, isCritical: Boolean, isPaused: Boolean, onToggle
     val density = LocalDensity.current
     val d = density.density
 
+    // Physics Loop
     LaunchedEffect(Unit) {
         while (true) {
             withFrameNanos { nanos ->
@@ -740,26 +750,21 @@ fun FrogVisual(timeLeft: Float, isCritical: Boolean, isPaused: Boolean, onToggle
     }) {
         Canvas(modifier = Modifier.fillMaxSize()) {
             val cx = size.width / 2; val cy = size.height / 2
+
+            // Rebuild Paths if size changes
             if (size != cachedSize) {
                 val bodyRadius = size.width * 0.35f
                 val bumpRadius = bodyRadius * 0.42f
                 val bumpY = cy - bodyRadius * 0.68f
                 val bumpXOffset = bodyRadius * 0.56f
 
-                // --- SHAPE: TAPERED SUPERELLIPSE ---
                 bodyCirclePath.reset()
-                val n = 2.4f
-                val a = bodyRadius * 1.15f
-                val b = bodyRadius * 0.95f
-                val k = 0.3f
-
+                val n = 2.4f; val a = bodyRadius * 1.15f; val b = bodyRadius * 0.95f; val k = 0.3f
                 val steps = 120
                 for (i in 0..steps) {
                     val t = (i.toFloat() / steps) * 2 * PI
-                    val cosT = cos(t)
-                    val sinT = sin(t)
-                    val signX = if (cosT >= 0) 1f else -1f
-                    val signY = if (sinT >= 0) 1f else -1f
+                    val cosT = cos(t); val sinT = sin(t)
+                    val signX = if (cosT >= 0) 1f else -1f; val signY = if (sinT >= 0) 1f else -1f
                     val rawY = b * signY * abs(sinT).pow(2.0 / n).toFloat()
                     val widthScale = 1.0f + k * (rawY / b)
                     val rawX = a * widthScale * signX * abs(cosT).pow(2.0 / n).toFloat()
@@ -774,217 +779,179 @@ fun FrogVisual(timeLeft: Float, isCritical: Boolean, isPaused: Boolean, onToggle
                 sweatDropPath.reset(); sweatDropPath.moveTo(-dropSize, -dropSize * 0.2f); sweatDropPath.arcTo(Rect(topLeft = Offset(-dropSize, -dropSize), bottomRight = Offset(dropSize, dropSize)), 180f, 180f, false); sweatDropPath.lineTo(0f, dropSize * 1.3f); sweatDropPath.close()
                 cachedSize = size
             }
-            val bodyRadius = size.width * 0.35f; val floorY = cy + bodyRadius * 1.05f + 1.5f * d
+
+            val bodyRadius = size.width * 0.35f
+            val floorY = cy + bodyRadius * 1.05f + 1.5f * d
+
+            // --- CALCULATE PHYSICS HERE ---
+            // Calculate total stretch/squash BEFORE drawing the shadow
+            val totalSquash = boingAnim.value * croakSquish
+            val totalStretch = (2f - boingAnim.value) * (2f - croakSquish)
+            val pivotY = cy + bodyRadius
 
             drawReflection(isDarkMode, floorY, 0.25f) { isReflection ->
                 if (!isDarkMode && !isReflection) {
-                    // --- MODIFIED: CONSISTENT 5:1 RATIO ---
-                    val shadowW = bodyRadius * 2.3f
-                    val shadowH = shadowW * 0.2f // Height is 20% of width
+                    val baseShadowW = bodyRadius * 2.3f
+                    val baseShadowH = baseShadowW * 0.2f
 
-                    drawOval(color = Color.Black.copy(alpha = 0.2f), topLeft = Offset(cx - shadowW / 2, floorY - shadowH / 2), size = Size(shadowW, shadowH))
+                    // --- DYNAMIC SHADOW SCALING ---
+                    // When the body stretches horizontally (totalStretch > 1.0), the shadow expands.
+                    val shadowScale = 1f + (totalStretch - 1f) * shadowResponseFactor
+
+                    val currentShadowW = baseShadowW * shadowScale
+                    val currentShadowH = baseShadowH * shadowScale // Keep aspect ratio consistent
+
+                    drawOval(color = Color.Black.copy(alpha = 0.2f), topLeft = Offset(cx - currentShadowW / 2, floorY - currentShadowH / 2), size = Size(currentShadowW, currentShadowH))
                 }
-                val squashY = boingAnim.value; val stretchX = 2f - squashY; val pivotY = cy + bodyRadius
-                withTransform({ scale(stretchX, squashY, pivot = Offset(cx, pivotY)) }) {
 
-                    val bumpRadius = bodyRadius * 0.42f
-                    val bumpY = cy - bodyRadius * 0.68f
-                    val bumpXOffset = bodyRadius * 0.56f
-                    val outlineStroke = Stroke(width = 6f * d, cap = StrokeCap.Round, join = StrokeJoin.Round)
+                // Helper to map coordinates based on squash
+                fun getMod(x: Float, y: Float): Offset {
+                    val newX = cx + (x - cx) * totalStretch
+                    val newY = pivotY + (y - pivotY) * totalSquash
+                    return Offset(newX, newY)
+                }
+                val outlineStroke = Stroke(width = 6f * d, cap = StrokeCap.Round, join = StrokeJoin.Round)
 
-                    if (!isReflection && currentIsCritical && timeAccumulator >= 0.5f) {
-                        timeAccumulator -= 0.5f
-                        repeat(3) { i ->
-                            val angle = -PI / 4 + (i - 1) * 0.5 + ((Math.random() - 0.5) * 0.1)
-                            val speed = (bumpRadius / 0.5f) * (0.9f + Math.random().toFloat() * 0.2f)
-                            sweatDrops.add(LocalVisualParticle((cx + bumpXOffset) + (bumpRadius * 1.05f), bumpY - (bumpRadius * 1.15f), (cos(angle) * speed).toFloat(), (sin(angle) * speed).toFloat(), 0.5f, 0.5f))
-                        }
-                    }
+                // 1. DRAW FEET (BEHIND)
+                val footRadius = bodyRadius * 0.2f; val footY = cy + bodyRadius * 0.85f; val footOffset = bodyRadius * 0.65f
+                val lFoot = getMod(cx - footOffset, footY); val rFoot = getMod(cx + footOffset, footY)
+                drawCircle(color = Color.Black, radius = footRadius, center = lFoot, style = outlineStroke)
+                drawCircle(color = FrogBody, radius = footRadius, center = lFoot)
+                drawCircle(color = Color.Black, radius = footRadius, center = rFoot, style = outlineStroke)
+                drawCircle(color = FrogBody, radius = footRadius, center = rFoot)
 
-                    // --- FEET ---
-                    val footRadius = bodyRadius * 0.2f; val footY = cy + bodyRadius * 0.85f
-                    val footOffset = bodyRadius * 0.65f
-                    drawCircle(color = Color.Black, radius = footRadius, center = Offset(cx - footOffset, footY), style = outlineStroke)
-                    drawCircle(color = FrogBody, radius = footRadius, center = Offset(cx - footOffset, footY))
-                    drawCircle(color = Color.Black, radius = footRadius, center = Offset(cx + footOffset, footY), style = outlineStroke)
-                    drawCircle(color = FrogBody, radius = footRadius, center = Offset(cx + footOffset, footY))
-
-                    // --- BODY OUTLINE ---
+                // 2. DRAW BODY (TRANSFORMED)
+                withTransform({ scale(totalStretch, totalSquash, pivot = Offset(cx, pivotY)) }) {
                     drawPath(path = silhouettePath, color = Color.Black, style = outlineStroke)
-                    // --- BODY FILL ---
                     drawPath(path = silhouettePath, color = FrogBody)
 
-                    // --- CLIPPED BELLY ---
-                    val eyeW = bumpRadius * 0.56f
-                    val cheekW = bodyRadius * 0.35f
-                    val cheekH = bodyRadius * 0.22f
-                    val eyeBottom = bumpY + eyeW
-                    val cheekTopY = eyeBottom - (eyeW * 0.1f)
-                    val blushBottomY = cheekTopY + cheekH
-
+                    // Clipped Belly
+                    val bumpRadius = bodyRadius * 0.42f; val bumpY = cy - bodyRadius * 0.68f; val eyeW = bumpRadius * 0.56f
+                    val cheekTopY = (bumpY + eyeW) - (eyeW * 0.1f); val blushBottomY = cheekTopY + (bodyRadius * 0.22f)
                     clipPath(path = silhouettePath) {
-                        val anchorXDist = bodyRadius * 0.45f
-                        val anchorY = cy + bodyRadius * 0.95f
+                        val anchorXDist = bodyRadius * 0.45f; val anchorY = cy + bodyRadius * 0.95f
                         val targetBellyTop = blushBottomY + bodyRadius * 0.05f
                         val bellyHeight = (anchorY - targetBellyTop) * bellyHeightScale
                         val bellyHalfWidth = anchorXDist
                         val bellyRadius = (bellyHalfWidth.pow(2) + bellyHeight.pow(2)) / (2 * bellyHeight)
                         val bellyCenterY = targetBellyTop + bellyRadius
-
                         drawCircle(color = FrogBelly, radius = bellyRadius, center = Offset(cx, bellyCenterY))
                         drawOval(color = Color.White.copy(alpha = 0.3f), topLeft = Offset(cx - bellyRadius * 0.3f, targetBellyTop + bellyHeight * 0.15f), size = Size(bellyRadius * 0.6f, bellyHeight * 0.15f))
                     }
+                }
 
-                    // --- BLUSHES ---
-                    drawOval(color = Color(0xFFff9693), topLeft = Offset(cx - bodyRadius * 0.65f - cheekW/2, cheekTopY), size = Size(cheekW, cheekH))
-                    drawOval(color = Color(0xFFff9693), topLeft = Offset(cx + bodyRadius * 0.65f - cheekW/2, cheekTopY), size = Size(cheekW, cheekH))
+                // 3. DRAW FEATURES (ON TOP)
+                val bumpRadius = bodyRadius * 0.42f; val bumpY = cy - bodyRadius * 0.68f; val bumpXOffset = bodyRadius * 0.56f
 
-                    // --- ARMS ---
-                    val armW = bodyRadius * 0.18f
-                    val armH = bodyRadius * 0.28f
-                    val armY = cy - bodyRadius * 0.06f
-                    val armX = bodyRadius * 0.72f
+                // Blushes
+                val cheekW = bodyRadius * 0.35f; val cheekH = bodyRadius * 0.22f; val eyeW = bumpRadius * 0.56f
+                val cheekTopY = (bumpY + eyeW) - (eyeW * 0.1f); val cheekCenterY = cheekTopY + cheekH/2
+                val cheekOffsetX = bodyRadius * 0.65f
+                val lCheek = getMod(cx - cheekOffsetX, cheekCenterY); val rCheek = getMod(cx + cheekOffsetX, cheekCenterY)
+                drawOval(color = Color(0xFFff9693), topLeft = Offset(lCheek.x - cheekW/2, lCheek.y - cheekH/2), size = Size(cheekW, cheekH))
+                drawOval(color = Color(0xFFff9693), topLeft = Offset(rCheek.x - cheekW/2, rCheek.y - cheekH/2), size = Size(cheekW, cheekH))
 
-                    rotate(if (isPanic) flailRotation else 30f, pivot = Offset(cx - armX, armY)) {
-                        drawArc(color = Color.Black, startAngle = -90f, sweepAngle = 180f, useCenter = false, topLeft = Offset(cx - armX - armW, armY - armH/2), size = Size(armW*2, armH), style = outlineStroke)
-                        drawOval(color = FrogBody, topLeft = Offset(cx - armX - armW, armY - armH/2), size = Size(armW*2, armH))
+                // Arms
+                val armW = bodyRadius * 0.18f; val armH = bodyRadius * 0.28f
+                val armY = cy - bodyRadius * 0.06f; val armX = bodyRadius * 0.72f
+                val lArm = getMod(cx - armX, armY); val rArm = getMod(cx + armX, armY)
+                rotate(if (isPanic) flailRotation else 30f, pivot = lArm) {
+                    drawArc(color = Color.Black, startAngle = -90f, sweepAngle = 180f, useCenter = false, topLeft = Offset(lArm.x - armW, lArm.y - armH/2), size = Size(armW*2, armH), style = outlineStroke)
+                    drawOval(color = FrogBody, topLeft = Offset(lArm.x - armW, lArm.y - armH/2), size = Size(armW*2, armH))
+                }
+                rotate(if (isPanic) -flailRotation else -30f, pivot = rArm) {
+                    drawArc(color = Color.Black, startAngle = 90f, sweepAngle = 180f, useCenter = false, topLeft = Offset(rArm.x - armW, rArm.y - armH/2), size = Size(armW*2, armH), style = outlineStroke)
+                    drawOval(color = FrogBody, topLeft = Offset(rArm.x - armW, rArm.y - armH/2), size = Size(armW*2, armH))
+                }
+
+                // Eyes
+                val pupil = eyeW * 0.9f
+                fun drawEye(baseX: Float, baseY: Float, isLeft: Boolean) {
+                    val pos = getMod(baseX, baseY)
+                    drawCircle(color = Color.Black, radius = eyeW, center = pos, style = outlineStroke)
+                    drawCircle(color = Color.White, radius = eyeW, center = pos)
+                    if (isCritical && !isPanic) {
+                        val path = Path(); val size = eyeW * 1.2f; val off = size * 0.15f; val ex = pos.x + if(isLeft) off else -off
+                        path.moveTo(ex - size/2, pos.y - size/2); path.lineTo(ex + size/4, pos.y); path.lineTo(ex - size/2, pos.y + size/2)
+                        if (!isLeft) { path.reset(); path.moveTo(ex + size/2, pos.y - size/2); path.lineTo(ex - size/4, pos.y); path.lineTo(ex + size/2, pos.y + size/2) }
+                        drawPath(path, Color.Black, style = Stroke(8f * d, cap = StrokeCap.Round, join = StrokeJoin.Round))
+                    } else if (!isPanic) {
+                        if (isBlinking) drawLine(color = Color.Black, start = Offset(pos.x - 15f * d, pos.y), end = Offset(pos.x + 15f * d, pos.y), strokeWidth = 4f * d, cap = StrokeCap.Round)
+                        else { drawCircle(color = Color.Black, radius = pupil, center = pos); drawCircle(color = Color.White, radius = pupil * 0.25f, center = Offset(pos.x - pupil*0.4f, pos.y - pupil*0.4f)) }
                     }
-                    rotate(if (isPanic) -flailRotation else -30f, pivot = Offset(cx + armX, armY)) {
-                        drawArc(color = Color.Black, startAngle = 90f, sweepAngle = 180f, useCenter = false, topLeft = Offset(cx + armX - armW, armY - armH/2), size = Size(armW*2, armH), style = outlineStroke)
-                        drawOval(color = FrogBody, topLeft = Offset(cx + armX - armW, armY - armH/2), size = Size(armW*2, armH))
+                }
+                drawEye(cx - bumpXOffset, bumpY, true); drawEye(cx + bumpXOffset, bumpY, false)
+
+                // Mouth
+                val mouthY = bumpY + eyeW * 0.65f
+                val mouthCenter = getMod(cx, mouthY); val mcx = mouthCenter.x; val mcy = mouthCenter.y
+                val mouthW = if (isCritical) bodyRadius * 0.2f else bodyRadius * 0.3f
+                val mouthColor = Color(0xFF9E2A2B)
+                val mouthStroke = Stroke(width = 3.5f * d, cap = StrokeCap.Round, join = StrokeJoin.Round)
+                val jawDrop = bodyRadius * 0.08f * mouthOpenProgress
+
+                if (isPanic) {
+                    val panicH = 5f * d; val panicW = mouthW * 0.3f
+                    if (mouthOpenProgress > 0.05f) {
+                        val path = Path()
+                        path.moveTo(mcx - panicW, mcy + panicH)
+                        path.quadraticTo(mcx, mcy + panicH + jawDrop + (2f*d), mcx + panicW, mcy + panicH)
+                        path.lineTo(mcx, mcy - panicH)
+                        path.lineTo(mcx - panicW, mcy + panicH)
+                        path.close()
+                        drawPath(path, mouthColor); drawPath(path, Color.Black, style = mouthStroke)
                     }
-
-                    // --- EYES ---
-                    val pupil = eyeW * 0.9f
-                    fun drawEye(centerX: Float, centerY: Float, isLeft: Boolean) {
-                        drawCircle(color = Color.Black, radius = eyeW, center = Offset(centerX, centerY), style = outlineStroke)
-                        drawCircle(color = Color.White, radius = eyeW, center = Offset(centerX, centerY))
-                        if (isCritical && !isPanic) {
-                            val path = Path(); val size = eyeW * 1.2f; val off = size * 0.15f; val ex = centerX + if(isLeft) off else -off
-                            path.moveTo(ex - size/2, centerY - size/2); path.lineTo(ex + size/4, centerY); path.lineTo(ex - size/2, centerY + size/2)
-                            if (!isLeft) { path.reset(); path.moveTo(ex + size/2, centerY - size/2); path.lineTo(ex - size/4, centerY); path.lineTo(ex + size/2, centerY + size/2) }
-                            drawPath(path, Color.Black, style = Stroke(8f * d, cap = StrokeCap.Round, join = StrokeJoin.Round))
-                        } else if (!isPanic) {
-                            if (isBlinking) drawLine(color = Color.Black, start = Offset(centerX - 15f * d, centerY), end = Offset(centerX + 15f * d, centerY), strokeWidth = 4f * d, cap = StrokeCap.Round)
-                            else { drawCircle(color = Color.Black, radius = pupil, center = Offset(centerX, centerY)); drawCircle(color = Color.White, radius = pupil * 0.25f, center = Offset(centerX - pupil*0.4f, centerY - pupil*0.4f)) }
-                        }
+                    drawPath(path = Path().apply { moveTo(mcx - panicW, mcy + panicH); lineTo(mcx, mcy - panicH); lineTo(mcx + panicW, mcy + panicH) }, color = Color.Black, style = mouthStroke)
+                }
+                else if (isCritical) {
+                    val dotBaseRadius = 5f * d; val currentDotRadius = dotBaseRadius * (1f + mouthOpenProgress * 0.5f)
+                    drawCircle(color = Color.Black, radius = currentDotRadius, center = mouthCenter)
+                }
+                else {
+                    val smileDip = bodyRadius * 0.08f; val redRadius = mouthW * 0.25f; val startY = mcy + (smileDip * 0.5f)
+                    if (mouthOpenProgress > 0.05f) {
+                        val path = Path()
+                        path.moveTo(mcx - redRadius, startY)
+                        path.quadraticTo(mcx, startY + jawDrop + (3f*d), mcx + redRadius, startY)
+                        path.quadraticTo(mcx + redRadius/2, startY, mcx, mcy)
+                        path.quadraticTo(mcx - redRadius/2, startY, mcx - redRadius, startY)
+                        path.close()
+                        drawPath(path, mouthColor); drawPath(path, Color.Black, style = mouthStroke)
                     }
-                    drawEye(cx - bumpXOffset, bumpY, true); drawEye(cx + bumpXOffset, bumpY, false)
+                    val smilePath = Path()
+                    smilePath.moveTo(mcx - mouthW/2, mcy)
+                    smilePath.quadraticTo(mcx - mouthW/4, mcy + smileDip, mcx, mcy)
+                    smilePath.quadraticTo(mcx + mouthW/4, mcy + smileDip, mcx + mouthW/2, mcy)
+                    drawPath(smilePath, Color.Black, style = mouthStroke)
+                }
 
-                    // --- MOUTH & JAW DROP ---
-                    val mouthW = if (isCritical) bodyRadius * 0.2f else bodyRadius * 0.3f
-                    val mouthY = bumpY + eyeW * 0.65f
-                    val mouthColor = Color(0xFF9E2A2B)
-
-                    // The master stroke for ALL mouth parts (Red & Black)
-                    val mouthStroke = Stroke(width = 3.5f * d, cap = StrokeCap.Round, join = StrokeJoin.Round)
-
-                    // Animation: How far the mouth opens
-                    val jawDrop = bodyRadius * 0.08f * mouthOpenProgress
-
-                    if (isPanic) {
-                        // 1. PANIC MOUTH (^):
-                        val panicH = 5f * d
-                        val panicW = mouthW * 0.3f
-
-                        // --- VISUAL CONSISTENCY ---
-                        // No offsets. We use the exact same coordinates as the black line.
-
-                        if (mouthOpenProgress > 0.05f) {
-                            val path = Path()
-                            // Start Exact Left Tip
-                            path.moveTo(cx - panicW, mouthY + panicH)
-
-                            // Bottom Curve (Jaw Drop) - Spans Exact Width
-                            path.quadraticTo(cx, mouthY + panicH + jawDrop + (2f*d), cx + panicW, mouthY + panicH)
-
-                            // Top Peak (Trace the ^ shape exactly)
-                            path.lineTo(cx, mouthY - panicH)
-                            path.lineTo(cx - panicW, mouthY + panicH)
-                            path.close()
-
-                            drawPath(path, mouthColor)
-                            // --- MATCHING OUTLINE ---
-                            // Use mouthStroke so it merges perfectly with the static line
-                            drawPath(path, Color.Black, style = mouthStroke)
-                        }
-
-                        // Draw the black ^ lines (Exact same position as top of red shape)
-                        drawPath(
-                            path = Path().apply {
-                                moveTo(cx - panicW, mouthY + panicH)
-                                lineTo(cx, mouthY - panicH)
-                                lineTo(cx + panicW, mouthY + panicH)
-                            },
-                            color = Color.Black,
-                            style = mouthStroke
-                        )
+                // Alert Mark
+                if (alertScale.value > 0f) {
+                    val markBaseY = bumpY - bumpRadius * 1.8f; val markPos = getMod(cx, markBaseY)
+                    val markW = bodyRadius * 0.15f; val markH = bodyRadius * 0.6f
+                    withTransform({ scale(alertScale.value, alertScale.value, pivot = Offset(markPos.x, markPos.y + markH/2)) }) {
+                        drawRoundRect(color = Color(0xFFFF0000), topLeft = Offset(markPos.x - markW/2, markPos.y - markH/2), size = Size(markW, markH * 0.65f), cornerRadius = CornerRadius(markW/2, markW/2))
+                        drawCircle(color = Color(0xFFFF0000), radius = markW/1.8f, center = Offset(markPos.x, markPos.y + markH/2 - markW/2))
                     }
-                    else if (isCritical) {
-                        // 2. DOT MOUTH (.): Uniform expansion
-                        val dotBaseRadius = 5f * d
-                        val currentDotRadius = dotBaseRadius * (1f + mouthOpenProgress * 0.5f)
-                        drawCircle(color = Color.Black, radius = currentDotRadius, center = Offset(cx, mouthY))
+                }
+
+                // Particles
+                if (!isReflection && currentIsCritical && timeAccumulator >= 0.5f) {
+                    timeAccumulator -= 0.5f
+                    repeat(3) { i ->
+                        val angle = -PI / 4 + (i - 1) * 0.5 + ((Math.random() - 0.5) * 0.1)
+                        val speed = (bumpRadius / 0.5f) * (0.9f + Math.random().toFloat() * 0.2f)
+                        val spawnX = (cx + bumpXOffset) + (bumpRadius * 1.05f)
+                        val spawnY = bumpY - (bumpRadius * 1.15f)
+                        val modSpawn = getMod(spawnX, spawnY)
+                        sweatDrops.add(LocalVisualParticle(modSpawn.x, modSpawn.y, (cos(angle) * speed).toFloat(), (sin(angle) * speed).toFloat(), 0.5f, 0.5f))
                     }
-                    else {
-                        // 3. NORMAL "ω" SMILE:
-                        val smileDip = bodyRadius * 0.08f
-
-                        // Width: Anchored to the "peaks" (±25% of width)
-                        val redRadius = mouthW * 0.25f
-
-                        // --- EXACT GEOMETRY ---
-                        // The peak of the quadratic bezier for the smile is at y = mouthY + (smileDip * 0.5)
-                        // We use this exact Y so the lines overlap perfectly.
-                        val startY = mouthY + (smileDip * 0.5f)
-
-                        if (mouthOpenProgress > 0.05f) {
-                            val path = Path()
-                            // 1. Start at Left Peak
-                            path.moveTo(cx - redRadius, startY)
-
-                            // 2. Bottom Curve (Jaw Drop)
-                            path.quadraticTo(cx, startY + jawDrop + (3f*d), cx + redRadius, startY)
-
-                            // 3. Top Edge (Tracing the "ω" exactly)
-                            // Math: To split a quadratic bezier at t=0.5 (the peak),
-                            // the control point Y is the same as the start Y.
-
-                            // Right Peak to Center
-                            path.quadraticTo(cx + redRadius/2, startY, cx, mouthY)
-
-                            // Center to Left Peak
-                            path.quadraticTo(cx - redRadius/2, startY, cx - redRadius, startY)
-                            path.close()
-
-                            drawPath(path, mouthColor)
-                            // --- MATCHING OUTLINE ---
-                            // Using mouthStroke ensures no weird gaps or thin lines
-                            drawPath(path, Color.Black, style = mouthStroke)
-                        }
-
-                        // Draw the classic "ω" Black Line
-                        val smilePath = Path()
-                        smilePath.moveTo(cx - mouthW/2, mouthY)
-                        smilePath.quadraticTo(cx - mouthW/4, mouthY + smileDip, cx, mouthY)
-                        smilePath.quadraticTo(cx + mouthW/4, mouthY + smileDip, cx + mouthW/2, mouthY)
-                        drawPath(smilePath, Color.Black, style = mouthStroke)
-                    }
-
-                    if (alertScale.value > 0f) {
-                        val markCenter = Offset(cx, bumpY - bumpRadius * 1.8f); val markW = bodyRadius * 0.15f; val markH = bodyRadius * 0.6f
-                        withTransform({ scale(alertScale.value, alertScale.value, pivot = Offset(markCenter.x, markCenter.y + markH/2)) }) {
-                            drawRoundRect(color = Color(0xFFFF0000), topLeft = Offset(markCenter.x - markW/2, markCenter.y - markH/2), size = Size(markW, markH * 0.65f), cornerRadius = CornerRadius(markW/2, markW/2))
-                            drawCircle(color = Color(0xFFFF0000), radius = markW/1.8f, center = Offset(markCenter.x, markCenter.y + markH/2 - markW/2))
-                        }
-                    }
-                    sweatDrops.forEach { p ->
-                        withTransform({ translate(p.x, p.y); rotate((atan2(p.vy, p.vx) * (180f / PI)).toFloat() + 90f, Offset.Zero) }) {
-                            val alpha = (p.life / p.maxLife).coerceIn(0f, 1f)
-                            val dropSize = bodyRadius * 0.1f
-                            drawPath(path = sweatDropPath, color = Color(0xFF60A5FA).copy(alpha = alpha))
-                            drawOval(color = Color.White.copy(alpha = 0.6f * alpha), topLeft = Offset(-dropSize * 0.4f, -dropSize * 0.6f), size = Size(dropSize * 0.5f, dropSize * 0.3f))
-                        }
+                }
+                sweatDrops.forEach { p ->
+                    withTransform({ translate(p.x, p.y); rotate((atan2(p.vy, p.vx) * (180f / PI)).toFloat() + 90f, Offset.Zero) }) {
+                        val alpha = (p.life / p.maxLife).coerceIn(0f, 1f); val dropSize = bodyRadius * 0.1f
+                        drawPath(path = sweatDropPath, color = Color(0xFF60A5FA).copy(alpha = alpha))
+                        drawOval(color = Color.White.copy(alpha = 0.6f * alpha), topLeft = Offset(-dropSize * 0.4f, -dropSize * 0.6f), size = Size(dropSize * 0.5f, dropSize * 0.3f))
                     }
                 }
             }
@@ -1020,7 +987,18 @@ fun HenVisual(modifier: Modifier = Modifier, timeLeft: Float, isPaused: Boolean,
     var animOffsetY = 0f; var glassRotation = 0f; var glassScale = 1f; var isSliding = false; var isFlapping = false; var isSmushed = false; var henShadowAlpha = 1.0f; var henShadowScale = 1.0f; var eggShadowAlpha = 0.0f; var drawHenShadow = true
     if (henSequenceElapsed <= 0f) isFlapping = false
     else if (henSequenceElapsed <= 0.5f) isFlapping = true
-    else if (henSequenceElapsed <= 2.0f) { val t = (henSequenceElapsed - 0.5f) / 1.5f; animOffsetY = -2000f * (t * t); isFlapping = true; henShadowAlpha = (1f - t).coerceIn(0f, 1f); henShadowScale = (1f - t * 0.5f).coerceIn(0f, 1f); eggShadowAlpha = t.coerceIn(0f, 1f) }
+    else if (henSequenceElapsed <= 2.0f) {
+        // FLYING UP PHASE
+        val t = (henSequenceElapsed - 0.5f) / 1.5f
+        animOffsetY = -2000f * (t * t)
+        isFlapping = true
+        henShadowAlpha = (1f - t).coerceIn(0f, 1f)
+
+        // UPDATE: Shadow size stays CONSTANT (Sunlight logic)
+        henShadowScale = 1.0f
+
+        eggShadowAlpha = t.coerceIn(0f, 1f)
+    }
     else if (henSequenceElapsed <= 4.2f) { animOffsetY = -2000f; drawHenShadow = false; eggShadowAlpha = 1.0f }
     else if (henSequenceElapsed <= 4.5f) { val t = (henSequenceElapsed - 4.2f) / 0.3f; animOffsetY = -2000f * (1f - t * t); glassScale = 1.0f + (t * 0.4f); isSliding = true; drawHenShadow = false; eggShadowAlpha = 1.0f }
     else if (henSequenceElapsed <= 6.0f) { animOffsetY = 0f; isSliding = true; isSmushed = true; glassScale = 1.5f; glassRotation = 5f; drawHenShadow = false; eggShadowAlpha = 1.0f }
@@ -1263,8 +1241,14 @@ fun HenVisual(modifier: Modifier = Modifier, timeLeft: Float, isPaused: Boolean,
             // --- 2. REAL WORLD PASS ---
             if (!isDarkMode) {
                 if (drawHenShadow && henShadowAlpha > 0f) {
-                    // --- MODIFIED: CONSISTENT 5:1 RATIO ---
-                    val hShadowW = henBodyRadius * 2.0f * henShadowScale
+                    // --- NEW CODE: BOING PHYSICS ---
+                    val squashY = boingAnim.value
+                    val stretchX = 2f - squashY
+                    val shadowResponseFactor = 1.5f
+                    val boingScale = 1f + (stretchX - 1f) * shadowResponseFactor
+
+                    // --- MODIFIED: SCALE SHADOW WIDTH BY BOING SCALE ---
+                    val hShadowW = henBodyRadius * 2.0f * henShadowScale * boingScale
                     val hShadowH = hShadowW * 0.2f // Height is 20% of width
 
                     drawOval(color = Color.Black.copy(alpha = 0.3f * henShadowAlpha), topLeft = Offset(cx - hShadowW/2, floorY - hShadowH/2), size = Size(hShadowW, hShadowH))

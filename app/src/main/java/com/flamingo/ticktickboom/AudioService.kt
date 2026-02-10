@@ -232,7 +232,17 @@ object AudioService {
 
     fun playCroak(isFast: Boolean = false) {
         val soundId = if (isFast) croakFastSoundId else croakSoundId
-        val pitch = 0.9f + Math.random().toFloat() * 0.2f
+
+        // --- MIXED PITCH LOGIC ---
+        // Normal Phase (!isFast): Loose, organic variation (0.90 to 1.10)
+        // Critical Phase (isFast): Tight, panic-inducing precision (0.98 to 1.02)
+        val pitch = if (isFast) {
+            0.98f + Math.random().toFloat() * 0.04f
+        } else {
+            0.9f + Math.random().toFloat() * 0.2f
+        }
+
+        // We keep Priority 2 for both to ensure the frog is never silenced by a tick sound
         soundPool?.play(soundId, timerVolume, timerVolume, 2, 0, pitch)
     }
 
