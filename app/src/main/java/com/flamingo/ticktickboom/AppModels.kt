@@ -15,15 +15,6 @@ data class Particle(
     val rotationSpeed: Float
 )
 
-data class Spark(
-    var x: Float,
-    var y: Float,
-    var vx: Float,
-    var vy: Float,
-    var life: Float,
-    val maxLife: Float
-)
-
 data class SmokeParticle(
     var x: Float,
     var y: Float,

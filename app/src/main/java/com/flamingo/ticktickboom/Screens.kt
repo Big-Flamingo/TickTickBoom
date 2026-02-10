@@ -390,11 +390,13 @@ fun BombScreen(
         else -> 0
     }
 
-    // Trigger Sound/Wobble when crackStage increases
-    var lastCrackStage by rememberSaveable { mutableIntStateOf(0) }
+    // NEW: Save the last played stage so it survives rotation
+    var lastPlayedCrackStage by rememberSaveable { mutableIntStateOf(0) }
 
     LaunchedEffect(crackStage) {
-        if (style == "HEN" && crackStage > lastCrackStage && !isPaused) {
+        // Check if we are in a NEW, higher stage than before
+        if (style == "HEN" && crackStage > lastPlayedCrackStage && !isPaused) {
+            lastPlayedCrackStage = crackStage // Mark this stage as "played"
             AudioService.playCrack()
             launch {
                 eggWobbleAnim.snapTo(0f)
@@ -403,7 +405,6 @@ fun BombScreen(
                 eggWobbleAnim.animateTo(0f, spring(stiffness = Spring.StiffnessMediumLow))
             }
         }
-        lastCrackStage = crackStage
     }
 
     LaunchedEffect(isPaused) {

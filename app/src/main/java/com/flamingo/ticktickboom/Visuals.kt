@@ -832,9 +832,11 @@ fun FrogVisual(timeLeft: Float, isCritical: Boolean, isPaused: Boolean, onToggle
                         val anchorXDist = bodyRadius * 0.45f; val anchorY = cy + bodyRadius * 0.95f
                         val targetBellyTop = blushBottomY + bodyRadius * 0.05f
                         val bellyHeight = (anchorY - targetBellyTop) * bellyHeightScale
-                        val bellyHalfWidth = anchorXDist
-                        val bellyRadius = (bellyHalfWidth.pow(2) + bellyHeight.pow(2)) / (2 * bellyHeight)
+
+                        // FIX: Removed 'bellyHalfWidth' and used 'anchorXDist' directly
+                        val bellyRadius = (anchorXDist.pow(2) + bellyHeight.pow(2)) / (2 * bellyHeight)
                         val bellyCenterY = targetBellyTop + bellyRadius
+
                         drawCircle(color = FrogBelly, radius = bellyRadius, center = Offset(cx, bellyCenterY))
                         drawOval(color = Color.White.copy(alpha = 0.3f), topLeft = Offset(cx - bellyRadius * 0.3f, targetBellyTop + bellyHeight * 0.15f), size = Size(bellyRadius * 0.6f, bellyHeight * 0.15f))
                     }
