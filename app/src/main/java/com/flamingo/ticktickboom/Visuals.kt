@@ -734,6 +734,20 @@ fun FrogVisual(timeLeft: Float, isCritical: Boolean, isPaused: Boolean, onToggle
     val alertScale = remember { Animatable(0f) }
     LaunchedEffect(isPanic) { if (isPanic) alertScale.animateTo(1f, spring(dampingRatio = Spring.DampingRatioHighBouncy)) else alertScale.snapTo(0f) }
 
+    // Define the target scale based on the game state
+    val targetEyeScale = when {
+        isPanic -> 1.0f
+        isCritical -> 0.9f
+        else -> 0.8f
+    }
+
+    // Animate the scale over 300ms for a "popping" effect
+    val animatedEyeScale by animateFloatAsState(
+        targetValue = targetEyeScale,
+        animationSpec = tween(durationMillis = 50, easing = FastOutSlowInEasing),
+        label = "EyeBulge"
+    )
+
     // Paths & State
     val silhouettePath = remember { Path() }
     val bodyCirclePath = remember { Path() }
@@ -890,26 +904,50 @@ fun FrogVisual(timeLeft: Float, isCritical: Boolean, isPaused: Boolean, onToggle
                     drawOval(color = FrogBody, topLeft = Offset(rArm.x - armW, rArm.y - armH/2), size = Size(armW*2, armH))
                 }
 
-                // Eyes
-                val pupil = eyeW * 1f
                 fun drawEye(baseX: Float, baseY: Float, isLeft: Boolean) {
                     val pos = getMod(baseX, baseY)
 
-                    // NEW: Only draw the black outline if we are in Critical or Panic mode
-                    // This makes the eyes look "calm" (borderless) normally, and "stressed" (popped) later.
-                    if (isCritical || isPanic) {
-                        drawCircle(color = Color.Black, radius = eyeW, center = pos, style = outlineStroke)
+                    // --- DYNAMIC ANIMATED SIZE ---
+                    // The multiplier now flows smoothly between 0.8 -> 1.0 -> 1.2
+                    val currentEyeRadius = eyeW * animatedEyeScale
+                    val currentPupilRadius = currentEyeRadius + (outlineStroke.width / 2f)
+
+                    // Foundation: Outline for everything except normal open eyes
+                    val isNormalOpenEye = !isCritical && !isPanic && !isBlinking
+                    if (!isNormalOpenEye) {
+                        drawCircle(
+                            color = Color.Black,
+                            radius = currentEyeRadius,
+                            center = pos,
+                            style = outlineStroke
+                        )
                     }
 
-                    drawCircle(color = Color.White, radius = eyeW, center = pos)
+                    // White eyeball base
+                    drawCircle(color = Color.White, radius = currentEyeRadius, center = pos)
+
                     if (isCritical && !isPanic) {
-                        val path = Path(); val size = eyeW * 1.2f; val off = size * 0.15f; val ex = pos.x + if(isLeft) off else -off
+                        // Squinting path scales with the animated radius
+                        val path = Path(); val size = currentEyeRadius * 1.2f; val off = size * 0.15f; val ex = pos.x + if(isLeft) off else -off
                         path.moveTo(ex - size/2, pos.y - size/2); path.lineTo(ex + size/4, pos.y); path.lineTo(ex - size/2, pos.y + size/2)
                         if (!isLeft) { path.reset(); path.moveTo(ex + size/2, pos.y - size/2); path.lineTo(ex - size/4, pos.y); path.lineTo(ex + size/2, pos.y + size/2) }
                         drawPath(path, Color.Black, style = Stroke(8f * d, cap = StrokeCap.Round, join = StrokeJoin.Round))
                     } else if (!isPanic) {
-                        if (isBlinking) drawLine(color = Color.Black, start = Offset(pos.x - 15f * d, pos.y), end = Offset(pos.x + 15f * d, pos.y), strokeWidth = 4f * d, cap = StrokeCap.Round)
-                        else { drawCircle(color = Color.Black, radius = pupil, center = pos); drawCircle(color = Color.White, radius = pupil * 0.25f, center = Offset(pos.x - pupil*0.4f, pos.y - pupil*0.4f)) }
+                        if (isBlinking) {
+                            // Blink line scales so it doesn't look too small/large for the eye
+                            val blinkWidth = 15f * d * animatedEyeScale
+                            drawLine(
+                                color = Color.Black,
+                                start = Offset(pos.x - blinkWidth, pos.y),
+                                end = Offset(pos.x + blinkWidth, pos.y),
+                                strokeWidth = 4f * d,
+                                cap = StrokeCap.Round
+                            )
+                        } else {
+                            // Normal Pupil: Seamlessly covers the eye as it grows
+                            drawCircle(color = Color.Black, radius = currentPupilRadius, center = pos)
+                            drawCircle(color = Color.White, radius = currentPupilRadius * 0.25f, center = Offset(pos.x - currentPupilRadius*0.4f, pos.y - currentPupilRadius*0.4f))
+                        }
                     }
                 }
                 drawEye(cx - bumpXOffset, bumpY, true); drawEye(cx + bumpXOffset, bumpY, false)
