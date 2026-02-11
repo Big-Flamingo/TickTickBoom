@@ -279,6 +279,7 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, onToggleTheme: () -> Uni
                 }
             }
             Spacer(modifier = Modifier.height(4.dp))
+            @Suppress("SpellCheckingInspection")
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("TICKTICK", color = colors.text, fontSize = 26.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont, letterSpacing = 1.sp)
                 Text("BOOM", color = NeonRed, fontSize = 26.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont, letterSpacing = 1.sp)
@@ -378,7 +379,6 @@ fun BombScreen(
     val flashAnim = remember { Animatable(0f) }
     val eggWobbleAnim = remember { Animatable(0f) }
 
-    val context = LocalContext.current
     val configuration = LocalConfiguration.current
     val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
 
@@ -523,11 +523,13 @@ fun BombScreen(
             }
         }
 
+        // ... (inside LaunchedEffect)
+
         if (!isPaused) {
             timeLeft = 0f
-            launch { flashAnim.animateTo(1f, tween(50, easing = LinearOutSlowInEasing)) }
-            AudioService.playExplosion(context)
-            delay(100)
+            // FIX: Removed the local flash, audio, and delay.
+            // We transfer control immediately to ExplosionScreen, which handles the
+            // flash and sound instantly for a zero-latency feel.
             onExplode()
         }
     }
@@ -764,7 +766,8 @@ fun ExplosionScreen(colors: AppColors, style: String?, explosionOrigin: Offset? 
             if (shockwaveAlpha > 0) drawCircle(color = Color.White.copy(alpha = shockwaveAlpha * 0.5f), radius = shockwaveRadius, center = center, style = Stroke(width = 50f * (1f - progress)))
         }
 
-        val flashAlpha = (1f - (animationProgress.value * 5)).coerceIn(0f, 1f)
+        // CHANGED: Reduced multiplier from 5 to 2.0f to make the white flash last longer
+        val flashAlpha = (1f - (animationProgress.value * 2.0f)).coerceIn(0f, 1f)
         if (flashAlpha > 0f) Box(modifier = Modifier.fillMaxSize().background(Color.White.copy(alpha = flashAlpha)))
 
         val titleText = if (style == "FROG") "CROAKED" else "BOOM"

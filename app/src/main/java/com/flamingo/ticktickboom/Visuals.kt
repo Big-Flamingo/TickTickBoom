@@ -550,16 +550,40 @@ fun DynamiteVisual(timeLeft: Float, isPaused: Boolean, onTogglePause: () -> Unit
         style = TextStyle(color = Color.Black.copy(alpha=0.3f), fontSize = 14.sp, fontWeight = FontWeight.Black, fontFamily = VisualsFont)
     )
 
-    val textEffectsSaver = listSaver(
-        save = { stateList: SnapshotStateList<LocalVisualText> ->
-            stateList.map { listOf(it.text, it.x, it.y, it.color.toArgb(), it.gradientColors?.map { c->c.toArgb() } ?: emptyList<Int>(), it.alpha, it.life, it.fontSize) }
+    // FIX: Added Suppression to stop the IDE from complaining about the necessary explicit types
+    @Suppress("RemoveExplicitTypeArguments", "UNCHECKED_CAST")
+    val textEffectsSaver = listSaver<SnapshotStateList<LocalVisualText>, Any>(
+        save = { stateList ->
+            stateList.map {
+                // FIX: Explicit <Any> is required here to prevent Type Mismatch errors,
+                // even if the IDE says it's inferred.
+                listOf<Any>(
+                    it.text,
+                    it.x,
+                    it.y,
+                    it.color.toArgb(),
+                    it.gradientColors?.map { c -> c.toArgb() } ?: emptyList<Int>(),
+                    it.alpha,
+                    it.life,
+                    it.fontSize
+                )
+            }
         },
-        restore = { savedList: List<Any> ->
+        restore = { savedList ->
             val mutableList = mutableStateListOf<LocalVisualText>()
             savedList.forEach { item ->
-                @Suppress("UNCHECKED_CAST") val p = item as List<Any>
-                @Suppress("UNCHECKED_CAST") val g = p[4] as List<Int>
-                mutableList.add(LocalVisualText(p[0] as String, (p[1] as Number).toFloat(), (p[2] as Number).toFloat(), Color(p[3] as Int), if(g.isEmpty()) null else g.map{Color(it)}, (p[5] as Number).toFloat(), (p[6] as Number).toFloat(), (p[7] as Number).toFloat()))
+                val p = item as List<Any>
+                val g = p[4] as List<Int>
+                mutableList.add(LocalVisualText(
+                    text = p[0] as String,
+                    x = (p[1] as? Number)?.toFloat() ?: 0f,
+                    y = (p[2] as? Number)?.toFloat() ?: 0f,
+                    color = Color(p[3] as Int),
+                    gradientColors = if (g.isEmpty()) null else g.map { Color(it) },
+                    alpha = (p[5] as? Number)?.toFloat() ?: 1f,
+                    life = (p[6] as? Number)?.toFloat() ?: 0f,
+                    fontSize = (p[7] as? Number)?.toFloat() ?: 0f
+                ))
             }
             mutableList
         }
@@ -867,10 +891,16 @@ fun FrogVisual(timeLeft: Float, isCritical: Boolean, isPaused: Boolean, onToggle
                 }
 
                 // Eyes
-                val pupil = eyeW * 0.9f
+                val pupil = eyeW * 1f
                 fun drawEye(baseX: Float, baseY: Float, isLeft: Boolean) {
                     val pos = getMod(baseX, baseY)
-                    drawCircle(color = Color.Black, radius = eyeW, center = pos, style = outlineStroke)
+
+                    // NEW: Only draw the black outline if we are in Critical or Panic mode
+                    // This makes the eyes look "calm" (borderless) normally, and "stressed" (popped) later.
+                    if (isCritical || isPanic) {
+                        drawCircle(color = Color.Black, radius = eyeW, center = pos, style = outlineStroke)
+                    }
+
                     drawCircle(color = Color.White, radius = eyeW, center = pos)
                     if (isCritical && !isPanic) {
                         val path = Path(); val size = eyeW * 1.2f; val off = size * 0.15f; val ex = pos.x + if(isLeft) off else -off
@@ -965,11 +995,14 @@ fun FrogVisual(timeLeft: Float, isCritical: Boolean, isPaused: Boolean, onToggle
 fun HenVisual(modifier: Modifier = Modifier, timeLeft: Float, isPaused: Boolean, onTogglePause: () -> Unit, eggWobbleRotation: Float, henSequenceElapsed: Float, showEgg: Boolean = true, crackStage: Int = 0, isPainedBeakOpen: Boolean = false, isPainedBeakClosed: Boolean = false, isDarkMode: Boolean = false) {
     val infiniteTransition = rememberInfiniteTransition("hen_anim")
 
-    // 1. BLINK STATE & TIMER
+    // 1. MOVED UP: Density is needed for blur calculations
+    val density = LocalDensity.current
+    val d = density.density
+
+    // 2. BLINK STATE & TIMER
     var isBlinking by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         while (true) {
-            // Blink every 2-4 seconds
             delay(Random.nextLong(2000, 4000))
             isBlinking = true
             delay(150)
@@ -987,6 +1020,10 @@ fun HenVisual(modifier: Modifier = Modifier, timeLeft: Float, isPaused: Boolean,
     val baseBeakOpen = isPainedBeakOpen || (if (henSequenceElapsed > 0.3f && henSequenceElapsed < 1.0f) isRapidCluck else isStandardBeakOpen)
 
     var animOffsetY = 0f; var glassRotation = 0f; var glassScale = 1f; var isSliding = false; var isFlapping = false; var isSmushed = false; var henShadowAlpha = 1.0f; var henShadowScale = 1.0f; var eggShadowAlpha = 0.0f; var drawHenShadow = true
+
+    // NEW: Variable to track how much we should blur the shadow
+    var shadowBlurRadius = 0f
+
     if (henSequenceElapsed <= 0f) isFlapping = false
     else if (henSequenceElapsed <= 0.5f) isFlapping = true
     else if (henSequenceElapsed <= 2.0f) {
@@ -996,8 +1033,11 @@ fun HenVisual(modifier: Modifier = Modifier, timeLeft: Float, isPaused: Boolean,
         isFlapping = true
         henShadowAlpha = (1f - t).coerceIn(0f, 1f)
 
-        // UPDATE: Shadow size stays CONSTANT (Sunlight logic)
+        // Shadow stays constant size (Sunlight logic)
         henShadowScale = 1.0f
+
+        // NEW: Blur increases as she flies higher (Max ~15dp)
+        shadowBlurRadius = t * 15f * d
 
         eggShadowAlpha = t.coerceIn(0f, 1f)
     }
@@ -1009,10 +1049,6 @@ fun HenVisual(modifier: Modifier = Modifier, timeLeft: Float, isPaused: Boolean,
     val effectiveBeakOpen = (baseBeakOpen || isSliding) && !isPainedBeakClosed
     val currentAnimOffsetY = remember { mutableFloatStateOf(0f) }; currentAnimOffsetY.floatValue = animOffsetY
 
-    val density = LocalDensity.current
-    val d = density.density
-
-    // RAW PIXEL MATH - NO .toPx()
     val henRadiusPx = 110f * d
     val eggRadiusPx = 80f * d
     val eggHitOffsetY = (110f - 10f - 75f) * d
@@ -1026,98 +1062,41 @@ fun HenVisual(modifier: Modifier = Modifier, timeLeft: Float, isPaused: Boolean,
 
                 if (hitHen || hitEgg) { scope.launch { boingAnim.snapTo(1f); boingAnim.animateTo(0.9f, tween(50)); boingAnim.animateTo(1.05f, tween(100)); boingAnim.animateTo(1.0f, spring(dampingRatio = 0.4f, stiffness = 400f)) }; onTogglePause() }
             }
-        }
-        ) {
+        }) {
             val cx = size.width / 2; val cy = size.height / 2
 
-            // OPTIMIZATION: path rebuilding only happens on size change (Good).
             if (size != cachedSize) {
                 val henBodyRadius = 110f * d
-
-                // 1. COMB UPDATE: Manual Control for All 3 Circles
-
-                // --- CENTER CIRCLE ---
-                val cRadius = 28f * d
-                val cX = 0f * d             // 0 is centered horizontally
-                val cY = -henBodyRadius + 5f * d
-
-                // --- LEFT CIRCLE ---
-                val lRadius = 20f * d
-                val lX = -38f * d           // Negative = Left
-                val lY = -henBodyRadius + 10f * d
-
-                // --- RIGHT CIRCLE ---
-                val rRadius = 32f * d
-                val rX = 50f * d            // Positive = Right
-                val rY = -henBodyRadius + 5f * d
+                val cRadius = 28f * d; val cX = 0f * d; val cY = -henBodyRadius + 5f * d
+                val lRadius = 20f * d; val lX = -38f * d; val lY = -henBodyRadius + 10f * d
+                val rRadius = 32f * d; val rX = 50f * d; val rY = -henBodyRadius + 5f * d
 
                 combPath.reset()
-                // Center
                 combPath.addOval(Rect(center = Offset(cX, cY), radius = cRadius))
-                // Left
                 combPath.addOval(Rect(center = Offset(lX, lY), radius = lRadius))
-                // Right
                 combPath.addOval(Rect(center = Offset(rX, rY), radius = rRadius))
 
-                // 2. BEAK UPDATE: Curved Hypotenuses
-                val faceEdgeX = henBodyRadius * 0.82f
-                val beakYBase = -6f * d
-                val beakH = 24f * d
-                val beakLen = 26f * d
+                val faceEdgeX = henBodyRadius * 0.82f; val beakYBase = -6f * d; val beakH = 24f * d; val beakLen = 26f * d
+                upperBeakPath.reset(); upperBeakPath.moveTo(faceEdgeX, beakYBase - beakH/2)
+                upperBeakPath.quadraticTo(faceEdgeX + beakLen * 0.5f, beakYBase - beakH * 0.7f, faceEdgeX + beakLen, beakYBase)
+                upperBeakPath.lineTo(faceEdgeX, beakYBase); upperBeakPath.close()
 
-                // UPPER BEAK
-                upperBeakPath.reset()
-                upperBeakPath.moveTo(faceEdgeX, beakYBase - beakH/2) // Start at Top-Left of beak
-                // Curve OUTWARDS to the tip
-                // Control point is pushed slightly UP (-beakH * 0.7 instead of * 0.5)
-                upperBeakPath.quadraticTo(
-                    faceEdgeX + beakLen * 0.5f,
-                    beakYBase - beakH * 0.7f,
-                    faceEdgeX + beakLen,
-                    beakYBase
-                )
-                upperBeakPath.lineTo(faceEdgeX, beakYBase)
-                upperBeakPath.close()
+                lowerBeakPath.reset(); lowerBeakPath.moveTo(faceEdgeX, beakYBase); lowerBeakPath.lineTo(faceEdgeX + beakLen * 0.8f, beakYBase)
+                lowerBeakPath.quadraticTo(faceEdgeX + beakLen * 0.3f, beakYBase + beakH * 0.7f, faceEdgeX, beakYBase + beakH / 2); lowerBeakPath.close()
 
-                // LOWER BEAK
-                lowerBeakPath.reset()
-                lowerBeakPath.moveTo(faceEdgeX, beakYBase) // Start at Top-Left of lower beak
-                lowerBeakPath.lineTo(faceEdgeX + beakLen * 0.8f, beakYBase) // Flat top edge
-                // Curve OUTWARDS back to the chin
-                // Control point is pushed slightly DOWN (beakH * 0.7 instead of * 0.5)
-                lowerBeakPath.quadraticTo(
-                    faceEdgeX + beakLen * 0.3f,
-                    beakYBase + beakH * 0.7f,
-                    faceEdgeX,
-                    beakYBase + beakH / 2
-                )
-                lowerBeakPath.close()
-
-                // 3. WATTLE UPDATE: Snap to bottom-left of beak
-
-                // Define where the bottom beak ends (Match this to your lowerBeakPath logic!)
                 val lowerBeakBottomY = beakYBase + beakH / 2
-
-                // Set the anchor point (Top of wattle)
-                val wattleTopX = faceEdgeX            // Was 'faceEdgeX - 6f'. Now exact.
-                val wattleTopY = lowerBeakBottomY     // Was '... - 2f'. Now exact.
-
-                val wattleWidth = 24f * d
-                val wattleHeight = 32f * d
-
-                wattlePath.reset()
-                wattlePath.moveTo(wattleTopX, wattleTopY)
-                // Curve down and left
+// FIX: Inlined 'wattleTopX' (faceEdgeX) and 'wattleTopY' (lowerBeakBottomY)
+                val wattleWidth = 24f * d; val wattleHeight = 32f * d
+                wattlePath.reset(); wattlePath.moveTo(faceEdgeX, lowerBeakBottomY)
                 wattlePath.cubicTo(
-                    wattleTopX - wattleWidth, wattleTopY + wattleHeight * 0.5f,
-                    wattleTopX - (wattleWidth * 0.5f), wattleTopY + wattleHeight,
-                    wattleTopX, wattleTopY + wattleHeight
+                    faceEdgeX - wattleWidth, lowerBeakBottomY + wattleHeight * 0.5f,
+                    faceEdgeX - (wattleWidth * 0.5f), lowerBeakBottomY + wattleHeight,
+                    faceEdgeX, lowerBeakBottomY + wattleHeight
                 )
-                // Curve up and right
                 wattlePath.cubicTo(
-                    wattleTopX + (wattleWidth * 0.5f), wattleTopY + wattleHeight,
-                    wattleTopX + wattleWidth, wattleTopY + wattleHeight * 0.5f,
-                    wattleTopX, wattleTopY
+                    faceEdgeX + (wattleWidth * 0.5f), lowerBeakBottomY + wattleHeight,
+                    faceEdgeX + wattleWidth, lowerBeakBottomY + wattleHeight * 0.5f,
+                    faceEdgeX, lowerBeakBottomY
                 )
                 wattlePath.close()
 
@@ -1136,45 +1115,26 @@ fun HenVisual(modifier: Modifier = Modifier, timeLeft: Float, isPaused: Boolean,
             val layerVisible = !(isSmushed || animOffsetY > 0f)
             val baseReflectionAlpha = if (layerVisible) 0.25f else 0f
 
-            // --- 1. COMPOSITE REFLECTION PASS (Dark Mode) ---
             if (isDarkMode && baseReflectionAlpha > 0f) {
                 drawReflection(true, floorY, baseReflectionAlpha) { isReflection ->
                     if (isReflection) {
-                        // A. EGG REFLECTION
                         if (showEgg) {
                             val eggWidth = 120f * d; val eggHeight = 150f * d
                             val eggTop = floorY - eggHeight
-
-                            withTransform({
-                                scale(1f, 1f, pivot = Offset(cx, eggTop + eggHeight/2))
-                                rotate(if (!isPaused) eggWobbleRotation else 0f, pivot = Offset(cx, floorY))
-                            }) {
+                            withTransform({ scale(1f, 1f, pivot = Offset(cx, eggTop + eggHeight/2)); rotate(if (!isPaused) eggWobbleRotation else 0f, pivot = Offset(cx, floorY)) }) {
                                 drawOval(color = Color(0xFFFEF3C7), topLeft = Offset(cx - eggWidth/2, eggTop), size = Size(eggWidth, eggHeight))
                                 withTransform({ rotate(-20f, pivot = Offset(cx - eggWidth * 0.2f, eggTop + eggHeight * 0.25f)) }) { drawOval(color = Color.White.copy(alpha = 0.4f), topLeft = Offset(cx - eggWidth * 0.3f, eggTop + eggHeight * 0.15f), size = Size(eggWidth * 0.3f, eggHeight * 0.15f)) }
                                 val crackStroke = Stroke(width = 3f * d, cap = StrokeCap.Round, join = StrokeJoin.Round)
                                 withTransform({ translate(cx, 0f) }) { if (crackStage >= 1) drawPath(crack1Path, Color.Black, style = crackStroke); if (crackStage >= 2) drawPath(crack2Path, Color.Black, style = crackStroke); if (crackStage >= 3) drawPath(crack3Path, Color.Black, style = crackStroke) }
                             }
                         }
-
-                        // B. HEN REFLECTION
                         val henY = cy + animOffsetY
                         if (henY > -3000f && henY < size.height + 5000f && henSequenceElapsed < 2.5f) {
                             if (heightFade > 0.01f) {
                                 val squashY = boingAnim.value; val stretchX = 2f - squashY
                                 withTransform({ rotate(glassRotation, pivot = Offset(cx, henY)); scale(glassScale, glassScale, pivot = Offset(cx, henY)); scale(stretchX, squashY, pivot = Offset(cx, henY + henBodyRadius)) }) {
-
-                                    // PUNCH OUT (Clear Mode)
                                     drawCircle(color = Color.Black, radius = henBodyRadius, center = Offset(cx, henY), blendMode = BlendMode.Clear)
-
-                                    // OPTIMIZED LAYER (No Stutter)
-                                    drawIntoCanvas {
-                                        it.nativeCanvas.saveLayerAlpha(
-                                            0f, -size.height, size.width, size.height * 2f,
-                                            (heightFade * 255).toInt()
-                                        )
-                                    }
-
-                                    // DRAW HEN OPAQUE
+                                    drawIntoCanvas { it.nativeCanvas.saveLayerAlpha(0f, -size.height, size.width, size.height * 2f, (heightFade * 255).toInt()) }
                                     withTransform({ translate(cx, henY) }) { drawPath(combPath, NeonRed) }
                                     drawCircle(color = Color.White, radius = henBodyRadius, center = Offset(cx, henY))
                                     drawCircle(color = Color.Black, radius = henBodyRadius, center = Offset(cx, henY), style = Stroke(width = 4f * d))
@@ -1182,56 +1142,15 @@ fun HenVisual(modifier: Modifier = Modifier, timeLeft: Float, isPaused: Boolean,
                                     val relFaceEdgeX = henBodyRadius * 0.82f; val relBeakY = -6f * d
                                     withTransform({ translate(cx, henY); rotate(if (effectiveBeakOpen) -15f else 0f, pivot = Offset(relFaceEdgeX, relBeakY)) }) { drawPath(upperBeakPath, NeonOrange) }
                                     withTransform({ translate(cx, henY); rotate(if (effectiveBeakOpen) 10f else 0f, pivot = Offset(relFaceEdgeX, relBeakY)) }) { drawPath(lowerBeakPath, NeonOrange) }
-
-                                    // 2. EYE LOGIC (REFLECTION): Match the main body!
-                                    if (isSmushed) {
-                                        withTransform({ translate(cx, henY) }) {
-                                            drawPath(wincePath, Color.Black, style = Stroke(5f * d, cap = StrokeCap.Round, join = StrokeJoin.Round))
-                                        }
-                                    } else if (isBlinking) {
-                                        val eyeXRel = relFaceEdgeX - 25f * d; val eyeYRel = -25f * d; val eyeCenter = Offset(cx + eyeXRel, henY + eyeYRel)
-                                        drawLine(
-                                            color = Color.Black,
-                                            start = Offset(eyeCenter.x - 12f * d, eyeCenter.y),
-                                            end = Offset(eyeCenter.x + 12f * d, eyeCenter.y),
-                                            strokeWidth = 5f * d,
-                                            cap = StrokeCap.Round
-                                        )
-                                    } else {
-                                        val eyeXRel = relFaceEdgeX - 25f * d; val eyeYRel = -25f * d; val eyeCenter = Offset(cx + eyeXRel, henY + eyeYRel)
-                                        drawCircle(color = Color.Black, radius = 12f * d, center = eyeCenter)
-                                        drawCircle(color = Color.White, radius = 4f * d, center = Offset(eyeCenter.x + 3f * d, eyeCenter.y - 3f * d))
-                                        // Include the second highlight if you added it to the main body
-                                        drawCircle(color = Color.White, radius = 2f * d, center = Offset(eyeCenter.x - 3f * d, eyeCenter.y + 3f * d))
-                                    }
-
+                                    if (isSmushed) { withTransform({ translate(cx, henY) }) { drawPath(wincePath, Color.Black, style = Stroke(5f * d, cap = StrokeCap.Round, join = StrokeJoin.Round)) } }
+                                    else if (isBlinking) { val eyeXRel = relFaceEdgeX - 25f * d; val eyeYRel = -25f * d; val eyeCenter = Offset(cx + eyeXRel, henY + eyeYRel); drawLine(color = Color.Black, start = Offset(eyeCenter.x - 12f * d, eyeCenter.y), end = Offset(eyeCenter.x + 12f * d, eyeCenter.y), strokeWidth = 5f * d, cap = StrokeCap.Round) }
+                                    else { val eyeXRel = relFaceEdgeX - 25f * d; val eyeYRel = -25f * d; val eyeCenter = Offset(cx + eyeXRel, henY + eyeYRel); drawCircle(color = Color.Black, radius = 12f * d, center = eyeCenter); drawCircle(color = Color.White, radius = 4f * d, center = Offset(eyeCenter.x + 3f * d, eyeCenter.y - 3f * d)); drawCircle(color = Color.White, radius = 2f * d, center = Offset(eyeCenter.x - 3f * d, eyeCenter.y + 3f * d)) }
                                     val wingP = Offset(cx - 40f * d, henY + 10f * d); val wingRot = if (isFlapping) wingFlapRotation else if (isSliding) -20f else 0f
                                     withTransform({ rotate(wingRot, pivot = wingP) }) {
-                                        // 2. WING UPDATE: Layer Order Swap (Fill First, then Outline)
-                                        val wW = 60f * d; val wH = 60f * d
-                                        val wTopLeft = Offset(wingP.x - 10f * d, wingP.y - 30f * d)
-
-                                        // 1. Fill (Half Circle)
-                                        drawArc(
-                                            color = if(isSmushed) Color(0xFFE0E0E0) else Color.White,
-                                            startAngle = 0f,
-                                            sweepAngle = 180f,
-                                            useCenter = true, // Closes the arc to make a half-circle
-                                            topLeft = wTopLeft,
-                                            size = Size(wW, wH)
-                                        )
-                                        // 2. Outline (Half Circle)
-                                        drawArc(
-                                            color = Color.Black,
-                                            startAngle = 0f,
-                                            sweepAngle = 180f,
-                                            useCenter = false,
-                                            topLeft = wTopLeft,
-                                            size = Size(wW, wH),
-                                            style = Stroke(4f * d, cap = StrokeCap.Round, join = StrokeJoin.Round)
-                                        )
+                                        val wW = 60f * d; val wH = 60f * d; val wTopLeft = Offset(wingP.x - 10f * d, wingP.y - 30f * d)
+                                        drawArc(color = if(isSmushed) Color(0xFFE0E0E0) else Color.White, startAngle = 0f, sweepAngle = 180f, useCenter = true, topLeft = wTopLeft, size = Size(wW, wH))
+                                        drawArc(color = Color.Black, startAngle = 0f, sweepAngle = 180f, useCenter = false, topLeft = wTopLeft, size = Size(wW, wH), style = Stroke(4f * d, cap = StrokeCap.Round, join = StrokeJoin.Round))
                                     }
-
                                     drawIntoCanvas { it.nativeCanvas.restore() }
                                 }
                             }
@@ -1243,23 +1162,41 @@ fun HenVisual(modifier: Modifier = Modifier, timeLeft: Float, isPaused: Boolean,
             // --- 2. REAL WORLD PASS ---
             if (!isDarkMode) {
                 if (drawHenShadow && henShadowAlpha > 0f) {
-                    // --- NEW CODE: BOING PHYSICS ---
                     val squashY = boingAnim.value
                     val stretchX = 2f - squashY
                     val shadowResponseFactor = 1.5f
                     val boingScale = 1f + (stretchX - 1f) * shadowResponseFactor
 
-                    // --- MODIFIED: SCALE SHADOW WIDTH BY BOING SCALE ---
                     val hShadowW = henBodyRadius * 2.0f * henShadowScale * boingScale
-                    val hShadowH = hShadowW * 0.2f // Height is 20% of width
+                    val hShadowH = hShadowW * 0.2f
 
-                    drawOval(color = Color.Black.copy(alpha = 0.3f * henShadowAlpha), topLeft = Offset(cx - hShadowW/2, floorY - hShadowH/2), size = Size(hShadowW, hShadowH))
+                    // --- NEW BLURRED SHADOW LOGIC ---
+                    if (shadowBlurRadius > 0.5f) {
+                        // Use native canvas to apply BlurMaskFilter when hen is high up
+                        drawIntoCanvas { canvas ->
+                            val paint = android.graphics.Paint()
+                            paint.color = Color.Black.copy(alpha = 0.3f * henShadowAlpha).toArgb()
+                            // Blur Radius increases as she flies up
+                            paint.maskFilter = android.graphics.BlurMaskFilter(shadowBlurRadius, android.graphics.BlurMaskFilter.Blur.NORMAL)
+
+                            canvas.nativeCanvas.drawOval(
+                                android.graphics.RectF(
+                                    cx - hShadowW/2,
+                                    floorY - hShadowH/2,
+                                    cx + hShadowW/2,
+                                    floorY + hShadowH/2
+                                ),
+                                paint
+                            )
+                        }
+                    } else {
+                        // Use standard optimized draw for sharp shadow (on ground)
+                        drawOval(color = Color.Black.copy(alpha = 0.3f * henShadowAlpha), topLeft = Offset(cx - hShadowW/2, floorY - hShadowH/2), size = Size(hShadowW, hShadowH))
+                    }
                 }
                 if (showEgg && eggShadowAlpha > 0f) {
-                    // --- MODIFIED: CONSISTENT 5:1 RATIO ---
                     val eShadowW = 120f * d
-                    val eShadowH = eShadowW * 0.2f // Height is 20% of width
-
+                    val eShadowH = eShadowW * 0.2f
                     val wobbleX = if (!isPaused) eggWobbleRotation * 1.0f else 0f
                     drawOval(color = Color.Black.copy(alpha = 0.2f * eggShadowAlpha), topLeft = Offset(cx - eShadowW/2 + wobbleX, floorY - eShadowH / 2), size = Size(eShadowW, eShadowH))
                 }
@@ -1269,7 +1206,6 @@ fun HenVisual(modifier: Modifier = Modifier, timeLeft: Float, isPaused: Boolean,
             if (showEgg && henSequenceElapsed > 0.0f) {
                 val eggWidth = 120f * d; val eggHeight = 150f * d
                 val eggTop = floorY - eggHeight
-
                 withTransform({ scale(1f, 1f, pivot = Offset(cx, eggTop + eggHeight/2)); rotate(if (!isPaused) eggWobbleRotation else 0f, pivot = Offset(cx, floorY)) }) {
                     drawOval(color = Color(0xFFFEF3C7), topLeft = Offset(cx - eggWidth/2, eggTop), size = Size(eggWidth, eggHeight))
                     withTransform({ rotate(-20f, pivot = Offset(cx - eggWidth * 0.2f, eggTop + eggHeight * 0.25f)) }) { drawOval(color = Color.White.copy(alpha = 0.4f), topLeft = Offset(cx - eggWidth * 0.3f, eggTop + eggHeight * 0.15f), size = Size(eggWidth * 0.3f, eggHeight * 0.15f)) }
@@ -1291,58 +1227,16 @@ fun HenVisual(modifier: Modifier = Modifier, timeLeft: Float, isPaused: Boolean,
                     val relFaceEdgeX = henBodyRadius * 0.82f; val relBeakY = -6f * d
                     withTransform({ translate(cx, henY); rotate(if (effectiveBeakOpen) -15f else 0f, pivot = Offset(relFaceEdgeX, relBeakY)) }) { drawPath(upperBeakPath, NeonOrange) }
                     withTransform({ translate(cx, henY); rotate(if (effectiveBeakOpen) 10f else 0f, pivot = Offset(relFaceEdgeX, relBeakY)) }) { drawPath(lowerBeakPath, NeonOrange) }
-                    // 2. EYE LOGIC: Smushed (Wince) > Blinking (Dash) > Normal (Open)
-                    if (isSmushed) {
-                        // Wince (keeps existing logic)
-                        withTransform({ translate(cx, henY) }) {
-                            drawPath(wincePath, Color.Black, style = Stroke(5f * d, cap = StrokeCap.Round, join = StrokeJoin.Round))
-                        }
-                    } else if (isBlinking) {
-                        // BLINK: Draw a simple horizontal dash "-"
-                        val eyeXRel = relFaceEdgeX - 25f * d
-                        val eyeYRel = -25f * d
-                        val eyeCenter = Offset(cx + eyeXRel, henY + eyeYRel)
 
-                        drawLine(
-                            color = Color.Black,
-                            start = Offset(eyeCenter.x - 12f * d, eyeCenter.y), // 12f radius width
-                            end = Offset(eyeCenter.x + 12f * d, eyeCenter.y),
-                            strokeWidth = 5f * d,
-                            cap = StrokeCap.Round
-                        )
-                    } else {
-                        // NORMAL: Open Eye
-                        val eyeXRel = relFaceEdgeX - 25f * d
-                        val eyeYRel = -25f * d
-                        val eyeCenter = Offset(cx + eyeXRel, henY + eyeYRel)
+                    if (isSmushed) { withTransform({ translate(cx, henY) }) { drawPath(wincePath, Color.Black, style = Stroke(5f * d, cap = StrokeCap.Round, join = StrokeJoin.Round)) } }
+                    else if (isBlinking) { val eyeXRel = relFaceEdgeX - 25f * d; val eyeYRel = -25f * d; val eyeCenter = Offset(cx + eyeXRel, henY + eyeYRel); drawLine(color = Color.Black, start = Offset(eyeCenter.x - 12f * d, eyeCenter.y), end = Offset(eyeCenter.x + 12f * d, eyeCenter.y), strokeWidth = 5f * d, cap = StrokeCap.Round) }
+                    else { val eyeXRel = relFaceEdgeX - 25f * d; val eyeYRel = -25f * d; val eyeCenter = Offset(cx + eyeXRel, henY + eyeYRel); drawCircle(color = Color.Black, radius = 12f * d, center = eyeCenter); drawCircle(color = Color.White, radius = 4f * d, center = Offset(eyeCenter.x + 3f * d, eyeCenter.y - 3f * d)); drawCircle(color = Color.White, radius = 2f * d, center = Offset(eyeCenter.x - 3f * d, eyeCenter.y + 3f * d)) }
 
-                        drawCircle(color = Color.Black, radius = 12f * d, center = eyeCenter)
-                        drawCircle(color = Color.White, radius = 4f * d, center = Offset(eyeCenter.x + 3f * d, eyeCenter.y - 3f * d))
-                        drawCircle(color = Color.White, radius = 2f * d, center = Offset(eyeCenter.x - 3f * d, eyeCenter.y + 3f * d))
-                    }
                     val wingP = Offset(cx - 40f * d, henY + 10f * d); val wingRot = if (isFlapping) wingFlapRotation else if (isSliding) -20f else 0f
                     withTransform({ rotate(wingRot, pivot = wingP) }) {
-                        val wW = 60f * d; val wH = 60f * d
-                        val wTopLeft = Offset(wingP.x - 10f * d, wingP.y - 30f * d)
-                        // 1. Fill (Half Circle)
-                        drawArc(
-                            color = if(isSmushed) Color(0xFFE0E0E0) else Color.White,
-                            startAngle = 0f,
-                            sweepAngle = 180f,
-                            useCenter = true, // Closes the arc to make a half-circle
-                            topLeft = wTopLeft,
-                            size = Size(wW, wH)
-                        )
-                        // 2. Outline (Half Circle)
-                        drawArc(
-                            color = Color.Black,
-                            startAngle = 0f,
-                            sweepAngle = 180f,
-                            useCenter = false,
-                            topLeft = wTopLeft,
-                            size = Size(wW, wH),
-                            style = Stroke(4f * d, cap = StrokeCap.Round, join = StrokeJoin.Round)
-                        )
+                        val wW = 60f * d; val wH = 60f * d; val wTopLeft = Offset(wingP.x - 10f * d, wingP.y - 30f * d)
+                        drawArc(color = if(isSmushed) Color(0xFFE0E0E0) else Color.White, startAngle = 0f, sweepAngle = 180f, useCenter = true, topLeft = wTopLeft, size = Size(wW, wH))
+                        drawArc(color = Color.Black, startAngle = 0f, sweepAngle = 180f, useCenter = false, topLeft = wTopLeft, size = Size(wW, wH), style = Stroke(4f * d, cap = StrokeCap.Round, join = StrokeJoin.Round))
                     }
                 }
             }
@@ -1353,11 +1247,13 @@ fun HenVisual(modifier: Modifier = Modifier, timeLeft: Float, isPaused: Boolean,
 // --- HELPER FUNCTIONS ---
 
 // Linear Interpolation for Floats
+@Suppress("SpellCheckingInspection")
 fun lerp(start: Float, stop: Float, fraction: Float): Float {
     return (1 - fraction) * start + fraction * stop
 }
 
 // Linear Interpolation for Colors (already exists in Compose, but good to have if needed)
+@Suppress("SpellCheckingInspection")
 fun lerp(start: Color, stop: Color, fraction: Float): Color {
     val f = fraction.coerceIn(0f, 1f)
     return Color(
