@@ -54,6 +54,7 @@ import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.random.Random
+import androidx.compose.ui.graphics.StrokeJoin
 
 // --- SCREENS ---
 
@@ -607,7 +608,7 @@ fun BombScreen(
                                 isCritical = isFuseFinished,
                                 isPaused = isPaused,
                                 colors = colors,
-                                modifier = Modifier, // Passed explicitly
+                                modifier = Modifier.padding(bottom = 48.dp), // Passed explicitly
                                 henSequenceElapsed = henSequenceElapsed // Named argument prevents mix-up
                             )
 
@@ -774,7 +775,28 @@ fun ExplosionScreen(colors: AppColors, style: String?, explosionOrigin: Offset? 
         val titleSize = if (style == "FROG") 72.sp else 96.sp
 
         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.zIndex(100f)) {
-            Text(titleText, fontSize = titleSize, fontWeight = FontWeight.Black, style = TextStyle(brush = Brush.verticalGradient(listOf(Color.Yellow, NeonRed)), shadow = Shadow(color = NeonOrange, blurRadius = 40f)), fontFamily = CustomFont)
+            Box(contentAlignment = Alignment.Center) {
+                // 1. Invisible Stroke with Glow (Background)
+                Text(
+                    titleText,
+                    fontSize = titleSize,
+                    fontWeight = FontWeight.Black,
+                    fontFamily = CustomFont,
+                    color = NeonOrange.copy(alpha = 0.01f), // Invisible
+                    style = TextStyle(
+                        drawStyle = Stroke(width = 10f, join = StrokeJoin.Round),
+                        shadow = Shadow(color = NeonOrange, blurRadius = 25f)
+                    )
+                )
+                // 2. Sharp Gradient Text (Foreground)
+                Text(
+                    titleText,
+                    fontSize = titleSize,
+                    fontWeight = FontWeight.Black,
+                    fontFamily = CustomFont,
+                    style = TextStyle(brush = Brush.verticalGradient(listOf(Color.Yellow, NeonRed)))
+                )
+            }
             Spacer(modifier = Modifier.height(80.dp))
 
             ActionButton(

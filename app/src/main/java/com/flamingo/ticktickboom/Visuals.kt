@@ -43,6 +43,11 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.*
 import kotlin.random.Random
+import android.graphics.BlurMaskFilter
+import android.graphics.BlurMaskFilter.Blur
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.text.style.TextOverflow // <--- Needed for clipping fix
+import androidx.compose.foundation.layout.wrapContentSize // <--- Needed for unbounded size
 
 // --- FONTS ---
 val VisualsFont = FontFamily(Font(R.font.orbitron_bold))
@@ -459,48 +464,184 @@ fun C4Visual(isLedOn: Boolean, isDarkMode: Boolean, isPaused: Boolean, onToggleP
     val c4BlockColor = if (isDarkMode) Color(0xFFC7C1B3) else Color(0xFFB9B3A5)
     val c4BorderColor = if (isDarkMode) Color(0xFF9E9889) else Color(0xFF8C8677)
 
+    val pausedColor = Color(0xFF3B82F6)
+
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Box(modifier = Modifier.width(320.dp).height(200.dp).background(c4BodyColor, RoundedCornerShape(4.dp))) {
+            // Background Blocks
             Row(Modifier.fillMaxSize().padding(horizontal = 20.dp), horizontalArrangement = Arrangement.SpaceBetween) {
                 repeat(3) { Box(Modifier.width(80.dp).fillMaxHeight().background(c4BlockColor).border(1.dp, c4BorderColor)) }
             }
+            // Wires
             Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.SpaceEvenly) {
                 Box(Modifier.fillMaxWidth().height(24.dp).background(Color.Black))
                 Box(Modifier.fillMaxWidth().height(24.dp).background(Color.Black))
             }
+
+            // MAIN SCREEN CONTAINER
             Box(modifier = Modifier.align(Alignment.Center).width(280.dp).height(140.dp).background(C4ScreenBg, RoundedCornerShape(8.dp)).border(4.dp, Slate800, RoundedCornerShape(8.dp))) {
+                // Grid Lines
                 Canvas(modifier = Modifier.fillMaxSize().alpha(0.2f)) {
                     val step = 20f * d
                     for (x in 0..size.width.toInt() step step.toInt()) drawLine(color = NeonCyan, start = Offset(x.toFloat(), 0f), end = Offset(x.toFloat(), size.height), strokeWidth = 2f)
                     for (y in 0..size.height.toInt() step step.toInt()) drawLine(color = NeonCyan, start = Offset(0f, y.toFloat()), end = Offset(size.width, y.toFloat()), strokeWidth = 2f)
                 }
+
+                // CONTENT
                 Column(Modifier.fillMaxSize().padding(vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+
+                    // --- TOP SECTION (PAUSE BUTTON & TIMER) ---
                     Box(Modifier.weight(0.6f).fillMaxWidth().padding(horizontal = 16.dp).background(LcdDarkBackground, RoundedCornerShape(4.dp)).border(2.dp, Slate800, RoundedCornerShape(4.dp))) {
                         Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
+
+                            // 1. PAUSE BUTTON (ICON + TEXT)
                             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clickable { onTogglePause() }.padding(8.dp)) {
-                                Icon(Icons.Rounded.DeveloperBoard, null, tint = if (isPaused) Color(0xFF3B82F6) else Color(0xFF64748B), modifier = Modifier.size(32.dp))
-                                Text("PAUSED", color = if (isPaused) Color(0xFF3B82F6) else Color(0xFF1E293B), fontSize = 8.sp, fontWeight = FontWeight.Bold, fontFamily = VisualsFont)
+
+                                // CHIP ICON (Rounded Rect with Inset)
+                                Box(contentAlignment = Alignment.Center) {
+                                    if (isPaused) {
+                                        Canvas(modifier = Modifier.size(32.dp)) {
+                                            drawIntoCanvas { canvas ->
+                                                val blurRadius = 15f * d
+                                                // Prepare Paint with Blur
+                                                val paint = android.graphics.Paint().apply {
+                                                    color = pausedColor.toArgb()
+                                                    maskFilter = BlurMaskFilter(blurRadius, Blur.NORMAL)
+                                                }
+
+                                                // INSET: Shrink the glow source by 4dp so it sits UNDER the icon
+                                                // This eliminates the "Halo" gap between icon edge and glow start
+                                                val inset = 4.dp.toPx()
+                                                val rect = android.graphics.RectF(inset, inset, size.width - inset, size.height - inset)
+
+                                                // Draw the blurred rect
+                                                canvas.nativeCanvas.drawRoundRect(rect, 8.dp.toPx(), 8.dp.toPx(), paint)
+                                            }
+                                        }
+                                    }
+                                    // Foreground Icon (Sharp)
+                                    Icon(
+                                        Icons.Rounded.DeveloperBoard,
+                                        null,
+                                        tint = if (isPaused) pausedColor else Color(0xFF64748B),
+                                        modifier = Modifier.size(32.dp)
+                                    )
+                                }
+
+                                // PAUSED TEXT (Shadow Glow + Unbounded Layout)
+                                Box(contentAlignment = Alignment.Center) {
+                                    if (isPaused) {
+                                        // Glow Layer (Using Shadow, not Stroke, for cleanliness at small size)
+                                        Text(
+                                            "PAUSED",
+                                            color = Color.Transparent,
+                                            fontSize = 8.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            fontFamily = VisualsFont,
+                                            // FIX: Prevent clipping
+                                            overflow = TextOverflow.Visible,
+                                            softWrap = false,
+                                            modifier = Modifier.wrapContentSize(unbounded = true),
+                                            style = TextStyle(shadow = Shadow(pausedColor, blurRadius = 15f))
+                                        )
+                                    }
+                                    // Sharp Layer
+                                    Text(
+                                        "PAUSED",
+                                        color = if (isPaused) pausedColor else Color(0xFF1E293B),
+                                        fontSize = 8.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        fontFamily = VisualsFont,
+                                        // FIX: Sync alignment
+                                        overflow = TextOverflow.Visible,
+                                        softWrap = false,
+                                        modifier = Modifier.wrapContentSize(unbounded = true)
+                                    )
+                                }
                             }
+
                             Spacer(modifier = Modifier.width(16.dp))
-                            Text("--:--", color = NeonRed, fontSize = 56.sp, fontWeight = FontWeight.Black, letterSpacing = (-1).sp, modifier = Modifier.padding(bottom = 6.dp).offset(y = (-5).dp), style = TextStyle(fontFamily = VisualsFont, shadow = Shadow(color = NeonRed, offset = Offset.Zero, blurRadius = 12f)))
+
+                            // 2. MAIN TIMER (--:--) - Unbounded Layout
+                            Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(bottom = 6.dp).offset(y = (-5).dp)) {
+                                // Glow Layer
+                                Text(
+                                    "--:--",
+                                    color = Color.Transparent,
+                                    fontSize = 56.sp,
+                                    fontWeight = FontWeight.Black,
+                                    letterSpacing = (-1).sp,
+                                    fontFamily = VisualsFont,
+                                    // FIX: Allow overflow
+                                    overflow = TextOverflow.Visible,
+                                    softWrap = false,
+                                    modifier = Modifier.wrapContentSize(unbounded = true),
+                                    style = TextStyle(shadow = Shadow(NeonRed, blurRadius = 40f))
+                                )
+                                // Sharp Layer
+                                Text(
+                                    "--:--",
+                                    color = NeonRed,
+                                    fontSize = 56.sp,
+                                    fontWeight = FontWeight.Black,
+                                    letterSpacing = (-1).sp,
+                                    fontFamily = VisualsFont,
+                                    // FIX: Sync alignment
+                                    overflow = TextOverflow.Visible,
+                                    softWrap = false,
+                                    modifier = Modifier.wrapContentSize(unbounded = true)
+                                )
+                            }
                         }
                     }
+
+                    // --- BOTTOM SECTION (LED & ARMED TEXT) ---
                     Box(Modifier.weight(0.4f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.offset(y = 5.dp)) {
-                            Canvas(modifier = Modifier
-                                .size(12.dp)
-                                .offset(x = 3.5.dp, y = 0.dp) // <--- Add this! Change X/Y to move just the LED
-                            ) {
+                            // LED
+                            Canvas(modifier = Modifier.size(12.dp).offset(x = 3.5.dp, y = 0.dp)) {
                                 if (isLedOn) drawCircle(brush = Brush.radialGradient(colors = listOf(NeonRed.copy(alpha=0.8f), Color.Transparent), center = center, radius = ledSize), radius = ledSize)
                                 drawCircle(color = if (isLedOn) NeonRed else Color(0xFF450a0a), radius = ledRadius)
                             }
+
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("ARMED", color = NeonRed, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp, style = if (isLedOn) TextStyle(fontFamily = VisualsFont, shadow = Shadow(color = NeonRed, blurRadius = 8f)) else LocalTextStyle.current.copy(fontFamily = VisualsFont))
+
+                            // 3. ARMED TEXT
+                            Box(contentAlignment = Alignment.Center) {
+                                if (isLedOn) {
+                                    Text(
+                                        "ARMED",
+                                        color = Color.Transparent,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        letterSpacing = 2.sp,
+                                        fontFamily = VisualsFont,
+                                        overflow = TextOverflow.Visible,
+                                        softWrap = false,
+                                        modifier = Modifier.wrapContentSize(unbounded = true),
+                                        style = TextStyle(shadow = Shadow(NeonRed, blurRadius = 20f))
+                                    )
+                                }
+                                Text(
+                                    "ARMED",
+                                    color = if (isLedOn) NeonRed else Color(0xFF450a0a),
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 2.sp,
+                                    fontFamily = VisualsFont,
+                                    overflow = TextOverflow.Visible,
+                                    softWrap = false,
+                                    modifier = Modifier.wrapContentSize(unbounded = true),
+                                    style = LocalTextStyle.current.copy(fontFamily = VisualsFont)
+                                )
+                            }
                         }
                     }
                 }
             }
         }
+
+        // Warning Sticker
         Spacer(modifier = Modifier.height(24.dp))
         Surface(color = Color(0x33F59E0B), border = BorderStroke(1.dp, Color(0xFFF59E0B).copy(alpha=0.5f)), shape = RoundedCornerShape(4.dp)) {
             Row(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -1215,7 +1356,7 @@ fun HenVisual(modifier: Modifier = Modifier, timeLeft: Float, isPaused: Boolean,
                             val paint = android.graphics.Paint()
                             paint.color = Color.Black.copy(alpha = 0.3f * henShadowAlpha).toArgb()
                             // Blur Radius increases as she flies up
-                            paint.maskFilter = android.graphics.BlurMaskFilter(shadowBlurRadius, android.graphics.BlurMaskFilter.Blur.NORMAL)
+                            paint.maskFilter = BlurMaskFilter(shadowBlurRadius, Blur.NORMAL)
 
                             canvas.nativeCanvas.drawOval(
                                 android.graphics.RectF(

@@ -21,6 +21,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -31,6 +32,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.StrokeJoin
 
 // --- GENERIC COMPONENTS ---
 
@@ -202,21 +205,61 @@ fun BombTextContent(
     isCritical: Boolean,
     isPaused: Boolean,
     colors: AppColors,
-    modifier: Modifier = Modifier.padding(bottom = 48.dp),
+    modifier: Modifier = Modifier,
     henSequenceElapsed: Float = 0f
 ) {
+    // HELPER: Invisible Stroke (for Glow Shape) + Sharp Text (Foreground)
+    @Composable
+    fun StrokeGlowText(
+        text: String,
+        color: Color,
+        fontSize: androidx.compose.ui.unit.TextUnit,
+        modifier: Modifier = Modifier,
+        letterSpacing: androidx.compose.ui.unit.TextUnit = 2.sp,
+        fontWeight: FontWeight = FontWeight.Bold,
+        glowIntensity: Float = 1f
+    ) {
+        Box(modifier = modifier, contentAlignment = Alignment.Center) {
+
+            // LAYER 1: INVISIBLE STROKE GLOW (Background)
+            // We keep the Stroke style so the shadow "hugs" the text shape.
+            // We set alpha to 1% (0.01f) so the stroke line itself is invisible.
+            // The Shadow remains visible and retains the "hugging" shape.
+            Text(
+                text = text,
+                color = color.copy(alpha = 0.01f),
+                fontSize = fontSize,
+                fontWeight = fontWeight,
+                letterSpacing = letterSpacing,
+                fontFamily = CustomFont,
+                style = TextStyle(
+                    drawStyle = Stroke(width = 8f * glowIntensity, join = StrokeJoin.Round),
+                    shadow = Shadow(color = color, blurRadius =15f * glowIntensity, offset = Offset.Zero)
+                )
+            )
+
+            // LAYER 2: SHARP TEXT (Foreground)
+            Text(
+                text = text,
+                color = color,
+                fontSize = fontSize,
+                fontWeight = fontWeight,
+                letterSpacing = letterSpacing,
+                fontFamily = CustomFont
+            )
+        }
+    }
+
     if (isPaused) {
         when (style) {
             "FUSE" -> {
-                Text("PAUSED", color = NeonCyan, fontSize = 48.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont, letterSpacing = 2.sp, style = TextStyle(shadow = Shadow(color = NeonCyan, blurRadius = 20f)))
+                StrokeGlowText("PAUSED", NeonCyan, 48.sp)
                 Spacer(modifier = Modifier.height(16.dp))
                 Surface(color = Color.Transparent, border = BorderStroke(1.dp, NeonCyan), shape = RoundedCornerShape(50)) {
                     Text("EXTINGUISHED", color = NeonCyan, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp), fontFamily = CustomFont)
                 }
             }
-            "FROG", "HEN" -> {
-                Text("PAUSED", color = NeonCyan, fontSize = 48.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont, letterSpacing = 2.sp, style = TextStyle(shadow = Shadow(color = NeonCyan, blurRadius = 20f)))
-            }
+            "FROG", "HEN" -> StrokeGlowText("PAUSED", NeonCyan, 48.sp)
             else -> {
                 Surface(color = Color.Transparent, border = BorderStroke(1.dp, NeonCyan), shape = RoundedCornerShape(50), modifier = modifier) {
                     Text("SYSTEM PAUSED", color = NeonCyan, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp), fontFamily = CustomFont)
@@ -229,7 +272,7 @@ fun BombTextContent(
     when (style) {
         "FUSE" -> {
             if (!isCritical) {
-                Text("ARMED", color = NeonOrange, fontSize = 48.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont, letterSpacing = 2.sp, style = TextStyle(shadow = Shadow(color = NeonOrange, blurRadius = 20f)))
+                StrokeGlowText("ARMED", NeonOrange, 48.sp)
                 Spacer(modifier = Modifier.height(16.dp))
                 Surface(color = Color.Transparent, border = BorderStroke(1.dp, NeonOrange), shape = RoundedCornerShape(50)) {
                     Text("FUSE BURNING", color = NeonOrange, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp), fontFamily = CustomFont)
@@ -237,7 +280,9 @@ fun BombTextContent(
             } else {
                 val infiniteTransition = androidx.compose.animation.core.rememberInfiniteTransition()
                 val color by infiniteTransition.animateColor(initialValue = NeonRed, targetValue = colors.text, animationSpec = androidx.compose.animation.core.infiniteRepeatable(androidx.compose.animation.core.tween(200), androidx.compose.animation.core.RepeatMode.Reverse), label = "crit")
-                Text("CRITICAL", color = color, fontSize = 48.sp, fontWeight = FontWeight.Black, letterSpacing = 2.sp, style = TextStyle(shadow = Shadow(color = NeonRed, blurRadius = 40f)), fontFamily = CustomFont)
+
+                StrokeGlowText("CRITICAL", color, 48.sp, fontWeight = FontWeight.Black, glowIntensity = 1.3f)
+
                 Spacer(modifier = Modifier.height(16.dp))
                 Surface(color = Color.Transparent, border = BorderStroke(1.dp, NeonRed), shape = RoundedCornerShape(50)) {
                     Text("DETONATION IMMINENT", color = NeonRed, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp), fontFamily = CustomFont)
@@ -250,13 +295,13 @@ fun BombTextContent(
                 isCritical -> "RIBBIT?"
                 else -> "RIBBIT"
             }
-            Text(text, color = FrogBody, fontSize = 48.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont, letterSpacing = 2.sp, style = TextStyle(shadow = Shadow(color = FrogBody, blurRadius = 20f)))
+            StrokeGlowText(text, FrogBody, 48.sp)
         }
         "HEN" -> {
             val showCracking = henSequenceElapsed > 0.5f
             val text = if (showCracking) "CRACKING" else "CLUCK"
             val color = if (showCracking) NeonRed else NeonOrange
-            Text(text, color = color, fontSize = 48.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont, letterSpacing = 2.sp, style = TextStyle(shadow = Shadow(color = color, blurRadius = 20f)))
+            StrokeGlowText(text, color, 48.sp)
         }
         else -> {
             Surface(color = Color.Transparent, border = BorderStroke(1.dp, NeonRed), shape = RoundedCornerShape(50), modifier = modifier) {
