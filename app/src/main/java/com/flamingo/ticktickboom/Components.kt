@@ -22,8 +22,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -33,7 +35,98 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.withTransform
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.foundation.layout.wrapContentSize
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.runtime.remember
+
+// --- SHARED DRAWING HELPERS ---
+
+@Composable
+fun StrokeGlowText(
+    text: String,
+    color: Color,
+    fontSize: androidx.compose.ui.unit.TextUnit,
+    modifier: Modifier = Modifier,
+    gradientBrush: Brush? = null, // <-- NEW PARAMETER
+    letterSpacing: androidx.compose.ui.unit.TextUnit = 2.sp,
+    fontWeight: FontWeight = FontWeight.Bold,
+    glowIntensity: Float = 1f,
+    strokeWidth: Float = 8f,
+    blurRadius: Float = 15f
+) {
+    Box(modifier = modifier, contentAlignment = Alignment.Center) {
+        // LAYER 1: INVISIBLE STROKE GLOW (Background)
+        Text(
+            text = text,
+            color = color.copy(alpha = 0.01f),
+            fontSize = fontSize,
+            fontWeight = fontWeight,
+            letterSpacing = letterSpacing,
+            fontFamily = CustomFont,
+            overflow = TextOverflow.Visible,
+            softWrap = false,
+            modifier = Modifier.wrapContentSize(unbounded = true),
+            style = TextStyle(
+                drawStyle = Stroke(width = strokeWidth * glowIntensity, join = StrokeJoin.Round),
+                shadow = Shadow(color = color, blurRadius = blurRadius * glowIntensity, offset = Offset.Zero)
+            )
+        )
+
+        // LAYER 2: SHARP TEXT (Foreground)
+        Text(
+            text = text,
+            color = color,
+            fontSize = fontSize,
+            fontWeight = fontWeight,
+            letterSpacing = letterSpacing,
+            fontFamily = CustomFont,
+            overflow = TextOverflow.Visible,
+            softWrap = false,
+            modifier = Modifier.wrapContentSize(unbounded = true),
+            style = TextStyle(
+                brush = gradientBrush // <-- APPLIES THE GRADIENT
+            )
+        )
+    }
+}
+
+// Linear Interpolation for Colors
+fun lerp(start: Color, stop: Color, fraction: Float): Color {
+    // This uses the built-in optimize Compose lerp
+    return androidx.compose.ui.graphics.lerp(start, stop, fraction.coerceIn(0f, 1f))
+}
+
+// Helper for Reflections (Used in all Visuals)
+fun DrawScope.drawReflection(
+    isDarkMode: Boolean,
+    pivotY: Float,
+    alpha: Float = 0.25f,
+    content: DrawScope.(Boolean) -> Unit
+) {
+    content(false) // Real Object
+    if (isDarkMode && alpha > 0f) {
+        withTransform({
+            scale(1f, -1f, pivot = Offset(center.x, pivotY))
+        }) {
+            drawIntoCanvas { canvas ->
+                canvas.nativeCanvas.saveLayerAlpha(
+                    0f, -size.height, size.width, size.height * 2f,
+                    (alpha * 255).toInt()
+                )
+            }
+            content(true) // Reflection
+            drawIntoCanvas { canvas -> canvas.nativeCanvas.restore() }
+        }
+    }
+}
 
 // --- GENERIC COMPONENTS ---
 
@@ -45,16 +138,30 @@ fun ActionButton(
     textColor: Color,
     borderColor: Color = Color.Transparent,
     borderWidth: Dp = 1.dp,
+    interactionSource: MutableInteractionSource = remember { MutableInteractionSource() }, // <-- NEW PARAMETER!
     onClick: () -> Unit
 ) {
+    val isPressed by interactionSource.collectIsPressedAsState()
+
+    // Smooth fade to a neutral gray for universal light/dark mode support
+    val targetColor = if (isPressed) lerp(color, Color.Gray, 0.4f) else color
+    val animatedColor by animateColorAsState(
+        targetValue = targetColor,
+        animationSpec = tween(durationMillis = 150), // Subtle yet quick transition
+        label = "buttonHighlight"
+    )
+
     Row(
         modifier = Modifier
             .width(200.dp)
             .height(60.dp)
             .clip(RoundedCornerShape(50))
-            .background(color)
+            .background(animatedColor)
             .border(borderWidth, borderColor, RoundedCornerShape(50))
-            .clickable { onClick() }
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null
+            ) { onClick() }
             .padding(horizontal = 16.dp),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically
@@ -74,7 +181,19 @@ fun RowScope.StyleButton(
     colors: AppColors,
     onClick: () -> Unit
 ) {
-    val bgColor = if (isSelected) colors.surface else colors.surface.copy(alpha = 0.3f)
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+
+    val baseBgColor = if (isSelected) colors.surface else colors.surface.copy(alpha = 0.3f)
+
+    // Smooth fade to a neutral gray for universal light/dark mode support
+    val targetBgColor = if (isPressed) lerp(baseBgColor, Color.Gray, 0.4f) else baseBgColor
+    val animatedBgColor by animateColorAsState(
+        targetValue = targetBgColor,
+        animationSpec = tween(durationMillis = 150), // Subtle yet quick transition
+        label = "styleButtonHighlight"
+    )
+
     val borderColor = if (isSelected) color else colors.border
     val contentColor = if (isSelected) color else colors.textSecondary
 
@@ -82,9 +201,12 @@ fun RowScope.StyleButton(
         .weight(1f)
         .height(100.dp)
         .clip(RoundedCornerShape(16.dp))
-        .background(bgColor)
+        .background(animatedBgColor)
         .border(1.dp, borderColor, RoundedCornerShape(16.dp))
-        .clickable { onClick() }
+        .clickable(
+            interactionSource = interactionSource,
+            indication = null
+        ) { onClick() }
         .padding(12.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
@@ -143,7 +265,7 @@ fun VolumeSlider(
     }
 }
 
-// --- BOMB SPECIFIC COMPONENTS (Moved from MainActivity) ---
+// --- BOMB SPECIFIC COMPONENTS ---
 
 @Composable
 fun BombVisualContent(
@@ -156,6 +278,7 @@ fun BombVisualContent(
     colors: AppColors,
     isPaused: Boolean,
     onTogglePause: () -> Unit,
+    onShock: () -> Unit = {}, // <-- NEW CALLBACK
     eggWobbleRotation: Float = 0f,
     henSequenceElapsed: Float = 0f,
     showEgg: Boolean = true,
@@ -190,8 +313,8 @@ fun BombVisualContent(
                     val progress = if (fuseBurnDuration > 0) (currentBurnTime / fuseBurnDuration).coerceIn(0f, 1f) else 1f
                     FuseVisual(progress, isCritical, colors, isPaused, onTogglePause, isDarkMode = isDarkMode)
                 }
-                "C4" -> C4Visual(isLedOn, isDarkMode, isPaused, onTogglePause)
-                "DYNAMITE" -> DynamiteVisual(timeLeft, isPaused, onTogglePause)
+                "C4" -> C4Visual(isLedOn, isDarkMode, isPaused, onTogglePause, onShock)
+                "DYNAMITE" -> DynamiteVisual(timeLeft, isPaused, onTogglePause, isDarkMode)
                 "FROG" -> FrogVisual(timeLeft, isCritical, isPaused, onTogglePause, isDarkMode = isDarkMode)
             }
         }
@@ -208,47 +331,7 @@ fun BombTextContent(
     modifier: Modifier = Modifier,
     henSequenceElapsed: Float = 0f
 ) {
-    // HELPER: Invisible Stroke (for Glow Shape) + Sharp Text (Foreground)
-    @Composable
-    fun StrokeGlowText(
-        text: String,
-        color: Color,
-        fontSize: androidx.compose.ui.unit.TextUnit,
-        modifier: Modifier = Modifier,
-        letterSpacing: androidx.compose.ui.unit.TextUnit = 2.sp,
-        fontWeight: FontWeight = FontWeight.Bold,
-        glowIntensity: Float = 1f
-    ) {
-        Box(modifier = modifier, contentAlignment = Alignment.Center) {
-
-            // LAYER 1: INVISIBLE STROKE GLOW (Background)
-            // We keep the Stroke style so the shadow "hugs" the text shape.
-            // We set alpha to 1% (0.01f) so the stroke line itself is invisible.
-            // The Shadow remains visible and retains the "hugging" shape.
-            Text(
-                text = text,
-                color = color.copy(alpha = 0.01f),
-                fontSize = fontSize,
-                fontWeight = fontWeight,
-                letterSpacing = letterSpacing,
-                fontFamily = CustomFont,
-                style = TextStyle(
-                    drawStyle = Stroke(width = 8f * glowIntensity, join = StrokeJoin.Round),
-                    shadow = Shadow(color = color, blurRadius =15f * glowIntensity, offset = Offset.Zero)
-                )
-            )
-
-            // LAYER 2: SHARP TEXT (Foreground)
-            Text(
-                text = text,
-                color = color,
-                fontSize = fontSize,
-                fontWeight = fontWeight,
-                letterSpacing = letterSpacing,
-                fontFamily = CustomFont
-            )
-        }
-    }
+    // NOTE: Removed local StrokeGlowText. Using top-level version now.
 
     if (isPaused) {
         when (style) {
@@ -279,7 +362,8 @@ fun BombTextContent(
                 }
             } else {
                 val infiniteTransition = androidx.compose.animation.core.rememberInfiniteTransition()
-                val color by infiniteTransition.animateColor(initialValue = NeonRed, targetValue = colors.text, animationSpec = androidx.compose.animation.core.infiniteRepeatable(androidx.compose.animation.core.tween(200), androidx.compose.animation.core.RepeatMode.Reverse), label = "crit")
+                val color by infiniteTransition.animateColor(initialValue = NeonRed, targetValue = colors.text, animationSpec = androidx.compose.animation.core.infiniteRepeatable(
+                    tween(200), androidx.compose.animation.core.RepeatMode.Reverse), label = "crit")
 
                 StrokeGlowText("CRITICAL", color, 48.sp, fontWeight = FontWeight.Black, glowIntensity = 1.3f)
 

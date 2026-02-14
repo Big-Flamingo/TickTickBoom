@@ -25,3 +25,16 @@ data class SmokeParticle(
     var life: Float,
     val maxLife: Float
 )
+
+// --- MOVED FROM VISUALS.KT (Renamed from Local...) ---
+
+data class VisualParticle(
+    var x: Float, var y: Float, var vx: Float, var vy: Float,
+    var life: Float, val maxLife: Float
+)
+
+data class VisualText(
+    val text: String, val x: Float, val y: Float,
+    val color: Color, val gradientColors: List<Color>? = null,
+    val alpha: Float = 1f, val life: Float = 1.0f, val fontSize: Float
+)

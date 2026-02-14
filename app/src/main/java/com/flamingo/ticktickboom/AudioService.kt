@@ -34,6 +34,7 @@ object AudioService {
     private var flintSoundId: Int = 0
     private var glassSoundId: Int = 0
     private var boingSoundId: Int = 0
+    private var zapSoundId: Int = 0 // <-- NEW SOUND ID
 
     // Hen Sounds
     private var henBokSoundId: Int = 0
@@ -80,6 +81,7 @@ object AudioService {
             clickSoundId = it.load(appContext, R.raw.click, 1)
             alertSoundId = it.load(appContext, R.raw.alert, 1)
             beepSoundId = it.load(appContext, R.raw.beep, 1)
+            zapSoundId = it.load(appContext, R.raw.zap, 1) // <-- LOAD THE ZAP
             fizzleSoundId = it.load(appContext, R.raw.fizzle, 1)
             flintSoundId = it.load(appContext, R.raw.flint, 1)
             glassSoundId = it.load(appContext, R.raw.glass, 1)
@@ -216,6 +218,7 @@ object AudioService {
     fun playClockTick() { soundPool?.play(clockSoundId, timerVolume * 0.5f, timerVolume * 0.5f, 1, 0, 1f) }
     fun playClick() { soundPool?.play(clickSoundId, timerVolume, timerVolume, 1, 0, 1f) }
     fun playGlassTap() { soundPool?.play(glassSoundId, timerVolume, timerVolume, 1, 0, 1f) }
+    fun playZap() { soundPool?.play(zapSoundId, timerVolume, timerVolume, 1, 0, 1f) } // <-- PLAY THE ZAP
     fun playCrack() { soundPool?.play(eggCrackSoundId, timerVolume, timerVolume, 1, 0, 1.0f) }
 
     fun playLoudCluck() {

@@ -31,7 +31,6 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.withTransform
@@ -42,11 +41,13 @@ import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.animation.animateColorAsState
 import androidx.core.content.edit
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -54,7 +55,10 @@ import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.random.Random
-import androidx.compose.ui.graphics.StrokeJoin
+
+// NOTE: Uses VisualParticle from AppModels.kt
+// NOTE: Uses drawReflection and StrokeGlowText from Components.kt
+// NOTE: Uses HenVisual and FrogVisual from AnimalVisuals.kt
 
 // --- SCREENS ---
 
@@ -125,7 +129,6 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, onToggleTheme: () -> Uni
         AudioService.playClick()
 
         // Final Safety Check before starting
-        // We re-run the logic just to ensure no weird states if the user tapped 'Start' while typing
         var min = minText.toIntOrNull() ?: 1
         if (min <= 0) min = 1
         var max = maxText.toIntOrNull() ?: 1
@@ -185,10 +188,6 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, onToggleTheme: () -> Uni
         ) {
             Spacer(modifier = Modifier.height(48.dp))
 
-            // In Screens.kt -> SetupScreen
-
-            // In Screens.kt -> SetupScreen
-
             // Capture the rotation value outside the Canvas
             val currentRotation = if (isHoldingBomb) holdingShakeOffset else wobbleAnim.value
 
@@ -215,7 +214,6 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, onToggleTheme: () -> Uni
                         )
                     }
                     .graphicsLayer {
-                        // FIX: Only handle SCALE here. Rotation is now handled inside the Canvas.
                         scaleX = if (isHoldingBomb) 1.1f else 1f
                         scaleY = if (isHoldingBomb) 1.1f else 1f
                     },
@@ -229,14 +227,12 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, onToggleTheme: () -> Uni
                     val neckW = 8.dp.toPx(); val neckH = 4.dp.toPx()
                     val fuseStroke = 2.dp.toPx()
 
+                    // Using the shared drawReflection from Components.kt
                     drawReflection(isDarkMode, floorY, 0.25f) { isReflection ->
 
                         // 1. SHADOW (Stays flat! Outside the rotation block)
                         if (!isReflection) {
-                            // --- MODIFIED: CONSISTENT 5:1 RATIO ---
-                            // Width = Body Diameter (Radius * 2)
                             val shadowW = bodyRadius * 2f
-                            // Height = 20% of Width
                             val shadowH = shadowW * 0.2f
 
                             drawOval(
@@ -247,13 +243,11 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, onToggleTheme: () -> Uni
                         }
 
                         // 2. ROTATING BOMB PARTS
-                        // We apply rotation around the bomb's center.
-                        // Since drawReflection flips the context, this automatically creates the correct "mirrored pivot" effect.
                         withTransform({ rotate(currentRotation, pivot = center) }) {
 
                             // A. FUSE
                             val fuseStart = Offset(center.x, center.y - 14.dp.toPx())
-                            val path = Path() // Create local path
+                            val path = Path()
                             path.moveTo(fuseStart.x, fuseStart.y)
                             path.lineTo(fuseStart.x, fuseStart.y - 2.dp.toPx())
                             path.cubicTo(
@@ -296,10 +290,7 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, onToggleTheme: () -> Uni
             Spacer(modifier = Modifier.height(24.dp))
 
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                // UPDATE: Use validateMin() for the first input
                 TimeInput("MIN SECS", minText, { saveMin(it) }, NeonCyan, colors, Modifier.weight(1f), { validateMin() })
-
-                // UPDATE: Use validateMax() for the second input
                 TimeInput("MAX SECS", maxText, { saveMax(it) }, NeonRed, colors, Modifier.weight(1f), { validateMax() })
             }
             Spacer(modifier = Modifier.height(32.dp))
@@ -328,10 +319,33 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, onToggleTheme: () -> Uni
             Spacer(modifier = Modifier.height(32.dp))
             if (errorMsg.isNotEmpty()) { Text(errorMsg, color = NeonRed, fontSize = 14.sp, modifier = Modifier.padding(bottom = 16.dp), fontFamily = CustomFont) }
 
-            Button(onClick = { tryStart() }, colors = ButtonDefaults.buttonColors(containerColor = NeonRed), shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth().height(60.dp)) {
-                Icon(Icons.Filled.PlayArrow, null)
+            val armInteractionSource = remember { MutableInteractionSource() }
+            val isArmPressed by armInteractionSource.collectIsPressedAsState()
+
+            // Blend the red towards gray for a tactile press feel
+            val targetArmColor = if (isArmPressed) lerp(NeonRed, Color.Gray, 0.4f) else NeonRed
+            val armAnimatedColor by animateColorAsState(
+                targetValue = targetArmColor,
+                animationSpec = tween(durationMillis = 150),
+                label = "armButtonHighlight"
+            )
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(60.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(armAnimatedColor)
+                    .clickable(
+                        interactionSource = armInteractionSource,
+                        indication = null
+                    ) { tryStart() },
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Filled.PlayArrow, null, tint = Color.White)
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("ARM SYSTEM", fontSize = 18.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp, fontFamily = CustomFont)
+                Text("ARM SYSTEM", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp, fontFamily = CustomFont)
             }
             Spacer(modifier = Modifier.height(48.dp))
         }
@@ -358,7 +372,7 @@ fun BombScreen(
     } else {
         (System.currentTimeMillis() - startTime - totalPausedTime) / 1000f
     }
-
+    val coroutineScope = rememberCoroutineScope()
     var timeLeft by remember { mutableFloatStateOf((duration - initialElapsed).coerceAtLeast(0f)) }
     var isLedOn by remember { mutableStateOf(false) }
 
@@ -391,13 +405,12 @@ fun BombScreen(
         else -> 0
     }
 
-    // NEW: Save the last played stage so it survives rotation
+    // Save the last played stage so it survives rotation
     var lastPlayedCrackStage by rememberSaveable { mutableIntStateOf(0) }
 
     LaunchedEffect(crackStage) {
-        // Check if we are in a NEW, higher stage than before
         if (style == "HEN" && crackStage > lastPlayedCrackStage && !isPaused) {
-            lastPlayedCrackStage = crackStage // Mark this stage as "played"
+            lastPlayedCrackStage = crackStage
             AudioService.playCrack()
             launch {
                 eggWobbleAnim.snapTo(0f)
@@ -417,14 +430,11 @@ fun BombScreen(
         } else {
             if (style == "FUSE") AudioService.startFuse(isCritical)
 
-            // FIX: Resume flapping with correct volume
             if (style == "HEN" && henSequenceElapsed > 0.5f && henSequenceElapsed < 2.5f) {
-                // Calculate volume exactly as we do in the loop
                 var resumeVol = 1.0f
                 if (henSequenceElapsed > 2.0f) {
                     resumeVol = (2.5f - henSequenceElapsed) / 0.5f
                 }
-                // Pass the volume so it doesn't "pop" to 100%
                 AudioService.playWingFlap(startVol = resumeVol.coerceIn(0f, 1f) * AudioService.timerVolume)
             }
         }
@@ -444,8 +454,6 @@ fun BombScreen(
                     val elapsed = currentRunTimeMs / 1000f
                     timeLeft = (duration - elapsed)
 
-                    // --- HEN LOGIC ---
-                    // 1. Activate Sequence: Whenever time is <= 6.0 (or immediately if start < 6)
                     if (style == "HEN" && timeLeft <= 6.0f && !isHenSequenceActive) {
                         isHenSequenceActive = true
                     }
@@ -453,34 +461,25 @@ fun BombScreen(
                     if (isHenSequenceActive) {
                         henSequenceElapsed += dt
 
-                        // 3. Trigger Fly Sound/Anim at 0.5s mark
                         if (henSequenceElapsed > 0.5f && !hasPlayedFly) {
                             AudioService.playLoudCluck()
-                            // Start at full volume
                             AudioService.playWingFlap(AudioService.timerVolume)
                             hasPlayedFly = true
                         }
 
-                        // FIX: Fade out for the last 0.5 seconds (2.0s to 2.5s)
                         if (henSequenceElapsed > 0.5f && henSequenceElapsed < 2.5f) {
                             var currentVol = 1.0f
-
-                            // If we are in the last 0.5s of the window
                             if (henSequenceElapsed > 2.0f) {
                                 currentVol = (2.5f - henSequenceElapsed) / 0.5f
                             }
-
-                            // Apply the volume frame-by-frame
                             AudioService.updateWingFlapVolume(currentVol.coerceIn(0f, 1f))
                         }
 
-                        // Stop the flapping when she leaves the screen (2.5s)
                         if (henSequenceElapsed > 2.5f) {
                             AudioService.stopWingFlap()
                         }
                     }
 
-                    // ... (Standard Sounds logic) ...
                     if (timeLeft <= 5f && !isFuseFinished) {
                         isFuseFinished = true
                         if (style == "FUSE") AudioService.dimFuse()
@@ -502,18 +501,13 @@ fun BombScreen(
                         if (style == "DYNAMITE" && timeLeft > 1.0) AudioService.playClockTick()
                         if (style == "FROG") { AudioService.playCroak(timeLeft < 5) }
                         if (style == "HEN") {
-                            // FIX: Disable ticks completely once sequence starts (prevents phantom beakless cluck)
                             if (!isHenSequenceActive) {
                                 AudioService.playHenCluck()
                             }
                         }
-                        // FIX: Add the interval to the last time instead of resetting to "now".
-                        // This ensures that if we are 10ms late this frame, we are 10ms early next frame to catch up.
                         if (currentRunTimeMs - lastTickRunTime > tickInterval * 1.5f) {
-                            // Safety: If we are WAY behind (like after a pause or phase change), just reset.
                             lastTickRunTime = currentRunTimeMs
                         } else {
-                            // Normal operation: Keep the metronome perfect
                             lastTickRunTime += tickInterval
                         }
                     }
@@ -524,18 +518,26 @@ fun BombScreen(
             }
         }
 
-        // ... (inside LaunchedEffect)
-
         if (!isPaused) {
             timeLeft = 0f
-            // FIX: Removed the local flash, audio, and delay.
-            // We transfer control immediately to ExplosionScreen, which handles the
-            // flash and sound instantly for a zero-latency feel.
             onExplode()
         }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
+
+        // --- NEW: INVERTED BACKGROUND FLASH ---
+        if (flashAnim.value > 0f) {
+            // Dark mode flashes White, Light mode flashes Dark
+            val flashColor = if (isDarkMode) Color.White else Slate950
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(flashColor.copy(alpha = flashAnim.value))
+                    .zIndex(-1f) // Render strictly behind the bomb!
+            )
+        }
+
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -543,54 +545,53 @@ fun BombScreen(
                 .onGloballyPositioned { onUpdateExplosionOrigin(it.positionInRoot() + Offset(it.size.width/2f, it.size.height/2f)) },
             contentAlignment = Alignment.Center
         ) {
-            // FIX: Clamp time to 2.5s to prevent "Phantom Hen" falling back down
             BombVisualContent(
                 style = style,
                 duration = duration,
                 timeLeft = timeLeft,
                 isCritical = isCritical,
                 isLedOn = isLedOn,
-                isDarkMode = isDarkMode, // This is for C4/Fuse
+                isDarkMode = isDarkMode,
                 colors = colors,
                 isPaused = isPaused,
                 onTogglePause = onTogglePause,
+                onShock = {
+                    // Trigger the screen flash animation!
+                    coroutineScope.launch {
+                        flashAnim.snapTo(1f)
+                        flashAnim.animateTo(0f, tween(1000, easing = FastOutSlowInEasing))
+                    }
+                },
                 eggWobbleRotation = eggWobbleAnim.value,
                 henSequenceElapsed = henSequenceElapsed.coerceAtMost(2.5f),
                 showEgg = true,
                 crackStage = crackStage,
-                isPainedBeakOpen = false,   // Default
-                isPainedBeakClosed = false, // Default
-                isDarkModeShadows = isDarkMode // <--- THIS IS THE UPDATE!
+                isPainedBeakOpen = false,
+                isPainedBeakClosed = false,
+                isDarkModeShadows = isDarkMode
             )
         }
 
-        // LAYER 2: UI (Text & Buttons)
         Box(modifier = Modifier.fillMaxSize().padding(16.dp).zIndex(1f), contentAlignment = Alignment.Center) {
             if (isLandscape) {
-                // --- UNIFIED LANDSCAPE LAYOUT ---
-
-                // 1. Determine Ghost Text & Size based on what is widest for THAT bomb
                 val (ghostText, ghostSize) = when (style) {
-                    "FUSE" -> "CRITICAL" to 48.sp       // Title is widest
-                    "FROG" -> "RIBBIT!!" to 48.sp       // Title is widest
-                    "HEN" -> "CRACKING" to 48.sp        // Title is widest
-                    else -> "DETONATION SEQUENCE" to 12.sp // Pill text is widest (C4/Dynamite)
+                    "FUSE" -> "CRITICAL" to 48.sp
+                    "FROG" -> "RIBBIT!!" to 48.sp
+                    "HEN" -> "CRACKING" to 48.sp
+                    else -> "DETONATION SEQUENCE" to 12.sp
                 }
 
-                // 2. Adjust Position: Move Hen slightly left (160dp) to prevent "CRACKING" line-break
                 val leftPadding = if (style == "HEN") 160.dp else 192.dp
 
                 Row(modifier = Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
                     Spacer(modifier = Modifier.weight(1f))
 
-                    // RIGHT HALF: Text & Buttons
                     Box(modifier = Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.CenterStart) {
                         Column(
                             modifier = Modifier.padding(start = leftPadding),
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.Center
                         ) {
-                            // STABILIZER: Dynamic Ghost Text
                             Text(
                                 text = ghostText,
                                 color = Color.Transparent,
@@ -601,26 +602,23 @@ fun BombScreen(
                                 modifier = Modifier.height(0.dp).padding(horizontal = 16.dp)
                             )
 
-                            // Actual Text Elements
                             BombTextContent(
                                 style = style,
                                 timeLeft = timeLeft,
                                 isCritical = isFuseFinished,
                                 isPaused = isPaused,
                                 colors = colors,
-                                modifier = Modifier.padding(bottom = 48.dp), // Passed explicitly
-                                henSequenceElapsed = henSequenceElapsed // Named argument prevents mix-up
+                                modifier = Modifier.padding(bottom = 48.dp),
+                                henSequenceElapsed = henSequenceElapsed
                             )
 
                             Spacer(modifier = Modifier.height(16.dp))
 
-                            // Button
                             AbortButtonContent(colors, onAbort)
                         }
                     }
                 }
             } else {
-                // PORTRAIT LAYOUT (Unchanged)
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     BombTextContent(
                         style = style,
@@ -628,7 +626,7 @@ fun BombScreen(
                         isCritical = isFuseFinished,
                         isPaused = isPaused,
                         colors = colors,
-                        henSequenceElapsed = henSequenceElapsed // Named argument skips over the 'modifier' slot safely
+                        henSequenceElapsed = henSequenceElapsed
                     )
                     Spacer(modifier = Modifier.height(32.dp))
                     Box(modifier = Modifier.size(300.dp))
@@ -637,7 +635,6 @@ fun BombScreen(
                 }
             }
         }
-        if (flashAnim.value > 0f) Box(modifier = Modifier.fillMaxSize().background(Color.White.copy(alpha = flashAnim.value)).zIndex(1000f))
     }
 }
 
@@ -646,17 +643,25 @@ fun ExplosionScreen(colors: AppColors, style: String?, explosionOrigin: Offset? 
     val context = LocalContext.current
     val particles = remember {
         val colorsList = listOf(NeonRed, NeonOrange, Color.Yellow, Color.White)
-        List(100) { i -> Particle(i, Math.random() * 360, (200 + Math.random() * 800).toFloat(), (3 + Math.random() * 5).toFloat(), colorsList.random(), (Math.random() * 20 - 10).toFloat()) }
+        // NEW
+        List(100) { i ->
+            Particle(
+                id = i,
+                angle = Math.random() * 360,
+                velocity = (200 + Math.random() * 800).toFloat(),
+                size = (3 + Math.random() * 5).toFloat(),
+                color = colorsList.random(),
+                rotationSpeed = (Math.random() * 20 - 10).toFloat()
+            )
+        }
     }
     val smoke = remember {
         List(30) { _ -> SmokeParticle(x = 0f, y = 0f, vx = (Math.random() * 100 - 50).toFloat(), vy = (Math.random() * 100 - 50).toFloat(), size = (20 + Math.random() * 40).toFloat(), alpha = 0.8f, life = 1f, maxLife = 1f) }
     }
 
-    // Use rememberSaveable so these don't reset on rotation
     var hasPlayedExplosion by rememberSaveable { mutableStateOf(false) }
     val animationProgress = remember { Animatable(if (hasPlayedExplosion) 1f else 0f) }
 
-    // FIX: All Hen animation states must be saved
     var henAnimTime by rememberSaveable { mutableFloatStateOf(2.5f) }
     var isHenPaused by rememberSaveable { mutableStateOf(false) }
 
@@ -767,38 +772,34 @@ fun ExplosionScreen(colors: AppColors, style: String?, explosionOrigin: Offset? 
             if (shockwaveAlpha > 0) drawCircle(color = Color.White.copy(alpha = shockwaveAlpha * 0.5f), radius = shockwaveRadius, center = center, style = Stroke(width = 50f * (1f - progress)))
         }
 
-        // CHANGED: Reduced multiplier from 5 to 2.0f to make the white flash last longer
         val flashAlpha = (1f - (animationProgress.value * 2.0f)).coerceIn(0f, 1f)
         if (flashAlpha > 0f) Box(modifier = Modifier.fillMaxSize().background(Color.White.copy(alpha = flashAlpha)))
 
         val titleText = if (style == "FROG") "CROAKED" else "BOOM"
         val titleSize = if (style == "FROG") 72.sp else 96.sp
 
+        // --- NEW FIERY BRUSH (Old Brighter Colors) ---
+        val boomBrush = Brush.verticalGradient(
+            colors = listOf(Color.Yellow, NeonRed)
+        )
+
+        // --- NEW: THE SHARED WALKIE-TALKIE ---
+        val sharedRestartInteraction = remember { MutableInteractionSource() }
+
+        // Bottom Layer (Visuals)
         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.zIndex(100f)) {
-            Box(contentAlignment = Alignment.Center) {
-                // 1. Invisible Stroke with Glow (Background)
-                Text(
-                    titleText,
-                    fontSize = titleSize,
-                    fontWeight = FontWeight.Black,
-                    fontFamily = CustomFont,
-                    color = NeonOrange.copy(alpha = 0.01f), // Invisible
-                    style = TextStyle(
-                        drawStyle = Stroke(width = 10f, join = StrokeJoin.Round),
-                        shadow = Shadow(color = NeonOrange, blurRadius = 25f)
-                    )
-                )
-                // 2. Sharp Gradient Text (Foreground)
-                Text(
-                    titleText,
-                    fontSize = titleSize,
-                    fontWeight = FontWeight.Black,
-                    fontFamily = CustomFont,
-                    style = TextStyle(brush = Brush.verticalGradient(listOf(Color.Yellow, NeonRed)))
-                )
-            }
+            StrokeGlowText(
+                text = titleText,
+                color = NeonOrange,
+                gradientBrush = boomBrush,
+                fontSize = titleSize,
+                fontWeight = FontWeight.Black,
+                strokeWidth = 10f,
+                blurRadius = 25f
+            )
             Spacer(modifier = Modifier.height(80.dp))
 
+            // The visual button listens to the shared source to animate, but doesn't need click logic
             ActionButton(
                 text = "RESTART",
                 icon = Icons.Filled.Refresh,
@@ -806,7 +807,8 @@ fun ExplosionScreen(colors: AppColors, style: String?, explosionOrigin: Offset? 
                 textColor = NeonOrange,
                 borderColor = NeonOrange,
                 borderWidth = 2.dp,
-                onClick = { /* Click handled by Ghost Layer */ }
+                interactionSource = sharedRestartInteraction, // <-- LISTENING
+                onClick = { /* Handled by top layer */ }
             )
         }
 
@@ -818,9 +820,7 @@ fun ExplosionScreen(colors: AppColors, style: String?, explosionOrigin: Offset? 
                     onTogglePause = {
                         isHenPaused = !isHenPaused
                         if (isHenPaused) {
-                            // UPDATE: Play Boing sound on PAUSE as well
                             AudioService.playPauseInteraction("HEN", true)
-
                             scope.launch {
                                 isPainedBeakClosed = true
                                 delay(150)
@@ -842,15 +842,19 @@ fun ExplosionScreen(colors: AppColors, style: String?, explosionOrigin: Offset? 
             }
         }
 
+        // Top Layer (Ghost Clicks)
         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.zIndex(300f)) {
             Text(titleText, fontSize = titleSize, fontWeight = FontWeight.Black, fontFamily = CustomFont, color = Color.Transparent)
             Spacer(modifier = Modifier.height(80.dp))
+
+            // The Ghost Box catches the click above the Hen and triggers the animation below!
             Box(
                 modifier = Modifier
-                    .width(200.dp)
-                    .height(60.dp)
-                    .clip(RoundedCornerShape(50))
-                    .clickable {
+                    .size(200.dp, 60.dp)
+                    .clickable(
+                        interactionSource = sharedRestartInteraction, // <-- SENDING
+                        indication = null
+                    ) {
                         AudioService.playClick()
                         AudioService.stopSlide()
                         AudioService.stopWhistle()
