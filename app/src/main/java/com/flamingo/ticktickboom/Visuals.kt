@@ -677,7 +677,6 @@ fun DynamiteVisual(
     val pinL = 4f * d
     val pinS = 2f * d
     val textYOffset = 25f * d
-    val stickTextYOffset = 4f * d
     val tickOffsetY = -140f * d
     val dingOffsetY = -170f * d
 
@@ -819,14 +818,25 @@ fun DynamiteVisual(
                 // Draw Red Stick Body
                 drawRoundRect(brush = stickBrush, topLeft = Offset(stickLeft, startY), size = Size(stickW, stickH + 30f * d), cornerRadius = CornerRadius(cornerRad, cornerRad))
 
-                // Draw Sideways Text
-                val stickCenterX = stickLeft + stickW / 2
-                val stickCenterY = startY + (stickH / 2)
+                // --- UPDATED: Draw Sideways Text (Mathematically Centered) ---
+                val fullStickH = stickH + 30f * d
+                val stickCenterX = stickLeft + stickW / 2f
+                val stickCenterY = startY + fullStickH / 2f
+
                 withTransform({
-                    rotate(-90f, pivot = Offset(stickCenterX, stickCenterY))
-                    translate(left = stickCenterX - stickTextResult.size.width / 2, top = stickCenterY - stickTextResult.size.height / 2 + stickTextYOffset)
+                    // 1. Move the origin to the center of the cylinder
+                    translate(stickCenterX, stickCenterY)
+                    // 2. Rotate -90 degrees around that center
+                    rotate(-90f, pivot = Offset.Zero)
                 }) {
-                    drawText(textLayoutResult = stickTextResult)
+                    // 3. Draw the text centered on the new 0,0 origin
+                    drawText(
+                        textLayoutResult = stickTextResult,
+                        topLeft = Offset(
+                            x = -stickTextResult.size.width / 2f,
+                            y = -stickTextResult.size.height / 2f
+                        )
+                    )
                 }
             }
 

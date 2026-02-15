@@ -163,16 +163,34 @@ fun FrogVisual(timeLeft: Float, isCritical: Boolean, isPaused: Boolean, onToggle
                 }
                 val outlineStroke = Stroke(width = 6f * d, cap = StrokeCap.Round, join = StrokeJoin.Round)
 
+                // --- NEW: The shadow color for our overhead lighting ---
+                val frogShadow = Color(0xFF7CB342)
+
+                // --- NEW: Shared Drop Shadow Color ---
+                val dropShadowColor = Color.Black.copy(alpha = 0.15f)
+
+                // --- 1. FEET (Now deeply shaded by the body) ---
                 val footRadius = bodyRadius * 0.2f; val footY = cy + bodyRadius * 0.85f; val footOffset = bodyRadius * 0.65f
                 val lFoot = getMod(cx - footOffset, footY); val rFoot = getMod(cx + footOffset, footY)
+
+                val footBrush = Brush.verticalGradient(colors = listOf(FrogBody, frogShadow), startY = footY - footRadius, endY = footY + footRadius)
+
+                // Left Foot
                 drawCircle(color = Color.Black, radius = footRadius, center = lFoot, style = outlineStroke)
-                drawCircle(color = FrogBody, radius = footRadius, center = lFoot)
+                drawCircle(brush = footBrush, radius = footRadius, center = lFoot)
+                drawCircle(color = dropShadowColor, radius = footRadius, center = lFoot) // NEW: Full shade overlay
+
+                // Right Foot
                 drawCircle(color = Color.Black, radius = footRadius, center = rFoot, style = outlineStroke)
-                drawCircle(color = FrogBody, radius = footRadius, center = rFoot)
+                drawCircle(brush = footBrush, radius = footRadius, center = rFoot)
+                drawCircle(color = dropShadowColor, radius = footRadius, center = rFoot) // NEW: Full shade overlay
+
+                // 2. BODY (With shading)
+                val bodyBrush = Brush.verticalGradient(colors = listOf(FrogBody, frogShadow), startY = cy - bodyRadius, endY = cy + bodyRadius)
 
                 withTransform({ scale(totalStretch, totalSquash, pivot = Offset(cx, pivotY)) }) {
                     drawPath(path = silhouettePath, color = Color.Black, style = outlineStroke)
-                    drawPath(path = silhouettePath, color = FrogBody)
+                    drawPath(path = silhouettePath, brush = bodyBrush)
 
                     val bumpRadius = bodyRadius * 0.42f; val bumpY = cy - bodyRadius * 0.68f; val eyeW = bumpRadius * 0.56f
                     val cheekTopY = (bumpY + eyeW) - (eyeW * 0.1f); val blushBottomY = cheekTopY + (bodyRadius * 0.22f)
@@ -183,29 +201,91 @@ fun FrogVisual(timeLeft: Float, isCritical: Boolean, isPaused: Boolean, onToggle
                         val bellyRadius = (anchorXDist.pow(2) + bellyHeight.pow(2)) / (2 * bellyHeight)
                         val bellyCenterY = targetBellyTop + bellyRadius
 
-                        drawCircle(color = FrogBelly, radius = bellyRadius, center = Offset(cx, bellyCenterY))
+                        // --- NEW: Dynamic Belly Gradient ---
+                        val bellyShadow = Color(0xFFFFD54F) // A warm, golden amber
+                        val bellyBrush = Brush.verticalGradient(
+                            colors = listOf(FrogBelly, bellyShadow),
+                            startY = targetBellyTop,
+                            endY = targetBellyTop + bellyHeight // Maps perfectly to the visible belly!
+                        )
+
+                        // Replaced solid color with our new bellyBrush
+                        drawCircle(brush = bellyBrush, radius = bellyRadius, center = Offset(cx, bellyCenterY))
                         drawOval(color = Color.White.copy(alpha = 0.3f), topLeft = Offset(cx - bellyRadius * 0.3f, targetBellyTop + bellyHeight * 0.15f), size = Size(bellyRadius * 0.6f, bellyHeight * 0.15f))
                     }
                 }
 
+                // Cheeks
                 val bumpRadius = bodyRadius * 0.42f; val bumpY = cy - bodyRadius * 0.68f; val bumpXOffset = bodyRadius * 0.56f
                 val cheekW = bodyRadius * 0.35f; val cheekH = bodyRadius * 0.22f; val eyeW = bumpRadius * 0.56f
                 val cheekTopY = (bumpY + eyeW) - (eyeW * 0.1f); val cheekCenterY = cheekTopY + cheekH/2
                 val cheekOffsetX = bodyRadius * 0.65f
                 val lCheek = getMod(cx - cheekOffsetX, cheekCenterY); val rCheek = getMod(cx + cheekOffsetX, cheekCenterY)
-                drawOval(color = Color(0xFFff9693), topLeft = Offset(lCheek.x - cheekW/2, lCheek.y - cheekH/2), size = Size(cheekW, cheekH))
-                drawOval(color = Color(0xFFff9693), topLeft = Offset(rCheek.x - cheekW/2, rCheek.y - cheekH/2), size = Size(cheekW, cheekH))
+
+                // --- NEW: Cheek Gradients ---
+                // A softer, lighter pink for the top highlight
+                val baseCheekColor = Color(0xFFFFC4C2)
+                // Your original pink is now perfectly serving as the shadow!
+                val shadowCheekColor = Color(0xFFff9693)
+
+                val lCheekBrush = Brush.verticalGradient(
+                    colors = listOf(baseCheekColor, shadowCheekColor),
+                    startY = lCheek.y - cheekH/2,
+                    endY = lCheek.y + cheekH/2
+                )
+                val rCheekBrush = Brush.verticalGradient(
+                    colors = listOf(baseCheekColor, shadowCheekColor),
+                    startY = rCheek.y - cheekH/2,
+                    endY = rCheek.y + cheekH/2
+                )
+
+                // Replaced solid color with our new cheek brushes
+                drawOval(brush = lCheekBrush, topLeft = Offset(lCheek.x - cheekW/2, lCheek.y - cheekH/2), size = Size(cheekW, cheekH))
+                drawOval(brush = rCheekBrush, topLeft = Offset(rCheek.x - cheekW/2, rCheek.y - cheekH/2), size = Size(cheekW, cheekH))
+
+                // --- NEW: A global brush that perfectly maps to the squished body's shadow ---
+                val globalBodyBrush = Brush.verticalGradient(
+                    colors = listOf(FrogBody, frogShadow),
+                    startY = pivotY - (2f * bodyRadius * totalSquash),
+                    endY = pivotY
+                )
 
                 val armW = bodyRadius * 0.18f; val armH = bodyRadius * 0.28f
                 val armY = cy - bodyRadius * 0.06f; val armX = bodyRadius * 0.72f
                 val lArm = getMod(cx - armX, armY); val rArm = getMod(cx + armX, armY)
-                rotate(if (isPanic) flailRotation else 30f, pivot = lArm) {
+
+                // --- LEFT ARM ---
+                val lArmRot = if (isPanic) flailRotation else 30f
+                val lHingePivot = Offset(lArm.x, lArm.y + armH / 2f)
+
+                rotate(lArmRot, pivot = lArm) {
+                    // 1. Draw Shadow FIRST (Only in Light Mode!)
+                    if (!isDarkMode) {
+                        rotate(25f, pivot = lHingePivot) {
+                            drawArc(color = dropShadowColor, startAngle = -90f, sweepAngle = 180f, useCenter = false, topLeft = Offset(lArm.x - armW, lArm.y - armH/2), size = Size(armW*2, armH))
+                        }
+                    }
+
+                    // 2. Draw the Arm on top
                     drawArc(color = Color.Black, startAngle = -90f, sweepAngle = 180f, useCenter = false, topLeft = Offset(lArm.x - armW, lArm.y - armH/2), size = Size(armW*2, armH), style = outlineStroke)
-                    drawOval(color = FrogBody, topLeft = Offset(lArm.x - armW, lArm.y - armH/2), size = Size(armW*2, armH))
+                    drawOval(brush = globalBodyBrush, topLeft = Offset(lArm.x - armW, lArm.y - armH/2), size = Size(armW*2, armH))
                 }
-                rotate(if (isPanic) -flailRotation else -30f, pivot = rArm) {
+
+                // --- RIGHT ARM ---
+                val rArmRot = if (isPanic) -flailRotation else -30f
+                val rHingePivot = Offset(rArm.x, rArm.y + armH / 2f)
+
+                rotate(rArmRot, pivot = rArm) {
+                    // 1. Draw Shadow FIRST (Only in Light Mode!)
+                    if (!isDarkMode) {
+                        rotate(-25f, pivot = rHingePivot) {
+                            drawArc(color = dropShadowColor, startAngle = 90f, sweepAngle = 180f, useCenter = false, topLeft = Offset(rArm.x - armW, rArm.y - armH/2), size = Size(armW*2, armH))
+                        }
+                    }
+
+                    // 2. Draw the Arm on top
                     drawArc(color = Color.Black, startAngle = 90f, sweepAngle = 180f, useCenter = false, topLeft = Offset(rArm.x - armW, rArm.y - armH/2), size = Size(armW*2, armH), style = outlineStroke)
-                    drawOval(color = FrogBody, topLeft = Offset(rArm.x - armW, rArm.y - armH/2), size = Size(armW*2, armH))
+                    drawOval(brush = globalBodyBrush, topLeft = Offset(rArm.x - armW, rArm.y - armH/2), size = Size(armW*2, armH))
                 }
 
                 fun drawEye(baseX: Float, baseY: Float, isLeft: Boolean) {
@@ -213,21 +293,33 @@ fun FrogVisual(timeLeft: Float, isCritical: Boolean, isPaused: Boolean, onToggle
                     val currentEyeRadius = eyeW * animatedEyeScale
                     val currentPupilRadius = currentEyeRadius + (outlineStroke.width / 2f)
 
+                    // --- NEW: Universal Glassy Pupil Gradient ---
+                    val pupilBrush = Brush.verticalGradient(
+                        colors = listOf(Color.Black, Color(0xFF3A3A4A)),
+                        startY = pos.y - currentPupilRadius,
+                        endY = pos.y + currentPupilRadius
+                    )
+
                     val isNormalOpenEye = !isCritical && !isPanic && !isBlinking
                     if (!isNormalOpenEye) { drawCircle(color = Color.Black, radius = currentEyeRadius, center = pos, style = outlineStroke) }
+
+                    // REVERTED: The Whites of the Eyes remain pure, crisp white!
                     drawCircle(color = Color.White, radius = currentEyeRadius, center = pos)
 
                     if (isCritical && !isPanic) {
                         val path = Path(); val size = currentEyeRadius * 1.2f; val off = size * 0.15f; val ex = pos.x + if(isLeft) off else -off
                         path.moveTo(ex - size/2, pos.y - size/2); path.lineTo(ex + size/4, pos.y); path.lineTo(ex - size/2, pos.y + size/2)
                         if (!isLeft) { path.reset(); path.moveTo(ex + size/2, pos.y - size/2); path.lineTo(ex - size/4, pos.y); path.lineTo(ex + size/2, pos.y + size/2) }
-                        drawPath(path, Color.Black, style = Stroke(8f * d, cap = StrokeCap.Round, join = StrokeJoin.Round))
+
+                        // Apply the glossy gradient to the Critical 'X' pupils!
+                        drawPath(path, brush = pupilBrush, style = Stroke(8f * d, cap = StrokeCap.Round, join = StrokeJoin.Round))
                     } else if (!isPanic) {
                         if (isBlinking) {
                             val blinkWidth = 15f * d * animatedEyeScale
                             drawLine(color = Color.Black, start = Offset(pos.x - blinkWidth, pos.y), end = Offset(pos.x + blinkWidth, pos.y), strokeWidth = 4f * d, cap = StrokeCap.Round)
                         } else {
-                            drawCircle(color = Color.Black, radius = currentPupilRadius, center = pos)
+                            // Apply the glossy gradient to the normal pupils!
+                            drawCircle(brush = pupilBrush, radius = currentPupilRadius, center = pos)
                             drawCircle(color = Color.White, radius = currentPupilRadius * 0.25f, center = Offset(pos.x - currentPupilRadius*0.4f, pos.y - currentPupilRadius*0.4f))
                         }
                     }
