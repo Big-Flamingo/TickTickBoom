@@ -274,7 +274,6 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, onToggleTheme: () -> Uni
                 }
             }
             Spacer(modifier = Modifier.height(4.dp))
-            @Suppress("SpellCheckingInspection")
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("TICKTICK", color = colors.text, fontSize = 26.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont, letterSpacing = 1.sp)
                 Text("BOOM", color = NeonRed, fontSize = 26.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont, letterSpacing = 1.sp)

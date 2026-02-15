@@ -678,8 +678,20 @@ fun DynamiteVisual(
     val pinS = 2f * d
     val textYOffset = 25f * d
     val stickTextYOffset = 4f * d
-    val tickOffsetY = -130f * d
-    val dingOffsetY = -160f * d
+    val tickOffsetY = -140f * d
+    val dingOffsetY = -170f * d
+
+    // --- NEW: Bell Vibration Animation ---
+    val infiniteTransition = rememberInfiniteTransition()
+    val bellVibrate by infiniteTransition.animateFloat(
+        initialValue = -15f, // <-- INCREASE THIS (make it more negative)
+        targetValue = 15f,   // <-- INCREASE THIS (make it more positive)
+        animationSpec = infiniteRepeatable(
+            animation = tween(40, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "BellVibration"
+    )
 
     val textMeasurer = rememberTextMeasurer()
     val textLayoutResult = textMeasurer.measure(
@@ -730,6 +742,15 @@ fun DynamiteVisual(
     var lastTriggerStep by rememberSaveable { mutableIntStateOf(-1) }
     var hasShownDing by rememberSaveable { mutableStateOf(false) }
 
+    // --- NEW: Bell Decay Animation ---
+    val vibrationMagnitude = remember { Animatable(1f) }
+    LaunchedEffect(hasShownDing) {
+        if (hasShownDing) {
+            // Decays the multiplier from 1f to 0f over 2 seconds!
+            vibrationMagnitude.animateTo(0f, tween(2000, easing = LinearOutSlowInEasing))
+        }
+    }
+
     LaunchedEffect(timeLeft) {
         val currentStep = ceil(timeLeft * 2).toInt()
         val isFast = timeLeft <= 5f
@@ -765,25 +786,25 @@ fun DynamiteVisual(
             val totalSticksWidth = 3 * stickW + 2 * spacing
             val startX = (size.width - totalSticksWidth) / 2
             val startY = (size.height - stickH) / 2
+
             val stickBrush = Brush.horizontalGradient(colors = listOf(Color(0xFF7F1D1D), Color(0xFFEF4444), Color(0xFF7F1D1D)))
 
-            for (index in 0..2) {
+            // --- OPTIMIZATION: Helper lambda to draw any stick ---
+            val drawStick = { index: Int ->
                 val stickLeft = startX + index * (stickW + spacing)
 
-                // --- UPDATED: Full-Width Curved Cylinder Shadow ---
+                // Draw Stick Shadow
                 if (!isDarkMode) {
                     val offsetY = 8f * d
-                    // Removed 'val left = stickLeft' (inlined below)
                     val right = stickLeft + stickW
                     val top = startY + offsetY
                     val bottom = startY + stickH + 30f * d + offsetY
-                    val curveOffset = 12f * d // The 3D outward bulge
+                    val curveOffset = 12f * d
 
                     val stickShadowPath = Path().apply {
                         moveTo(stickLeft, top)
                         lineTo(stickLeft, bottom)
-                        // Curve perfectly from the left edge to the right edge
-                        quadraticTo( // <-- Fixed deprecation!
+                        quadraticTo(
                             x1 = stickLeft + (stickW / 2f),
                             y1 = bottom + curveOffset,
                             x2 = right,
@@ -792,18 +813,102 @@ fun DynamiteVisual(
                         lineTo(right, top)
                         close()
                     }
-
-                    drawPath(
-                        path = stickShadowPath,
-                        color = Color.Black.copy(alpha = 0.25f)
-                    )
+                    drawPath(path = stickShadowPath, color = Color.Black.copy(alpha = 0.25f))
                 }
 
+                // Draw Red Stick Body
                 drawRoundRect(brush = stickBrush, topLeft = Offset(stickLeft, startY), size = Size(stickW, stickH + 30f * d), cornerRadius = CornerRadius(cornerRad, cornerRad))
+
+                // Draw Sideways Text
                 val stickCenterX = stickLeft + stickW / 2
                 val stickCenterY = startY + (stickH / 2)
-                withTransform({ rotate(-90f, pivot = Offset(stickCenterX, stickCenterY)); translate(left = stickCenterX - stickTextResult.size.width / 2, top = stickCenterY - stickTextResult.size.height / 2 + stickTextYOffset) }) { drawText(textLayoutResult = stickTextResult) }
+                withTransform({
+                    rotate(-90f, pivot = Offset(stickCenterX, stickCenterY))
+                    translate(left = stickCenterX - stickTextResult.size.width / 2, top = stickCenterY - stickTextResult.size.height / 2 + stickTextYOffset)
+                }) {
+                    drawText(textLayoutResult = stickTextResult)
+                }
             }
+
+            // --- 1. DRAW CENTER STICK (Background Layer) ---
+            drawStick(1)
+
+            // --- 2. DRAW WIRES (Middle Layer) ---
+            val clockCx = size.width / 2f
+            val clockCy = size.height / 2f + 15f * d
+
+            val leftStickX = startX + stickW / 2f
+            val midStickX = startX + stickW + spacing + stickW / 2f
+            val rightStickX = startX + 2 * (stickW + spacing) + stickW / 2f
+
+            // --- UPDATED: Meet exactly at the top of the center stick ---
+            val meetY = startY
+            // --- UPDATED: Slightly tighter arc to match the lowered meet point ---
+            val apexY = startY - 18f * d
+
+            // --- NEW: The true mathematical peak of the Bézier curve ---
+            val trueCurvePeakY = startY - 13.5f * d
+
+            // Yellow Wire (Center)
+            val yellowWirePath = Path().apply {
+                moveTo(midStickX, clockCy)
+                lineTo(midStickX, trueCurvePeakY) // <-- UPDATED: Snaps perfectly to the curve's height
+            }
+
+            // Red Wire (Left Stick)
+            val redWirePath = Path().apply {
+                moveTo(leftStickX, startY + 20f * d)
+                cubicTo(
+                    x1 = leftStickX, y1 = apexY,
+                    x2 = clockCx - 8f * d, y2 = apexY,
+                    x3 = clockCx - 4f * d, y3 = meetY
+                )
+                lineTo(clockCx - 4f * d, clockCy)
+            }
+
+            // Blue Wire (Right Stick)
+            val blueWirePath = Path().apply {
+                moveTo(rightStickX, startY + 20f * d)
+                cubicTo(
+                    x1 = rightStickX, y1 = apexY,
+                    x2 = clockCx + 8f * d, y2 = apexY,
+                    x3 = clockCx + 4f * d, y3 = meetY
+                )
+                lineTo(clockCx + 4f * d, clockCy)
+            }
+
+            // Draw Wire Shadows
+            if (!isDarkMode) {
+                // --- UPDATED: 0f left offset to cast the shadow straight down! ---
+                translate(left = 0f, top = 8f * d) {
+                    val shadowStroke = Stroke(width = 5f * d, cap = StrokeCap.Round, join = StrokeJoin.Round)
+                    val shadowColor = Color.Black.copy(alpha = 0.35f)
+                    drawPath(path = yellowWirePath, color = shadowColor, style = shadowStroke)
+                    drawPath(path = redWirePath, color = shadowColor, style = shadowStroke)
+                    drawPath(path = blueWirePath, color = shadowColor, style = shadowStroke)
+                }
+            }
+
+            // Draw Colored Plastic
+            val wireStroke = Stroke(width = 5f * d, cap = StrokeCap.Round, join = StrokeJoin.Round)
+            drawPath(path = yellowWirePath, color = Color(0xFFEAB308), style = wireStroke)
+            drawPath(path = redWirePath, color = Color(0xFFEF4444), style = wireStroke)
+            drawPath(path = blueWirePath, color = Color(0xFF3B82F6), style = wireStroke)
+
+            // Draw Glossy Highlights
+            translate(left = -1f * d, top = -1f * d) {
+                val glossStroke = Stroke(width = 1.5f * d, cap = StrokeCap.Round, join = StrokeJoin.Round)
+                val glossColor = Color.White.copy(alpha = 0.4f)
+                drawPath(path = yellowWirePath, color = glossColor, style = glossStroke)
+                drawPath(path = redWirePath, color = glossColor, style = glossStroke)
+                drawPath(path = blueWirePath, color = glossColor, style = glossStroke)
+            }
+
+            // --- 3. DRAW OUTER STICKS (Foreground Layer) ---
+            // These draw over the red/blue wire tips, hiding the flat connection points!
+            drawStick(0)
+            drawStick(2)
+
             drawRect(color = Color.Black.copy(alpha=0.9f), topLeft = Offset(startX - tapeOver, startY + 40f), size = Size(totalSticksWidth + (tapeOver * 2), tapeH))
             drawRect(color = Color.Black.copy(alpha=0.9f), topLeft = Offset(startX - tapeOver, startY + stickH - 40f), size = Size(totalSticksWidth + (tapeOver * 2), tapeH))
         }
@@ -823,6 +928,121 @@ fun DynamiteVisual(
                         center = Offset(clockCenter.x, clockCenter.y + offsetY),
                         radius = clockRad - insetRadius
                     )
+                }
+
+                // --- NEW: ALARM BELL ---
+                val isRinging = hasShownDing
+                // --- UPDATED: Multiply the vibration by the decaying magnitude! ---
+                val currentVibrate = if (isRinging) bellVibrate * vibrationMagnitude.value else 0f
+
+                val drawBell = { angle: Float ->
+                    val bellDistance = clockRad + 4f * d
+                    val bellRadius = 28f * d
+
+                    withTransform({
+                        translate(clockCenter.x, clockCenter.y)
+                        rotate(angle, pivot = Offset.Zero)
+                        translate(bellDistance, 0f)
+                        rotate(currentVibrate, pivot = Offset.Zero)
+                    }) {
+                        if (!isDarkMode) {
+                            drawArc(
+                                color = Color.Black.copy(alpha = 0.35f),
+                                startAngle = -90f,
+                                sweepAngle = 180f,
+                                useCenter = true,
+                                topLeft = Offset(-bellRadius - 8f * d, -bellRadius),
+                                size = Size(bellRadius * 2, bellRadius * 2)
+                            )
+                        }
+
+                        // --- UPDATED: Draw the knob FIRST so it sits behind the bell body! ---
+                        val knobBrush = Brush.linearGradient(
+                            colors = listOf(Color(0xFFEAB308), Color(0xFF78350F)), // Gold -> Dark Bronze
+                            // Swap these so the top (+X) is Gold, and the bottom is Dark Bronze
+                            start = Offset(bellRadius + 6f * d, 0f),
+                            end = Offset(bellRadius - 2f * d, 0f)
+                        )
+                        drawCircle(
+                            brush = knobBrush,
+                            radius = 4f * d,
+                            center = Offset(bellRadius + 1f * d, 0f)
+                        )
+
+                        // Brass Bell Body
+                        val bellBrush = Brush.linearGradient(
+                            colors = listOf(Color.White, Color(0xFFEAB308), Color(0xFF78350F)),
+                            start = Offset(bellRadius, 0f),
+                            end = Offset(0f, 0f)
+                        )
+
+                        drawArc(
+                            brush = bellBrush,
+                            startAngle = -90f,
+                            sweepAngle = 180f,
+                            useCenter = true,
+                            topLeft = Offset(-bellRadius, -bellRadius),
+                            size = Size(bellRadius * 2, bellRadius * 2)
+                        )
+                    }
+                }
+                // Draw a single bell exactly at 12 o'clock (270 degrees)
+                drawBell(270f)
+
+                // --- NEW: MECHANICAL HAMMER ---
+                // Map the bell's vibration directly into a swinging pendulum angle!
+                // bellVibrate oscillates from -15 to +15. We normalize that to a 1f -> 0f multiplier.
+                val hammerRestAngle = 305f // Just past 1 o'clock to give it room to swing
+                val hammerHitAngle = 286f  // Swings inward to smack the edge of the bell
+                val normalizedSwing = (bellVibrate - 15f) / -30f // 1f when hitting, 0f when resting
+
+                // --- FIXED: Only apply the swing if the bell is actively ringing! ---
+                val activeSwing = if (isRinging) normalizedSwing * vibrationMagnitude.value else 0f
+                val currentHammerAngle = hammerRestAngle + ((hammerHitAngle - hammerRestAngle) * activeSwing)
+
+                val shaftStart = clockRad - 15f * d
+                // --- UPDATED: Shorter shaft so it extends outward less ---
+                val shaftLength = 22f * d
+                // --- UPDATED: Thinner shaft ---
+                val shaftWidth = 4.5f * d
+                val shaftEnd = shaftStart + shaftLength
+
+                // --- UPDATED: Smaller, more proportionate hammer head ---
+                val headW = 9f * d
+                val headH = 16f * d
+
+                // 1. Hammer Shadow (Global drop down)
+                // We translate the canvas DOWN before rotating so the shadow casts perfectly straight!
+                if (!isDarkMode) {
+                    withTransform({
+                        translate(clockCenter.x, clockCenter.y + 8f * d)
+                        rotate(currentHammerAngle, pivot = Offset.Zero)
+                    }) {
+                        drawRect(color = Color.Black.copy(alpha = 0.35f), topLeft = Offset(shaftStart, -shaftWidth / 2f), size = Size(shaftLength, shaftWidth))
+                        drawRoundRect(color = Color.Black.copy(alpha = 0.35f), topLeft = Offset(shaftEnd, -headH / 2f), size = Size(headW, headH), cornerRadius = CornerRadius(4f * d, 4f * d))
+                    }
+                }
+
+                // 2. Hammer Body
+                withTransform({
+                    translate(clockCenter.x, clockCenter.y)
+                    rotate(currentHammerAngle, pivot = Offset.Zero)
+                }) {
+                    // Shaft: Lighter in the middle, darker at the sides (Shading across the local Y axis)
+                    val shaftBrush = Brush.verticalGradient(
+                        colors = listOf(Color(0xFF4B5563), Color(0xFFE5E7EB), Color(0xFF4B5563)),
+                        startY = -shaftWidth / 2f,
+                        endY = shaftWidth / 2f
+                    )
+                    drawRect(brush = shaftBrush, topLeft = Offset(shaftStart, -shaftWidth / 2f), size = Size(shaftLength, shaftWidth))
+
+                    // Head: Metallic Gray, lighter at the top, darker at the bottom (Shading down the local Y axis)
+                    val headBrush = Brush.linearGradient(
+                        colors = listOf(Color.White, Color(0xFF9CA3AF), Color(0xFF374151)),
+                        start = Offset(shaftEnd, -headH / 2f),
+                        end = Offset(shaftEnd, headH / 2f)
+                    )
+                    drawRoundRect(brush = headBrush, topLeft = Offset(shaftEnd, -headH / 2f), size = Size(headW, headH), cornerRadius = CornerRadius(4f * d, 4f * d))
                 }
 
                 // The actual metal clock base
