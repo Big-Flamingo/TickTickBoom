@@ -32,6 +32,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.*
 import kotlin.random.Random
+import androidx.compose.ui.graphics.drawscope.DrawScope
 
 // NOTE: This file uses VisualParticle from AppModels.kt
 // and drawReflection / lerp from Components.kt
@@ -88,6 +89,10 @@ fun FrogVisual(timeLeft: Float, isCritical: Boolean, isPaused: Boolean, onToggle
     val density = LocalDensity.current
     val d = density.density
 
+    val outlineStroke = remember(d) {
+        Stroke(width = 3f * d, cap = StrokeCap.Round, join = StrokeJoin.Round)
+    }
+
     LaunchedEffect(Unit) {
         while (true) {
             withFrameNanos { nanos ->
@@ -140,7 +145,7 @@ fun FrogVisual(timeLeft: Float, isCritical: Boolean, isPaused: Boolean, onToggle
             }
 
             val bodyRadius = size.width * 0.35f
-            val floorY = cy + bodyRadius * 1.05f + 1.5f * d
+            val floorY = cy + bodyRadius * 1.05f
             val totalSquash = boingAnim.value * croakSquish
             val totalStretch = (2f - boingAnim.value) * (2f - croakSquish)
             val pivotY = cy + bodyRadius
@@ -161,7 +166,6 @@ fun FrogVisual(timeLeft: Float, isCritical: Boolean, isPaused: Boolean, onToggle
                     val newY = pivotY + (y - pivotY) * totalSquash
                     return Offset(newX, newY)
                 }
-                val outlineStroke = Stroke(width = 6f * d, cap = StrokeCap.Round, join = StrokeJoin.Round)
 
                 // --- NEW: The shadow color for our overhead lighting ---
                 val frogShadow = Color(0xFF7CB342)
@@ -176,23 +180,36 @@ fun FrogVisual(timeLeft: Float, isCritical: Boolean, isPaused: Boolean, onToggle
                 val footBrush = Brush.verticalGradient(colors = listOf(FrogBody, frogShadow), startY = footY - footRadius, endY = footY + footRadius)
 
                 // Left Foot
-                drawCircle(color = Color.Black, radius = footRadius, center = lFoot, style = outlineStroke)
                 drawCircle(brush = footBrush, radius = footRadius, center = lFoot)
+                drawCircle(color = Color.Black, radius = footRadius, center = lFoot, style = outlineStroke)
                 drawCircle(color = dropShadowColor, radius = footRadius, center = lFoot) // NEW: Full shade overlay
 
                 // Right Foot
-                drawCircle(color = Color.Black, radius = footRadius, center = rFoot, style = outlineStroke)
                 drawCircle(brush = footBrush, radius = footRadius, center = rFoot)
+                drawCircle(color = Color.Black, radius = footRadius, center = rFoot, style = outlineStroke)
                 drawCircle(color = dropShadowColor, radius = footRadius, center = rFoot) // NEW: Full shade overlay
 
                 // 2. BODY (With shading)
                 val bodyBrush = Brush.verticalGradient(colors = listOf(FrogBody, frogShadow), startY = cy - bodyRadius, endY = cy + bodyRadius)
 
                 withTransform({ scale(totalStretch, totalSquash, pivot = Offset(cx, pivotY)) }) {
-                    drawPath(path = silhouettePath, color = Color.Black, style = outlineStroke)
+                    // 1. Draw the main body fill FIRST
                     drawPath(path = silhouettePath, brush = bodyBrush)
 
-                    val bumpRadius = bodyRadius * 0.42f; val bumpY = cy - bodyRadius * 0.68f; val eyeW = bumpRadius * 0.56f
+                    val bumpRadius = bodyRadius * 0.42f
+                    val bumpY = cy - bodyRadius * 0.68f
+                    val eyeW = bumpRadius * 0.56f
+                    val topHighlightColor = Color.White.copy(alpha = 0.3f)
+                    val bumpXOffset = bodyRadius * 0.56f
+
+                    // 1a. Left Bump Highlight
+                    drawOval(color = topHighlightColor, topLeft = Offset(cx - bumpXOffset - (bumpRadius*0.4f), bumpY - bumpRadius * 0.915f), size = Size(bumpRadius * 0.8f, bumpRadius * 0.3f))
+                    // 1b. Right Bump Highlight
+                    drawOval(color = topHighlightColor, topLeft = Offset(cx + bumpXOffset - (bumpRadius*0.4f), bumpY - bumpRadius * 0.915f), size = Size(bumpRadius * 0.8f, bumpRadius * 0.3f))
+                    // 1c. Forehead (Gap between eyes) Highlight
+                    val foreheadW = bodyRadius * 0.4f
+                    drawOval(color = topHighlightColor, topLeft = Offset(cx - foreheadW/2, cy - bodyRadius * 0.92f), size = Size(foreheadW, bodyRadius * 0.15f))
+
                     val cheekTopY = (bumpY + eyeW) - (eyeW * 0.1f); val blushBottomY = cheekTopY + (bodyRadius * 0.22f)
                     clipPath(path = silhouettePath) {
                         val anchorXDist = bodyRadius * 0.45f; val anchorY = cy + bodyRadius * 0.95f
@@ -213,6 +230,9 @@ fun FrogVisual(timeLeft: Float, isCritical: Boolean, isPaused: Boolean, onToggle
                         drawCircle(brush = bellyBrush, radius = bellyRadius, center = Offset(cx, bellyCenterY))
                         drawOval(color = Color.White.copy(alpha = 0.3f), topLeft = Offset(cx - bellyRadius * 0.3f, targetBellyTop + bellyHeight * 0.15f), size = Size(bellyRadius * 0.6f, bellyHeight * 0.15f))
                     }
+
+                    // 3. Draw the Outline LAST so it sits on top of everything!
+                    drawPath(path = silhouettePath, color = Color.Black, style = outlineStroke)
                 }
 
                 // Cheeks
@@ -253,22 +273,27 @@ fun FrogVisual(timeLeft: Float, isCritical: Boolean, isPaused: Boolean, onToggle
                 val armW = bodyRadius * 0.18f; val armH = bodyRadius * 0.28f
                 val armY = cy - bodyRadius * 0.06f; val armX = bodyRadius * 0.72f
                 val lArm = getMod(cx - armX, armY); val rArm = getMod(cx + armX, armY)
+                val armStroke = Stroke(width = 3f * d, cap = StrokeCap.Round, join = StrokeJoin.Round)
+                val armHighlightColor = Color.White.copy(alpha = 0.3f)
 
                 // --- LEFT ARM ---
                 val lArmRot = if (isPanic) flailRotation else 30f
                 val lHingePivot = Offset(lArm.x, lArm.y + armH / 2f)
 
                 rotate(lArmRot, pivot = lArm) {
-                    // 1. Draw Shadow FIRST (Only in Light Mode!)
                     if (!isDarkMode) {
                         rotate(25f, pivot = lHingePivot) {
                             drawArc(color = dropShadowColor, startAngle = -90f, sweepAngle = 180f, useCenter = false, topLeft = Offset(lArm.x - armW, lArm.y - armH/2), size = Size(armW*2, armH))
                         }
                     }
 
-                    // 2. Draw the Arm on top
-                    drawArc(color = Color.Black, startAngle = -90f, sweepAngle = 180f, useCenter = false, topLeft = Offset(lArm.x - armW, lArm.y - armH/2), size = Size(armW*2, armH), style = outlineStroke)
+                    // 1. Draw the Fill FIRST
                     drawOval(brush = globalBodyBrush, topLeft = Offset(lArm.x - armW, lArm.y - armH/2), size = Size(armW*2, armH))
+                    // 2. Draw the Outline SECOND (Preserves rounded caps!)
+                    drawArc(color = Color.Black, startAngle = -90f, sweepAngle = 180f, useCenter = false, topLeft = Offset(lArm.x - armW, lArm.y - armH/2), size = Size(armW*2, armH), style = armStroke)
+
+                    // 3. Highlight on top
+                    drawOval(color = armHighlightColor, topLeft = Offset(lArm.x - armW * 0.6f, lArm.y - armH/2 + (armH * 0.1f)), size = Size(armW * 1.2f, armH * 0.25f))
                 }
 
                 // --- RIGHT ARM ---
@@ -276,16 +301,19 @@ fun FrogVisual(timeLeft: Float, isCritical: Boolean, isPaused: Boolean, onToggle
                 val rHingePivot = Offset(rArm.x, rArm.y + armH / 2f)
 
                 rotate(rArmRot, pivot = rArm) {
-                    // 1. Draw Shadow FIRST (Only in Light Mode!)
                     if (!isDarkMode) {
                         rotate(-25f, pivot = rHingePivot) {
                             drawArc(color = dropShadowColor, startAngle = 90f, sweepAngle = 180f, useCenter = false, topLeft = Offset(rArm.x - armW, rArm.y - armH/2), size = Size(armW*2, armH))
                         }
                     }
 
-                    // 2. Draw the Arm on top
-                    drawArc(color = Color.Black, startAngle = 90f, sweepAngle = 180f, useCenter = false, topLeft = Offset(rArm.x - armW, rArm.y - armH/2), size = Size(armW*2, armH), style = outlineStroke)
+                    // 1. Draw the Fill FIRST
                     drawOval(brush = globalBodyBrush, topLeft = Offset(rArm.x - armW, rArm.y - armH/2), size = Size(armW*2, armH))
+                    // 2. Draw the Outline SECOND (Preserves rounded caps!)
+                    drawArc(color = Color.Black, startAngle = 90f, sweepAngle = 180f, useCenter = false, topLeft = Offset(rArm.x - armW, rArm.y - armH/2), size = Size(armW*2, armH), style = armStroke)
+
+                    // 3. Highlight on top
+                    drawOval(color = armHighlightColor, topLeft = Offset(rArm.x - armW * 0.6f, rArm.y - armH/2 + (armH * 0.1f)), size = Size(armW * 1.2f, armH * 0.25f))
                 }
 
                 fun drawEye(baseX: Float, baseY: Float, isLeft: Boolean) {
@@ -300,11 +328,11 @@ fun FrogVisual(timeLeft: Float, isCritical: Boolean, isPaused: Boolean, onToggle
                         endY = pos.y + currentPupilRadius
                     )
 
-                    val isNormalOpenEye = !isCritical && !isPanic && !isBlinking
-                    if (!isNormalOpenEye) { drawCircle(color = Color.Black, radius = currentEyeRadius, center = pos, style = outlineStroke) }
-
                     // REVERTED: The Whites of the Eyes remain pure, crisp white!
                     drawCircle(color = Color.White, radius = currentEyeRadius, center = pos)
+
+                    val isNormalOpenEye = !isCritical && !isPanic && !isBlinking
+                    if (!isNormalOpenEye) { drawCircle(color = Color.Black, radius = currentEyeRadius, center = pos, style = outlineStroke) }
 
                     if (isCritical && !isPanic) {
                         val path = Path(); val size = currentEyeRadius * 1.2f; val off = size * 0.15f; val ex = pos.x + if(isLeft) off else -off
@@ -371,9 +399,31 @@ fun FrogVisual(timeLeft: Float, isCritical: Boolean, isPaused: Boolean, onToggle
                 if (alertScale.value > 0f) {
                     val markBaseY = bumpY - bumpRadius * 1.8f; val markPos = getMod(cx, markBaseY)
                     val markW = bodyRadius * 0.15f; val markH = bodyRadius * 0.6f
+
+                    // --- NEW: Exclamation Point Gradient ---
+                    val alertRed = Color(0xFFFF0000)
+                    val alertShadowRed = Color(0xFF9E2A2B) // A deeper, richer red
+
+                    val alertBrush = Brush.verticalGradient(
+                        colors = listOf(alertRed, alertShadowRed),
+                        startY = markPos.y - markH/2,
+                        endY = markPos.y + markH/2
+                    )
+
                     withTransform({ scale(alertScale.value, alertScale.value, pivot = Offset(markPos.x, markPos.y + markH/2)) }) {
-                        drawRoundRect(color = Color(0xFFFF0000), topLeft = Offset(markPos.x - markW/2, markPos.y - markH/2), size = Size(markW, markH * 0.65f), cornerRadius = CornerRadius(markW/2, markW/2))
-                        drawCircle(color = Color(0xFFFF0000), radius = markW/1.8f, center = Offset(markPos.x, markPos.y + markH/2 - markW/2))
+                        // Top part of the '!'
+                        drawRoundRect(
+                            brush = alertBrush,
+                            topLeft = Offset(markPos.x - markW/2, markPos.y - markH/2),
+                            size = Size(markW, markH * 0.65f),
+                            cornerRadius = CornerRadius(markW/2, markW/2)
+                        )
+                        // Bottom dot of the '!'
+                        drawCircle(
+                            brush = alertBrush,
+                            radius = markW/1.8f,
+                            center = Offset(markPos.x, markPos.y + markH/2 - markW/2)
+                        )
                     }
                 }
 
@@ -405,6 +455,59 @@ fun HenVisual(modifier: Modifier = Modifier, timeLeft: Float, isPaused: Boolean,
     val infiniteTransition = rememberInfiniteTransition("hen_anim")
     val density = LocalDensity.current
     val d = density.density
+
+    // --- HOISTED PROPERTIES ---
+    val henBodyRadius = 110f * d
+
+    val outlineStroke = remember(d) {
+        Stroke(width = 3f * d, cap = StrokeCap.Round, join = StrokeJoin.Round)
+    }
+
+    val henBodyBrush = remember(d) {
+        Brush.verticalGradient(
+            colors = listOf(Color.White, Color(0xFFD1D1DB)),
+            startY = -henBodyRadius,
+            endY = henBodyRadius
+        )
+    }
+
+    val combBrush = remember(d) {
+        Brush.verticalGradient(
+            colors = listOf(NeonRed, Color(0xFF9E2A2B)),
+            startY = -henBodyRadius - 28f * d,
+            endY = -henBodyRadius + 10f * d
+        )
+    }
+
+    val wattleBrush = remember(d) {
+        Brush.verticalGradient(
+            colors = listOf(NeonRed, Color(0xFF9E2A2B)),
+            startY = 6f * d,
+            endY = 38f * d
+        )
+    }
+
+    val beakBrush = remember(d) {
+        Brush.verticalGradient(
+            colors = listOf(NeonOrange, Color(0xFFC24100)),
+            startY = -18f * d,
+            endY = 6f * d
+        )
+    }
+
+    val eyeRadius = 12f * d
+    val henEyeBrush = remember(d) {
+        Brush.verticalGradient(
+            colors = listOf(Color.Black, Color(0xFF3A3A4A)),
+            startY = -eyeRadius,
+            endY = eyeRadius
+        )
+    }
+
+    val crackStroke = remember(d) {
+        Stroke(width = 3f * d, cap = StrokeCap.Round, join = StrokeJoin.Round)
+    }
+
     var isBlinking by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { while (true) { delay(Random.nextLong(2000, 4000)); isBlinking = true; delay(150); isBlinking = false } }
 
@@ -467,7 +570,6 @@ fun HenVisual(modifier: Modifier = Modifier, timeLeft: Float, isPaused: Boolean,
             val cx = size.width / 2; val cy = size.height / 2
 
             if (size != cachedSize) {
-                val henBodyRadius = 110f * d
                 val cRadius = 28f * d; val cX = 0f * d; val cY = -henBodyRadius + 5f * d
                 val lRadius = 20f * d; val lX = -38f * d; val lY = -henBodyRadius + 10f * d
                 val rRadius = 32f * d; val rX = 50f * d; val rY = -henBodyRadius + 5f * d
@@ -500,85 +602,138 @@ fun HenVisual(modifier: Modifier = Modifier, timeLeft: Float, isPaused: Boolean,
                 cachedSize = size
             }
 
-            val henBodyRadius = 110f * d
             val floorY = cy + henBodyRadius
             val heightFade = (1f - (abs(animOffsetY) / 800f)).coerceIn(0f, 1f)
             val layerVisible = !(isSmushed || animOffsetY > 0f)
             val baseReflectionAlpha = if (layerVisible) 0.25f else 0f
 
+            // --- THE NEW DRAWING LAMBDA ---
+            // We calculate these here so both the reflection and main body can share them!
+            val henY = cy + animOffsetY
+            val squashY = boingAnim.value * cluckSquish
+            val stretchX = (2f - boingAnim.value) * (2f - cluckSquish)
+
+            val drawHen: DrawScope.() -> Unit = {
+                // 1. SQUISHED PARTS (Comb & Body)
+                withTransform({ scale(stretchX, squashY, pivot = Offset(cx, henY + henBodyRadius)) }) {
+
+                    withTransform({ translate(cx, henY) }) {
+                        drawPath(combPath, brush = combBrush)
+                    }
+
+                    withTransform({ translate(cx, henY) }) {
+                        drawCircle(brush = henBodyBrush, radius = henBodyRadius, center = Offset.Zero)
+                        if (isSmushed) drawCircle(color = Color(0xFFE0E0E0), radius = henBodyRadius * 0.75f, center = Offset.Zero)
+                        drawCircle(color = Color.Black, radius = henBodyRadius, center = Offset.Zero, style = outlineStroke)
+                    }
+                }
+
+                // 2. NON-SQUISHED PARTS (Wattle, Beak, Eye, Wing)
+                val faceRelX = henBodyRadius * 0.82f; val faceRelY = -6f * d
+                val faceShiftX = faceRelX * (stretchX - 1f); val faceShiftY = (faceRelY - henBodyRadius) * (squashY - 1f)
+
+                withTransform({ translate(cx + faceShiftX, henY + faceShiftY) }) {
+                    drawPath(wattlePath, brush = wattleBrush)
+
+                    val relBeakY = -6f * d
+                    withTransform({ rotate(if (effectiveBeakOpen) -15f else 0f, pivot = Offset(faceRelX, relBeakY)) }) {
+                        drawPath(upperBeakPath, brush = beakBrush)
+                    }
+                    withTransform({ rotate(if (effectiveBeakOpen) 10f else 0f, pivot = Offset(faceRelX, relBeakY)) }) {
+                        drawPath(lowerBeakPath, brush = beakBrush)
+                    }
+                }
+
+                val eyeRelX = faceRelX - 25f * d; val eyeRelY = -25f * d
+                val eyeShiftX = eyeRelX * (stretchX - 1f); val eyeShiftY = (eyeRelY - henBodyRadius) * (squashY - 1f)
+
+                if (isSmushed) {
+                    withTransform({ translate(cx + eyeShiftX, henY + eyeShiftY) }) { drawPath(wincePath, Color.Black, style = Stroke(5f * d, cap = StrokeCap.Round, join = StrokeJoin.Round)) }
+                } else if (isBlinking) {
+                    val eyeCenter = Offset(cx + eyeRelX + eyeShiftX, henY + eyeRelY + eyeShiftY)
+                    drawLine(color = Color.Black, start = Offset(eyeCenter.x - 12f * d, eyeCenter.y), end = Offset(eyeCenter.x + 12f * d, eyeCenter.y), strokeWidth = 5f * d, cap = StrokeCap.Round)
+                } else {
+                    val eyeCenter = Offset(cx + eyeRelX + eyeShiftX, henY + eyeRelY + eyeShiftY)
+                    val eyeRadius = 12f * d
+                    withTransform({ translate(eyeCenter.x, eyeCenter.y) }) {
+                        drawCircle(brush = henEyeBrush, radius = eyeRadius, center = Offset.Zero)
+                        drawCircle(color = Color.White, radius = 4f * d, center = Offset(3f * d, -3f * d))
+                        drawCircle(color = Color.White, radius = 2f * d, center = Offset(-3f * d, 3f * d))
+                    }
+                }
+
+                val wingRelX = -40f * d; val wingRelY = 10f * d
+                val wingShiftX = wingRelX * (stretchX - 1f); val wingShiftY = (wingRelY - henBodyRadius) * (squashY - 1f)
+                val localWingP = Offset(wingRelX + wingShiftX, wingRelY + wingShiftY)
+                val wingRot = if (isFlapping) wingFlapRotation else if (isSliding) -20f else 0f
+
+                withTransform({
+                    translate(cx, henY)
+                    rotate(wingRot, pivot = localWingP)
+                }) {
+                    val wW = 60f * d; val wH = 60f * d; val wTopLeft = Offset(localWingP.x - 10f * d, localWingP.y - 30f * d)
+                    if (isSmushed) drawOval(color = Color(0xFFE0E0E0), topLeft = wTopLeft, size = Size(wW, wH))
+                    else drawOval(brush = henBodyBrush, topLeft = wTopLeft, size = Size(wW, wH))
+
+                    // Notice this uses your newly optimized outlineStroke!
+                    drawArc(color = Color.Black, startAngle = 0f, sweepAngle = 180f, useCenter = false, topLeft = wTopLeft, size = Size(wW, wH), style = outlineStroke)
+                }
+            }
+            // --- END OF LAMBDA DEFINITION ---
+
             if (isDarkMode && baseReflectionAlpha > 0f) {
                 drawReflection(true, floorY, baseReflectionAlpha) { isReflection ->
                     if (isReflection) {
+
+                        // --- 1. NEW MASTER LAYER ---
+                        // Wraps both the egg and hen so the eraser doesn't punch through the sky background!
+                        drawIntoCanvas { it.nativeCanvas.saveLayer(null, android.graphics.Paint()) }
+
                         if (showEgg) {
                             val eggWidth = 120f * d; val eggHeight = 150f * d
                             val eggTop = floorY - eggHeight
                             withTransform({ scale(1f, 1f, pivot = Offset(cx, eggTop + eggHeight/2)); rotate(if (!isPaused) eggWobbleRotation else 0f, pivot = Offset(cx, floorY)) }) {
-                                drawOval(color = Color(0xFFFEF3C7), topLeft = Offset(cx - eggWidth/2, eggTop), size = Size(eggWidth, eggHeight))
-                                withTransform({ rotate(-20f, pivot = Offset(cx - eggWidth * 0.2f, eggTop + eggHeight * 0.25f)) }) { drawOval(color = Color.White.copy(alpha = 0.4f), topLeft = Offset(cx - eggWidth * 0.3f, eggTop + eggHeight * 0.15f), size = Size(eggWidth * 0.3f, eggHeight * 0.15f)) }
-                                val crackStroke = Stroke(width = 3f * d, cap = StrokeCap.Round, join = StrokeJoin.Round)
+
+                                // --- NEW: Egg Gradient ---
+                                val eggBrush = Brush.verticalGradient(
+                                    colors = listOf(Color(0xFFFEF3C7), Color(0xFFD4C27D)), // Pale yellow to deep shadow
+                                    startY = eggTop, endY = eggTop + eggHeight
+                                )
+                                drawOval(brush = eggBrush, topLeft = Offset(cx - eggWidth/2, eggTop), size = Size(eggWidth, eggHeight))
+
+                                // --- RESTORED: Your original, perfectly angled highlight! ---
+                                withTransform({ rotate(-20f, pivot = Offset(cx - eggWidth * 0.2f, eggTop + eggHeight * 0.25f)) }) {
+                                    drawOval(color = Color.White.copy(alpha = 0.4f), topLeft = Offset(cx - eggWidth * 0.3f, eggTop + eggHeight * 0.15f), size = Size(eggWidth * 0.3f, eggHeight * 0.15f))
+                                }
                                 withTransform({ translate(cx, 0f) }) { if (crackStage >= 1) drawPath(crack1Path, Color.Black, style = crackStroke); if (crackStage >= 2) drawPath(crack2Path, Color.Black, style = crackStroke); if (crackStage >= 3) drawPath(crack3Path, Color.Black, style = crackStroke) }
                             }
                         }
-                        val henY = cy + animOffsetY
                         if (henY > -3000f && henY < size.height + 5000f && henSequenceElapsed < 2.5f) {
                             if (heightFade > 0.01f) {
-                                val squashY = boingAnim.value * cluckSquish
-                                val stretchX = (2f - boingAnim.value) * (2f - cluckSquish)
 
                                 withTransform({
                                     rotate(glassRotation, pivot = Offset(cx, henY))
                                     scale(glassScale, glassScale, pivot = Offset(cx, henY))
                                 }) {
-                                    drawIntoCanvas { it.nativeCanvas.saveLayerAlpha(0f, -size.height, size.width, size.height * 2f, (heightFade * 255).toInt()) }
-
-                                    // 1. SQUISHED PARTS (Comb & Body)
+                                    // --- 1. THE ERASER PASS (Must be OUTSIDE the fading layer!) ---
                                     withTransform({ scale(stretchX, squashY, pivot = Offset(cx, henY + henBodyRadius)) }) {
                                         drawCircle(color = Color.Black, radius = henBodyRadius, center = Offset(cx, henY), blendMode = BlendMode.Clear)
-                                        withTransform({ translate(cx, henY) }) { drawPath(combPath, NeonRed) }
-                                        drawCircle(color = Color.White, radius = henBodyRadius, center = Offset(cx, henY))
-                                        drawCircle(color = Color.Black, radius = henBodyRadius, center = Offset(cx, henY), style = Stroke(width = 4f * d))
                                     }
 
-                                    // 2. NON-SQUISHED PARTS (Wattle, Beak, Eye, Wing)
-                                    val faceRelX = henBodyRadius * 0.82f; val faceRelY = -6f * d
-                                    val faceShiftX = faceRelX * (stretchX - 1f); val faceShiftY = (faceRelY - henBodyRadius) * (squashY - 1f)
+                                    // --- 2. The Hen Fade Layer ---
+                                    drawIntoCanvas { it.nativeCanvas.saveLayerAlpha(0f, -size.height, size.width, size.height * 2f, (heightFade * 255).toInt()) }
 
-                                    withTransform({ translate(cx + faceShiftX, henY + faceShiftY) }) {
-                                        drawPath(wattlePath, NeonRed)
-                                        val relBeakY = -6f * d
-                                        withTransform({ rotate(if (effectiveBeakOpen) -15f else 0f, pivot = Offset(faceRelX, relBeakY)) }) { drawPath(upperBeakPath, NeonOrange) }
-                                        withTransform({ rotate(if (effectiveBeakOpen) 10f else 0f, pivot = Offset(faceRelX, relBeakY)) }) { drawPath(lowerBeakPath, NeonOrange) }
-                                    }
+                                    // Draw the ghostly reflection hen!
+                                    drawHen()
 
-                                    val eyeRelX = faceRelX - 25f * d; val eyeRelY = -25f * d
-                                    val eyeShiftX = eyeRelX * (stretchX - 1f); val eyeShiftY = (eyeRelY - henBodyRadius) * (squashY - 1f)
-
-                                    if (isSmushed) {
-                                        withTransform({ translate(cx + eyeShiftX, henY + eyeShiftY) }) { drawPath(wincePath, Color.Black, style = Stroke(5f * d, cap = StrokeCap.Round, join = StrokeJoin.Round)) }
-                                    } else if (isBlinking) {
-                                        val eyeCenter = Offset(cx + eyeRelX + eyeShiftX, henY + eyeRelY + eyeShiftY)
-                                        drawLine(color = Color.Black, start = Offset(eyeCenter.x - 12f * d, eyeCenter.y), end = Offset(eyeCenter.x + 12f * d, eyeCenter.y), strokeWidth = 5f * d, cap = StrokeCap.Round)
-                                    } else {
-                                        val eyeCenter = Offset(cx + eyeRelX + eyeShiftX, henY + eyeRelY + eyeShiftY)
-                                        drawCircle(color = Color.Black, radius = 12f * d, center = eyeCenter)
-                                        drawCircle(color = Color.White, radius = 4f * d, center = Offset(eyeCenter.x + 3f * d, eyeCenter.y - 3f * d))
-                                        drawCircle(color = Color.White, radius = 2f * d, center = Offset(eyeCenter.x - 3f * d, eyeCenter.y + 3f * d))
-                                    }
-
-                                    val wingRelX = -40f * d; val wingRelY = 10f * d
-                                    val wingShiftX = wingRelX * (stretchX - 1f); val wingShiftY = (wingRelY - henBodyRadius) * (squashY - 1f)
-                                    val wingP = Offset(cx + wingRelX + wingShiftX, henY + wingRelY + wingShiftY)
-                                    val wingRot = if (isFlapping) wingFlapRotation else if (isSliding) -20f else 0f
-                                    withTransform({ rotate(wingRot, pivot = wingP) }) {
-                                        val wW = 60f * d; val wH = 60f * d; val wTopLeft = Offset(wingP.x - 10f * d, wingP.y - 30f * d)
-                                        drawArc(color = if(isSmushed) Color(0xFFE0E0E0) else Color.White, startAngle = 0f, sweepAngle = 180f, useCenter = true, topLeft = wTopLeft, size = Size(wW, wH))
-                                        drawArc(color = Color.Black, startAngle = 0f, sweepAngle = 180f, useCenter = false, topLeft = wTopLeft, size = Size(wW, wH), style = Stroke(4f * d, cap = StrokeCap.Round, join = StrokeJoin.Round))
-                                    }
-
+                                    // Closes the Hen Fade Layer
                                     drawIntoCanvas { it.nativeCanvas.restore() }
                                 }
                             }
                         }
+
+                        // --- 4. CLOSE MASTER LAYER ---
+                        drawIntoCanvas { it.nativeCanvas.restore() }
                     }
                 }
             }
@@ -616,66 +771,32 @@ fun HenVisual(modifier: Modifier = Modifier, timeLeft: Float, isPaused: Boolean,
                 val eggWidth = 120f * d; val eggHeight = 150f * d
                 val eggTop = floorY - eggHeight
                 withTransform({ scale(1f, 1f, pivot = Offset(cx, eggTop + eggHeight/2)); rotate(if (!isPaused) eggWobbleRotation else 0f, pivot = Offset(cx, floorY)) }) {
-                    drawOval(color = Color(0xFFFEF3C7), topLeft = Offset(cx - eggWidth/2, eggTop), size = Size(eggWidth, eggHeight))
-                    withTransform({ rotate(-20f, pivot = Offset(cx - eggWidth * 0.2f, eggTop + eggHeight * 0.25f)) }) { drawOval(color = Color.White.copy(alpha = 0.4f), topLeft = Offset(cx - eggWidth * 0.3f, eggTop + eggHeight * 0.15f), size = Size(eggWidth * 0.3f, eggHeight * 0.15f)) }
+
+                    // --- NEW: Egg Gradient ---
+                    val eggBrush = Brush.verticalGradient(
+                        colors = listOf(Color(0xFFFEF3C7), Color(0xFFD4C27D)), // Pale yellow to deep shadow
+                        startY = eggTop, endY = eggTop + eggHeight
+                    )
+                    drawOval(brush = eggBrush, topLeft = Offset(cx - eggWidth/2, eggTop), size = Size(eggWidth, eggHeight))
+
+                    // --- RESTORED: Your original, perfectly angled highlight! ---
+                    withTransform({ rotate(-20f, pivot = Offset(cx - eggWidth * 0.2f, eggTop + eggHeight * 0.25f)) }) {
+                        drawOval(color = Color.White.copy(alpha = 0.4f), topLeft = Offset(cx - eggWidth * 0.3f, eggTop + eggHeight * 0.15f), size = Size(eggWidth * 0.3f, eggHeight * 0.15f))
+                    }
+
                     val crackStroke = Stroke(width = 3f * d, cap = StrokeCap.Round, join = StrokeJoin.Round)
                     withTransform({ translate(cx, 0f) }) { if (crackStage >= 1) drawPath(crack1Path, Color.Black, style = crackStroke); if (crackStage >= 2) drawPath(crack2Path, Color.Black, style = crackStroke); if (crackStage >= 3) drawPath(crack3Path, Color.Black, style = crackStroke) }
                 }
             }
 
-            val henY = cy + animOffsetY
             if (henY > -3000f && henY < size.height + 5000f) {
                 // Combine tap boing and automatic cluck squish for the main draw
-                val squashY = boingAnim.value * cluckSquish
-                val stretchX = (2f - boingAnim.value) * (2f - cluckSquish)
 
                 withTransform({
                     rotate(glassRotation, pivot = Offset(cx, henY))
                     scale(glassScale, glassScale, pivot = Offset(cx, henY))
                 }) {
-                    // 1. SQUISHED PARTS (Comb & Body)
-                    withTransform({ scale(stretchX, squashY, pivot = Offset(cx, henY + henBodyRadius)) }) {
-                        withTransform({ translate(cx, henY) }) { drawPath(combPath, NeonRed) }
-                        drawCircle(color = Color.White, radius = henBodyRadius, center = Offset(cx, henY))
-                        if (isSmushed) drawCircle(color = Color(0xFFE0E0E0), radius = henBodyRadius * 0.75f, center = Offset(cx, henY))
-                        drawCircle(color = Color.Black, radius = henBodyRadius, center = Offset(cx, henY), style = Stroke(width = 4f * d))
-                    }
-
-                    // 2. NON-SQUISHED PARTS (Wattle, Beak, Eye, Wing)
-                    val faceRelX = henBodyRadius * 0.82f; val faceRelY = -6f * d
-                    val faceShiftX = faceRelX * (stretchX - 1f); val faceShiftY = (faceRelY - henBodyRadius) * (squashY - 1f)
-
-                    withTransform({ translate(cx + faceShiftX, henY + faceShiftY) }) {
-                        drawPath(wattlePath, NeonRed)
-                        val relBeakY = -6f * d
-                        withTransform({ rotate(if (effectiveBeakOpen) -15f else 0f, pivot = Offset(faceRelX, relBeakY)) }) { drawPath(upperBeakPath, NeonOrange) }
-                        withTransform({ rotate(if (effectiveBeakOpen) 10f else 0f, pivot = Offset(faceRelX, relBeakY)) }) { drawPath(lowerBeakPath, NeonOrange) }
-                    }
-
-                    val eyeRelX = faceRelX - 25f * d; val eyeRelY = -25f * d
-                    val eyeShiftX = eyeRelX * (stretchX - 1f); val eyeShiftY = (eyeRelY - henBodyRadius) * (squashY - 1f)
-
-                    if (isSmushed) {
-                        withTransform({ translate(cx + eyeShiftX, henY + eyeShiftY) }) { drawPath(wincePath, Color.Black, style = Stroke(5f * d, cap = StrokeCap.Round, join = StrokeJoin.Round)) }
-                    } else if (isBlinking) {
-                        val eyeCenter = Offset(cx + eyeRelX + eyeShiftX, henY + eyeRelY + eyeShiftY)
-                        drawLine(color = Color.Black, start = Offset(eyeCenter.x - 12f * d, eyeCenter.y), end = Offset(eyeCenter.x + 12f * d, eyeCenter.y), strokeWidth = 5f * d, cap = StrokeCap.Round)
-                    } else {
-                        val eyeCenter = Offset(cx + eyeRelX + eyeShiftX, henY + eyeRelY + eyeShiftY)
-                        drawCircle(color = Color.Black, radius = 12f * d, center = eyeCenter)
-                        drawCircle(color = Color.White, radius = 4f * d, center = Offset(eyeCenter.x + 3f * d, eyeCenter.y - 3f * d))
-                        drawCircle(color = Color.White, radius = 2f * d, center = Offset(eyeCenter.x - 3f * d, eyeCenter.y + 3f * d))
-                    }
-
-                    val wingRelX = -40f * d; val wingRelY = 10f * d
-                    val wingShiftX = wingRelX * (stretchX - 1f); val wingShiftY = (wingRelY - henBodyRadius) * (squashY - 1f)
-                    val wingP = Offset(cx + wingRelX + wingShiftX, henY + wingRelY + wingShiftY)
-                    val wingRot = if (isFlapping) wingFlapRotation else if (isSliding) -20f else 0f
-                    withTransform({ rotate(wingRot, pivot = wingP) }) {
-                        val wW = 60f * d; val wH = 60f * d; val wTopLeft = Offset(wingP.x - 10f * d, wingP.y - 30f * d)
-                        drawArc(color = if(isSmushed) Color(0xFFE0E0E0) else Color.White, startAngle = 0f, sweepAngle = 180f, useCenter = true, topLeft = wTopLeft, size = Size(wW, wH))
-                        drawArc(color = Color.Black, startAngle = 0f, sweepAngle = 180f, useCenter = false, topLeft = wTopLeft, size = Size(wW, wH), style = Stroke(4f * d, cap = StrokeCap.Round, join = StrokeJoin.Round))
-                    }
+                    drawHen()
                 }
             }
         }
