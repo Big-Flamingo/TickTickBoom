@@ -69,7 +69,9 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors, isPaused
     var lastFrameTime = remember { 0L }
 
     val fusePath = remember { Path() }
+    val fuseLayerPaint = remember { Paint() }
     val frontRimPath = remember { Path() }
+    val androidSegmentPath = remember { android.graphics.Path() }
     val pathMeasure = remember { android.graphics.PathMeasure() }
     var cachedSize by remember { mutableStateOf(Size.Zero) }
 
@@ -97,6 +99,11 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors, isPaused
     val holeW = 12f * d
     val holeH = holeW * (cylinderOvalH / protrusionW)
     val strokeW = 6f * d
+
+    // --- NEW: Hoisted Ash Strokes ---
+    val ashStrokeMain = remember(d) { Stroke(width = strokeW, cap = StrokeCap.Round) }
+    val ashStrokeMid = remember(d) { Stroke(width = strokeW * 0.8f, cap = StrokeCap.Round) }
+    val ashStrokeInner = remember(d) { Stroke(width = strokeW * 0.4f, cap = StrokeCap.Round) }
 
     // Particles/Glint configs...
     val glintSizeL = 24f * d; val glintSizeS = 4f * d; val glintOffsetL = 12f * d; val glintOffsetS = 2f * d
@@ -226,7 +233,9 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors, isPaused
                     val currentSweep = maxSweep * curtainProgress
 
                     drawIntoCanvas { canvas ->
-                        canvas.saveLayer(Rect(outerRimRect.left, neckTopY, outerRimRect.right, neckBaseY + 15f * d), Paint())
+                        // USE CACHED PAINT!
+                        canvas.saveLayer(Rect(outerRimRect.left, neckTopY, outerRimRect.right, neckBaseY + 15f * d), fuseLayerPaint)
+
                         drawOval(brush = litGradient, topLeft = Offset(bombCenterX - protrusionW / 2, neckBaseY - cylinderOvalH / 2), size = Size(protrusionW, cylinderOvalH))
                         drawRect(brush = litGradient, topLeft = Offset(bombCenterX - protrusionW / 2, neckTopY), size = Size(protrusionW, neckBaseY - neckTopY))
 
@@ -258,12 +267,14 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors, isPaused
                 drawOval(color = currentHoleColor, topLeft = innerHoleRect.topLeft, size = innerHoleRect.size)
 
                 if (!isCritical) {
-                    val androidSegmentPath = android.graphics.Path()
+                    androidSegmentPath.rewind() // CLEAR the cached path!
                     pathMeasure.getSegment(0f, currentBurnPoint, androidSegmentPath, true)
                     val composePath = androidSegmentPath.asComposePath()
-                    drawPath(path = composePath, color = Color(0xFFCCC9C6), style = Stroke(width = strokeW, cap = StrokeCap.Round))
-                    drawPath(path = composePath, color = Color(0xFFD6D3D1), style = Stroke(width = strokeW * 0.8f, cap = StrokeCap.Round))
-                    drawPath(path = composePath, color = Color.White.copy(alpha = 0.5f), style = Stroke(width = strokeW * 0.4f, cap = StrokeCap.Round))
+
+                    // USE CACHED STROKES!
+                    drawPath(path = composePath, color = Color(0xFFCCC9C6), style = ashStrokeMain)
+                    drawPath(path = composePath, color = Color(0xFFD6D3D1), style = ashStrokeMid)
+                    drawPath(path = composePath, color = Color.White.copy(alpha = 0.5f), style = ashStrokeInner)
                 }
 
                 frontRimPath.reset(); frontRimPath.arcTo(outerRimRect, 0f, 180f, false); frontRimPath.lineTo(innerHoleRect.left, innerHoleRect.center.y); frontRimPath.arcTo(innerHoleRect, 180f, -180f, false); frontRimPath.close()
@@ -316,6 +327,14 @@ fun C4Visual(
     val c4BorderColor = if (isDarkMode) Color(0xFF9E9889) else Color(0xFF8C8677)
 
     val pausedColor = Color(0xFF3B82F6)
+
+    val pausedBlurPaint = remember(d) {
+        android.graphics.Paint().apply {
+            color = pausedColor.toArgb()
+            maskFilter = BlurMaskFilter(15f * d, Blur.NORMAL)
+        }
+    }
+    val pausedBlurRect = remember { android.graphics.RectF() }
 
     // --- NEW: High Voltage Shock State ---
     val haptic = LocalHapticFeedback.current
@@ -482,14 +501,9 @@ fun C4Visual(
                                     if (isPaused) {
                                         Canvas(modifier = Modifier.size(32.dp)) {
                                             drawIntoCanvas { canvas ->
-                                                val blurRadius = 15f * d
-                                                val paint = android.graphics.Paint().apply {
-                                                    color = pausedColor.toArgb()
-                                                    maskFilter = BlurMaskFilter(blurRadius, Blur.NORMAL)
-                                                }
                                                 val inset = 4.dp.toPx()
-                                                val rect = android.graphics.RectF(inset, inset, size.width - inset, size.height - inset)
-                                                canvas.nativeCanvas.drawRoundRect(rect, 8.dp.toPx(), 8.dp.toPx(), paint)
+                                                pausedBlurRect.set(inset, inset, size.width - inset, size.height - inset)
+                                                canvas.nativeCanvas.drawRoundRect(pausedBlurRect, 8.dp.toPx(), 8.dp.toPx(), pausedBlurPaint)
                                             }
                                         }
                                     }
@@ -680,6 +694,21 @@ fun DynamiteVisual(
     val tickOffsetY = -140f * d
     val dingOffsetY = -170f * d
 
+    // --- HOISTED PATHS (Prevents 60fps Garbage Collection Churn!) ---
+    val stickShadowPath = remember { Path() }
+    val yellowWirePath = remember { Path() }
+    val redWirePath = remember { Path() }
+    val blueWirePath = remember { Path() }
+    val facePath = remember { Path() }
+    val lightPath = remember { Path() }
+    val crescentPath = remember { Path() }
+    val glarePath = remember { Path() }
+
+    // --- NEW: HOISTED STROKES ---
+    val wireStroke = remember(d) { Stroke(width = 5f * d, cap = StrokeCap.Round, join = StrokeJoin.Round) }
+    val glossStroke = remember(d) { Stroke(width = 1.5f * d, cap = StrokeCap.Round, join = StrokeJoin.Round) }
+    val clockOutlineStroke = remember(d) { Stroke(width = clockStroke) }
+
     // --- NEW: Bell Vibration Animation ---
     val infiniteTransition = rememberInfiniteTransition()
     val bellVibrate by infiniteTransition.animateFloat(
@@ -693,14 +722,20 @@ fun DynamiteVisual(
     )
 
     val textMeasurer = rememberTextMeasurer()
-    val textLayoutResult = textMeasurer.measure(
-        text = "ACME CORP",
-        style = TextStyle(color = TextGray, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = VisualsFont)
-    )
-    val stickTextResult = textMeasurer.measure(
-        text = "HIGH EXPLOSIVE",
-        style = TextStyle(color = Color.Black.copy(alpha=0.3f), fontSize = 14.sp, fontWeight = FontWeight.Black, fontFamily = VisualsFont)
-    )
+
+    // --- OPTIMIZATION: Cache the text layout calculations! ---
+    val textLayoutResult = remember(d) {
+        textMeasurer.measure(
+            text = "ACME CORP",
+            style = TextStyle(color = TextGray, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = VisualsFont)
+        )
+    }
+    val stickTextResult = remember(d) {
+        textMeasurer.measure(
+            text = "HIGH EXPLOSIVE",
+            style = TextStyle(color = Color.Black.copy(alpha=0.3f), fontSize = 14.sp, fontWeight = FontWeight.Black, fontFamily = VisualsFont)
+        )
+    }
 
     @Suppress("RemoveExplicitTypeArguments", "UNCHECKED_CAST")
     val textEffectsSaver = listSaver<SnapshotStateList<VisualText>, Any>(
@@ -800,18 +835,19 @@ fun DynamiteVisual(
                     val bottom = startY + stickH + 30f * d + offsetY
                     val curveOffset = 12f * d
 
-                    val stickShadowPath = Path().apply {
-                        moveTo(stickLeft, top)
-                        lineTo(stickLeft, bottom)
-                        quadraticTo(
-                            x1 = stickLeft + (stickW / 2f),
-                            y1 = bottom + curveOffset,
-                            x2 = right,
-                            y2 = bottom
-                        )
-                        lineTo(right, top)
-                        close()
-                    }
+                    // USE CACHED PATH!
+                    stickShadowPath.reset()
+                    stickShadowPath.moveTo(stickLeft, top)
+                    stickShadowPath.lineTo(stickLeft, bottom)
+                    stickShadowPath.quadraticTo(
+                        x1 = stickLeft + (stickW / 2f),
+                        y1 = bottom + curveOffset,
+                        x2 = right,
+                        y2 = bottom
+                    )
+                    stickShadowPath.lineTo(right, top)
+                    stickShadowPath.close()
+
                     drawPath(path = stickShadowPath, color = Color.Black.copy(alpha = 0.25f))
                 }
 
@@ -860,54 +896,48 @@ fun DynamiteVisual(
             val trueCurvePeakY = startY - 13.5f * d
 
             // Yellow Wire (Center)
-            val yellowWirePath = Path().apply {
-                moveTo(midStickX, clockCy)
-                lineTo(midStickX, trueCurvePeakY) // <-- UPDATED: Snaps perfectly to the curve's height
-            }
+            yellowWirePath.reset()
+            yellowWirePath.moveTo(midStickX, clockCy)
+            yellowWirePath.lineTo(midStickX, trueCurvePeakY)
 
             // Red Wire (Left Stick)
-            val redWirePath = Path().apply {
-                moveTo(leftStickX, startY + 20f * d)
-                cubicTo(
-                    x1 = leftStickX, y1 = apexY,
-                    x2 = clockCx - 8f * d, y2 = apexY,
-                    x3 = clockCx - 4f * d, y3 = meetY
-                )
-                lineTo(clockCx - 4f * d, clockCy)
-            }
+            redWirePath.reset()
+            redWirePath.moveTo(leftStickX, startY + 20f * d)
+            redWirePath.cubicTo(
+                x1 = leftStickX, y1 = apexY,
+                x2 = clockCx - 8f * d, y2 = apexY,
+                x3 = clockCx - 4f * d, y3 = meetY
+            )
+            redWirePath.lineTo(clockCx - 4f * d, clockCy)
 
             // Blue Wire (Right Stick)
-            val blueWirePath = Path().apply {
-                moveTo(rightStickX, startY + 20f * d)
-                cubicTo(
-                    x1 = rightStickX, y1 = apexY,
-                    x2 = clockCx + 8f * d, y2 = apexY,
-                    x3 = clockCx + 4f * d, y3 = meetY
-                )
-                lineTo(clockCx + 4f * d, clockCy)
-            }
+            blueWirePath.reset()
+            blueWirePath.moveTo(rightStickX, startY + 20f * d)
+            blueWirePath.cubicTo(
+                x1 = rightStickX, y1 = apexY,
+                x2 = clockCx + 8f * d, y2 = apexY,
+                x3 = clockCx + 4f * d, y3 = meetY
+            )
+            blueWirePath.lineTo(clockCx + 4f * d, clockCy)
 
             // Draw Wire Shadows
             if (!isDarkMode) {
                 // --- UPDATED: 0f left offset to cast the shadow straight down! ---
                 translate(left = 0f, top = 8f * d) {
-                    val shadowStroke = Stroke(width = 5f * d, cap = StrokeCap.Round, join = StrokeJoin.Round)
                     val shadowColor = Color.Black.copy(alpha = 0.35f)
-                    drawPath(path = yellowWirePath, color = shadowColor, style = shadowStroke)
-                    drawPath(path = redWirePath, color = shadowColor, style = shadowStroke)
-                    drawPath(path = blueWirePath, color = shadowColor, style = shadowStroke)
+                    drawPath(path = yellowWirePath, color = shadowColor, style = wireStroke)
+                    drawPath(path = redWirePath, color = shadowColor, style = wireStroke)
+                    drawPath(path = blueWirePath, color = shadowColor, style = wireStroke)
                 }
             }
 
             // Draw Colored Plastic
-            val wireStroke = Stroke(width = 5f * d, cap = StrokeCap.Round, join = StrokeJoin.Round)
             drawPath(path = yellowWirePath, color = Color(0xFFEAB308), style = wireStroke)
             drawPath(path = redWirePath, color = Color(0xFFEF4444), style = wireStroke)
             drawPath(path = blueWirePath, color = Color(0xFF3B82F6), style = wireStroke)
 
             // Draw Glossy Highlights
-            translate(left = -1f * d, top = -1f * d) {
-                val glossStroke = Stroke(width = 1.5f * d, cap = StrokeCap.Round, join = StrokeJoin.Round)
+            translate(top = -2f * d) {
                 val glossColor = Color.White.copy(alpha = 0.4f)
                 drawPath(path = yellowWirePath, color = glossColor, style = glossStroke)
                 drawPath(path = redWirePath, color = glossColor, style = glossStroke)
@@ -1057,7 +1087,9 @@ fun DynamiteVisual(
 
                 // The actual metal clock base
                 drawCircle(brush = Brush.radialGradient(colors = listOf(MetallicLight, MetallicDark), center = clockCenter, radius = clockRad), center = clockCenter, radius = clockRad)
-                drawCircle(color = Slate800, style = Stroke(width = clockStroke), center = clockCenter)
+
+                // USE CACHED STROKE!
+                drawCircle(color = Slate800, style = clockOutlineStroke, center = clockCenter)
 
                 drawText(textLayoutResult = textLayoutResult, topLeft = Offset(clockCenter.x - textLayoutResult.size.width / 2, clockCenter.y + textYOffset))
 
@@ -1078,41 +1110,38 @@ fun DynamiteVisual(
                     val innerRimRadius = clockRad - (clockStroke / 2f) + 0.5f
 
                     // 1. The full inner circle of the clock face
-                    val facePath = Path().apply {
-                        addOval(Rect(center = clockCenter, radius = innerRimRadius))
-                    }
+                    facePath.reset()
+                    facePath.addOval(Rect(center = clockCenter, radius = innerRimRadius))
 
                     // 2. The "Light" cutout circle, shifted down
                     val shadowThickness = 12f * d
-                    val lightPath = Path().apply {
-                        addOval(Rect(center = Offset(clockCenter.x, clockCenter.y + shadowThickness), radius = innerRimRadius))
-                    }
+                    lightPath.reset()
+                    lightPath.addOval(Rect(center = Offset(clockCenter.x, clockCenter.y + shadowThickness), radius = innerRimRadius))
 
                     // 3. Subtract the light from the face to get a mathematically perfect crescent!
-                    val crescentPath = Path()
+                    crescentPath.reset()
                     crescentPath.op(facePath, lightPath, PathOperation.Difference)
 
                     drawPath(path = crescentPath, color = Color.Black.copy(alpha = 0.25f))
                 }
 
                 // --- NEW: Sharp "Glass Cut" Reflection ---
-                val glarePath = Path().apply {
-                    val rect = Rect(center = clockCenter, radius = clockRad * 0.88f)
-                    // Sweep a chunk of the top-left rim
-                    arcTo(rect, startAngleDegrees = 185f, sweepAngleDegrees = 95f, forceMoveTo = true)
+                glarePath.reset()
+                val glareRect = Rect(center = clockCenter, radius = clockRad * 0.88f)
+                // Sweep a chunk of the top-left rim
+                glarePath.arcTo(glareRect, startAngleDegrees = 185f, sweepAngleDegrees = 95f, forceMoveTo = true)
 
-                    val startX = clockCenter.x + clockRad * 0.88f * cos(Math.toRadians(185.0)).toFloat()
-                    val startY = clockCenter.y + clockRad * 0.88f * sin(Math.toRadians(185.0)).toFloat()
+                val startX = clockCenter.x + clockRad * 0.88f * cos(Math.toRadians(185.0)).toFloat()
+                val startY = clockCenter.y + clockRad * 0.88f * sin(Math.toRadians(185.0)).toFloat()
 
-                    // Draw a sharp, swooping curve back across the glass
-                    quadraticTo(
-                        x1 = clockCenter.x - (clockRad * 0.1f),
-                        y1 = clockCenter.y - (clockRad * 0.1f),
-                        x2 = startX,
-                        y2 = startY
-                    )
-                    close()
-                }
+                // Draw a sharp, swooping curve back across the glass
+                glarePath.quadraticTo(
+                    x1 = clockCenter.x - (clockRad * 0.1f),
+                    y1 = clockCenter.y - (clockRad * 0.1f),
+                    x2 = startX,
+                    y2 = startY
+                )
+                glarePath.close()
 
                 // A crisp, semi-transparent whitewash
                 drawPath(path = glarePath, color = Color.White.copy(alpha = 0.12f))

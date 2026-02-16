@@ -186,13 +186,14 @@ fun RowScope.StyleButton(
 
     val baseBgColor = if (isSelected) colors.surface else colors.surface.copy(alpha = 0.3f)
 
-    // Smooth fade to a neutral gray for universal light/dark mode support
-    val targetBgColor = if (isPressed) lerp(baseBgColor, Color.Gray, 0.4f) else baseBgColor
-    val animatedBgColor by animateColorAsState(
-        targetValue = targetBgColor,
-        animationSpec = tween(durationMillis = 150), // Subtle yet quick transition
-        label = "styleButtonHighlight"
+    // --- OPTIMIZED: Animate a float instead of the color! ---
+    // This makes theme swaps instant, but keeps the press animation smooth.
+    val pressBlend by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (isPressed) 0.4f else 0f,
+        animationSpec = tween(durationMillis = 150),
+        label = "pressBlend"
     )
+    val animatedBgColor = lerp(baseBgColor, Color.Gray, pressBlend)
 
     val borderColor = if (isSelected) color else colors.border
     val contentColor = if (isSelected) color else colors.textSecondary

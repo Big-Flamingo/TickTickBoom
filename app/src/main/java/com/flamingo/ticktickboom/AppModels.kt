@@ -8,7 +8,8 @@ data class TimerSettings(val minSeconds: Int, val maxSeconds: Int, val style: St
 
 data class Particle(
     val id: Int,
-    val angle: Double,
+    val dirX: Float, // <-- Replaces angle
+    val dirY: Float, // <-- Replaces angle
     val velocity: Float,
     val size: Float,
     val color: Color,

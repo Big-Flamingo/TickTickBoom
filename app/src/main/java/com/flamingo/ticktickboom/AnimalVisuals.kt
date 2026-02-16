@@ -78,6 +78,8 @@ fun FrogVisual(timeLeft: Float, isCritical: Boolean, isPaused: Boolean, onToggle
     val leftBumpPath = remember { Path() }
     val rightBumpPath = remember { Path() }
     val sweatDropPath = remember { Path() }
+    val mouthPath = remember { Path() }
+    val criticalPupilPath = remember { Path() }
     var cachedSize by remember { mutableStateOf(Size.Zero) }
     val scope = rememberCoroutineScope()
     val boingAnim = remember { Animatable(1f) }
@@ -335,12 +337,13 @@ fun FrogVisual(timeLeft: Float, isCritical: Boolean, isPaused: Boolean, onToggle
                     if (!isNormalOpenEye) { drawCircle(color = Color.Black, radius = currentEyeRadius, center = pos, style = outlineStroke) }
 
                     if (isCritical && !isPanic) {
-                        val path = Path(); val size = currentEyeRadius * 1.2f; val off = size * 0.15f; val ex = pos.x + if(isLeft) off else -off
-                        path.moveTo(ex - size/2, pos.y - size/2); path.lineTo(ex + size/4, pos.y); path.lineTo(ex - size/2, pos.y + size/2)
-                        if (!isLeft) { path.reset(); path.moveTo(ex + size/2, pos.y - size/2); path.lineTo(ex - size/4, pos.y); path.lineTo(ex + size/2, pos.y + size/2) }
+                        criticalPupilPath.reset()
+                        val size = currentEyeRadius * 1.2f; val off = size * 0.15f; val ex = pos.x + if(isLeft) off else -off
+                        criticalPupilPath.moveTo(ex - size/2, pos.y - size/2); criticalPupilPath.lineTo(ex + size/4, pos.y); criticalPupilPath.lineTo(ex - size/2, pos.y + size/2)
+                        if (!isLeft) { criticalPupilPath.reset(); criticalPupilPath.moveTo(ex + size/2, pos.y - size/2); criticalPupilPath.lineTo(ex - size/4, pos.y); criticalPupilPath.lineTo(ex + size/2, pos.y + size/2) }
 
                         // Apply the glossy gradient to the Critical 'X' pupils!
-                        drawPath(path, brush = pupilBrush, style = Stroke(8f * d, cap = StrokeCap.Round, join = StrokeJoin.Round))
+                        drawPath(criticalPupilPath, brush = pupilBrush, style = Stroke(8f * d, cap = StrokeCap.Round, join = StrokeJoin.Round))
                     } else if (!isPanic) {
                         if (isBlinking) {
                             val blinkWidth = 15f * d * animatedEyeScale
@@ -364,15 +367,19 @@ fun FrogVisual(timeLeft: Float, isCritical: Boolean, isPaused: Boolean, onToggle
                 if (isPanic) {
                     val panicH = 5f * d; val panicW = mouthW * 0.3f
                     if (mouthOpenProgress > 0.05f) {
-                        val path = Path()
-                        path.moveTo(mcx - panicW, mcy + panicH)
-                        path.quadraticTo(mcx, mcy + panicH + jawDrop + (2f*d), mcx + panicW, mcy + panicH)
-                        path.lineTo(mcx, mcy - panicH)
-                        path.lineTo(mcx - panicW, mcy + panicH)
-                        path.close()
-                        drawPath(path, mouthColor); drawPath(path, Color.Black, style = mouthStroke)
+                        mouthPath.reset()
+                        mouthPath.moveTo(mcx - panicW, mcy + panicH)
+                        mouthPath.quadraticTo(mcx, mcy + panicH + jawDrop + (2f*d), mcx + panicW, mcy + panicH)
+                        mouthPath.lineTo(mcx, mcy - panicH)
+                        mouthPath.lineTo(mcx - panicW, mcy + panicH)
+                        mouthPath.close()
+                        drawPath(mouthPath, mouthColor); drawPath(mouthPath, Color.Black, style = mouthStroke)
                     }
-                    drawPath(path = Path().apply { moveTo(mcx - panicW, mcy + panicH); lineTo(mcx, mcy - panicH); lineTo(mcx + panicW, mcy + panicH) }, color = Color.Black, style = mouthStroke)
+                    mouthPath.reset()
+                    mouthPath.moveTo(mcx - panicW, mcy + panicH)
+                    mouthPath.lineTo(mcx, mcy - panicH)
+                    mouthPath.lineTo(mcx + panicW, mcy + panicH)
+                    drawPath(path = mouthPath, color = Color.Black, style = mouthStroke)
                 }
                 else if (isCritical) {
                     val dotBaseRadius = 5f * d; val currentDotRadius = dotBaseRadius * (1f + mouthOpenProgress * 0.5f)
@@ -381,19 +388,19 @@ fun FrogVisual(timeLeft: Float, isCritical: Boolean, isPaused: Boolean, onToggle
                 else {
                     val smileDip = bodyRadius * 0.08f; val redRadius = mouthW * 0.25f; val startY = mcy + (smileDip * 0.5f)
                     if (mouthOpenProgress > 0.05f) {
-                        val path = Path()
-                        path.moveTo(mcx - redRadius, startY)
-                        path.quadraticTo(mcx, startY + jawDrop + (3f*d), mcx + redRadius, startY)
-                        path.quadraticTo(mcx + redRadius/2, startY, mcx, mcy)
-                        path.quadraticTo(mcx - redRadius/2, startY, mcx - redRadius, startY)
-                        path.close()
-                        drawPath(path, mouthColor); drawPath(path, Color.Black, style = mouthStroke)
+                        mouthPath.reset()
+                        mouthPath.moveTo(mcx - redRadius, startY)
+                        mouthPath.quadraticTo(mcx, startY + jawDrop + (3f*d), mcx + redRadius, startY)
+                        mouthPath.quadraticTo(mcx + redRadius/2, startY, mcx, mcy)
+                        mouthPath.quadraticTo(mcx - redRadius/2, startY, mcx - redRadius, startY)
+                        mouthPath.close()
+                        drawPath(mouthPath, mouthColor); drawPath(mouthPath, Color.Black, style = mouthStroke)
                     }
-                    val smilePath = Path()
-                    smilePath.moveTo(mcx - mouthW/2, mcy)
-                    smilePath.quadraticTo(mcx - mouthW/4, mcy + smileDip, mcx, mcy)
-                    smilePath.quadraticTo(mcx + mouthW/4, mcy + smileDip, mcx + mouthW/2, mcy)
-                    drawPath(smilePath, Color.Black, style = mouthStroke)
+                    mouthPath.reset()
+                    mouthPath.moveTo(mcx - mouthW/2, mcy)
+                    mouthPath.quadraticTo(mcx - mouthW/4, mcy + smileDip, mcx, mcy)
+                    mouthPath.quadraticTo(mcx + mouthW/4, mcy + smileDip, mcx + mouthW/2, mcy)
+                    drawPath(mouthPath, Color.Black, style = mouthStroke)
                 }
 
                 if (alertScale.value > 0f) {
@@ -459,6 +466,9 @@ fun HenVisual(modifier: Modifier = Modifier, timeLeft: Float, isPaused: Boolean,
     // --- HOISTED PROPERTIES ---
     val henBodyRadius = 110f * d
 
+    val blurPaint = remember { android.graphics.Paint() }
+    val blurRect = remember { android.graphics.RectF() }
+
     val outlineStroke = remember(d) {
         Stroke(width = 3f * d, cap = StrokeCap.Round, join = StrokeJoin.Round)
     }
@@ -507,6 +517,8 @@ fun HenVisual(modifier: Modifier = Modifier, timeLeft: Float, isPaused: Boolean,
     val crackStroke = remember(d) {
         Stroke(width = 3f * d, cap = StrokeCap.Round, join = StrokeJoin.Round)
     }
+
+    val masterLayerPaint = remember { android.graphics.Paint() }
 
     var isBlinking by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { while (true) { delay(Random.nextLong(2000, 4000)); isBlinking = true; delay(150); isBlinking = false } }
@@ -686,8 +698,8 @@ fun HenVisual(modifier: Modifier = Modifier, timeLeft: Float, isPaused: Boolean,
                     if (isReflection) {
 
                         // --- 1. NEW MASTER LAYER ---
-                        // Wraps both the egg and hen so the eraser doesn't punch through the sky background!
-                        drawIntoCanvas { it.nativeCanvas.saveLayer(null, android.graphics.Paint()) }
+                        // USE CACHED NATIVE PAINT!
+                        drawIntoCanvas { it.nativeCanvas.saveLayer(null, masterLayerPaint) }
 
                         if (showEgg) {
                             val eggWidth = 120f * d; val eggHeight = 150f * d
@@ -750,10 +762,12 @@ fun HenVisual(modifier: Modifier = Modifier, timeLeft: Float, isPaused: Boolean,
 
                     if (shadowBlurRadius > 0.5f) {
                         drawIntoCanvas { canvas ->
-                            val paint = android.graphics.Paint()
-                            paint.color = Color.Black.copy(alpha = 0.3f * henShadowAlpha).toArgb()
-                            paint.maskFilter = BlurMaskFilter(shadowBlurRadius, Blur.NORMAL)
-                            canvas.nativeCanvas.drawOval(android.graphics.RectF(cx - hShadowW/2, floorY - hShadowH/2, cx + hShadowW/2, floorY + hShadowH/2), paint)
+                            blurPaint.color = Color.Black.copy(alpha = 0.3f * henShadowAlpha).toArgb()
+                            // Reassigning the mask filter is necessary because the radius changes dynamically,
+                            // but caching the Paint and RectF saves 2 out of 3 allocations per frame!
+                            blurPaint.maskFilter = BlurMaskFilter(shadowBlurRadius, Blur.NORMAL)
+                            blurRect.set(cx - hShadowW/2, floorY - hShadowH/2, cx + hShadowW/2, floorY + hShadowH/2)
+                            canvas.nativeCanvas.drawOval(blurRect, blurPaint)
                         }
                     } else {
                         drawOval(color = Color.Black.copy(alpha = 0.3f * henShadowAlpha), topLeft = Offset(cx - hShadowW/2, floorY - hShadowH/2), size = Size(hShadowW, hShadowH))

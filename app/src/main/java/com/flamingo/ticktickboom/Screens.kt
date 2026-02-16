@@ -51,10 +51,10 @@ import androidx.compose.animation.animateColorAsState
 import androidx.core.content.edit
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.random.Random
+import androidx.compose.ui.platform.LocalDensity
 
 // NOTE: Uses VisualParticle from AppModels.kt
 // NOTE: Uses drawReflection and StrokeGlowText from Components.kt
@@ -78,6 +78,15 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, onToggleTheme: () -> Uni
     var easterEggTaps by remember { mutableIntStateOf(0) }
     val wobbleAnim = remember { Animatable(0f) }
     val flyAwayAnim = remember { Animatable(0f) }
+    val setupFusePath = remember { Path() }
+
+    // --- UPDATED: Grab the density and use it to calculate pixels! ---
+    val density = LocalDensity.current
+    val bombFuseStroke = remember(density) {
+        with(density) {
+            Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round)
+        }
+    }
 
     var isHoldingBomb by remember { mutableStateOf(false) }
     val shakeAnim = rememberInfiniteTransition(label = "bomb_shake")
@@ -225,7 +234,6 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, onToggleTheme: () -> Uni
 
                     val neckOffsetX = 4.dp.toPx(); val neckOffsetY = 14.dp.toPx()
                     val neckW = 8.dp.toPx(); val neckH = 4.dp.toPx()
-                    val fuseStroke = 2.dp.toPx()
 
                     // Using the shared drawReflection from Components.kt
                     drawReflection(isDarkMode, floorY, 0.25f) { isReflection ->
@@ -247,15 +255,15 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, onToggleTheme: () -> Uni
 
                             // A. FUSE
                             val fuseStart = Offset(center.x, center.y - 14.dp.toPx())
-                            val path = Path()
-                            path.moveTo(fuseStart.x, fuseStart.y)
-                            path.lineTo(fuseStart.x, fuseStart.y - 2.dp.toPx())
-                            path.cubicTo(
+                            setupFusePath.reset()
+                            setupFusePath.moveTo(fuseStart.x, fuseStart.y)
+                            setupFusePath.lineTo(fuseStart.x, fuseStart.y - 2.dp.toPx())
+                            setupFusePath.cubicTo(
                                 fuseStart.x, fuseStart.y - 7.dp.toPx(),
                                 fuseStart.x + 7.dp.toPx(), fuseStart.y - 7.dp.toPx(),
                                 fuseStart.x + 8.dp.toPx(), fuseStart.y + 1.dp.toPx()
                             )
-                            drawPath(path = path, brush = Brush.linearGradient(colors = listOf(Color(0xFFB91C1C), NeonRed, Color(0xFFB91C1C))), style = Stroke(width = fuseStroke, cap = StrokeCap.Round))
+                            drawPath(path = setupFusePath, brush = Brush.linearGradient(colors = listOf(Color(0xFFB91C1C), NeonRed, Color(0xFFB91C1C))), style = bombFuseStroke)
 
                             // B. NECK
                             drawRoundRect(brush = Brush.linearGradient(colors = listOf(NeonRed, Color(0xFF7F1D1D))), topLeft = Offset(center.x - neckOffsetX, center.y - neckOffsetY), size = Size(neckW, neckH), cornerRadius = CornerRadius(2f, 2f))
@@ -642,11 +650,12 @@ fun ExplosionScreen(colors: AppColors, style: String?, explosionOrigin: Offset? 
     val context = LocalContext.current
     val particles = remember {
         val colorsList = listOf(NeonRed, NeonOrange, Color.Yellow, Color.White)
-        // NEW
         List(100) { i ->
+            val angle = Math.random() * Math.PI * 2 // Calculate angle once!
             Particle(
                 id = i,
-                angle = Math.random() * 360,
+                dirX = cos(angle).toFloat(),
+                dirY = sin(angle).toFloat(),
                 velocity = (200 + Math.random() * 800).toFloat(),
                 size = (3 + Math.random() * 5).toFloat(),
                 color = colorsList.random(),
@@ -759,10 +768,9 @@ fun ExplosionScreen(colors: AppColors, style: String?, explosionOrigin: Offset? 
                 drawCircle(color = colors.smokeColor.copy(alpha = currentAlpha), radius = currentSize, center = Offset(currentX, currentY))
             }
             particles.forEach { p ->
-                val rad = p.angle * (PI / 180)
                 val dist = p.velocity * progress * 2f
-                val x = center.x + (cos(rad) * dist).toFloat()
-                val y = center.y + (sin(rad) * dist).toFloat()
+                val x = center.x + (p.dirX * dist)
+                val y = center.y + (p.dirY * dist)
                 val alpha = (1f - progress).coerceIn(0f, 1f)
                 if (alpha > 0) drawCircle(color = p.color.copy(alpha = alpha), radius = p.size, center = Offset(x, y))
             }
