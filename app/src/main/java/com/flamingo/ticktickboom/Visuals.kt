@@ -50,6 +50,7 @@ import kotlinx.coroutines.launch
 import androidx.compose.animation.core.Animatable
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.res.stringResource
 
 // --- FONTS ---
 val VisualsFont = FontFamily(Font(R.font.orbitron_bold))
@@ -320,6 +321,11 @@ fun C4Visual(
     val density = LocalDensity.current
     val d = density.density
 
+    val armedText = stringResource(R.string.armed)
+    val pausedText = stringResource(R.string.paused)
+    val warningText = stringResource(R.string.high_voltage_warning)
+    val emptyTimeText = stringResource(R.string.empty_time) // For "--:--"
+
     val ledSize = 12f * d
     val ledRadius = 6f * d
     val c4BodyColor = if (isDarkMode) Color(0xFFD6D0C4) else Color(0xFFC8C2B4)
@@ -512,7 +518,7 @@ fun C4Visual(
                                 // INVISIBLE ANCHOR: Perfectly matches StrokeGlowText properties to prevent sub-pixel jumping
                                 Box(contentAlignment = Alignment.Center) {
                                     Text(
-                                        text = "PAUSED",
+                                        text = pausedText,
                                         color = Color.Transparent,
                                         fontSize = 8.sp,
                                         fontWeight = FontWeight.Bold,
@@ -523,10 +529,10 @@ fun C4Visual(
                                     )
 
                                     if (isPaused) {
-                                        StrokeGlowText("PAUSED", pausedColor, 8.sp, letterSpacing = 2.sp)
+                                        StrokeGlowText(pausedText, pausedColor, 8.sp, letterSpacing = 2.sp)
                                     } else {
                                         Text(
-                                            text = "PAUSED",
+                                            text = pausedText,
                                             color = Color(0xFF1E293B),
                                             fontSize = 8.sp,
                                             fontWeight = FontWeight.Bold,
@@ -543,7 +549,7 @@ fun C4Visual(
                             Spacer(modifier = Modifier.width(16.dp))
 
                             Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(bottom = 6.dp).offset(y = (-5).dp)) {
-                                StrokeGlowText("--:--", NeonRed, 56.sp, letterSpacing = (-1).sp, fontWeight = FontWeight.Black, strokeWidth = 12f, blurRadius = 40f)
+                                StrokeGlowText(emptyTimeText, NeonRed, 56.sp, letterSpacing = (-1).sp, fontWeight = FontWeight.Black, strokeWidth = 12f, blurRadius = 40f)
                             }
                         }
                     }
@@ -557,9 +563,9 @@ fun C4Visual(
                             Spacer(modifier = Modifier.width(8.dp))
                             // USING SHARED GLOW COMPONENT
                             if (isLedOn) {
-                                StrokeGlowText("ARMED", NeonRed, 12.sp, blurRadius = 20f)
+                                StrokeGlowText(armedText, NeonRed, 12.sp, blurRadius = 20f)
                             } else {
-                                Text("ARMED", color = Color(0xFF450a0a), fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp, fontFamily = VisualsFont)
+                                Text(armedText, color = Color(0xFF450a0a), fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp, fontFamily = VisualsFont)
                             }
                         }
                     }
@@ -613,7 +619,7 @@ fun C4Visual(
                 Row(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Filled.Warning, null, tint = warningTextIcon, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("HIGH VOLTAGE // DO NOT TAMPER", color = warningTextIcon, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = VisualsFont)
+                    Text(warningText, color = warningTextIcon, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = VisualsFont)
                 }
             }
 
@@ -721,19 +727,51 @@ fun DynamiteVisual(
         label = "BellVibration"
     )
 
+    val acmeText = stringResource(R.string.acme_corp)
+    val explosiveText = stringResource(R.string.high_explosive)
+    val tickText = stringResource(R.string.tick)
+    val dingText = stringResource(R.string.ding)
+
     val textMeasurer = rememberTextMeasurer()
 
     // --- OPTIMIZATION: Cache the text layout calculations! ---
-    val textLayoutResult = remember(d) {
+    val textLayoutResult = remember(d, acmeText) {
         textMeasurer.measure(
-            text = "ACME CORP",
+            text = acmeText,
             style = TextStyle(color = TextGray, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = VisualsFont)
         )
     }
-    val stickTextResult = remember(d) {
+    val stickTextResult = remember(d, explosiveText) {
         textMeasurer.measure(
-            text = "HIGH EXPLOSIVE",
+            text = explosiveText,
             style = TextStyle(color = Color.Black.copy(alpha=0.3f), fontSize = 14.sp, fontWeight = FontWeight.Black, fontFamily = VisualsFont)
+        )
+    }
+
+    val tickLayoutResult = remember(d, tickText) {
+        textMeasurer.measure(
+            text = tickText,
+            style = TextStyle(color = Color.Black, fontSize = 20.sp, fontWeight = FontWeight.Bold, fontFamily = VisualsFont)
+        )
+    }
+
+    // We measure "DING!" once with its specific gradient brush.
+    val dingLayoutResult = remember(d, dingText) {
+        val dingBrush = Brush.verticalGradient(listOf(Color(0xFFFFFACD), Color(0xFFFFD700)))
+        textMeasurer.measure(
+            text = dingText,
+            style = TextStyle(brush = dingBrush, fontSize = 48.sp, fontWeight = FontWeight.Bold, fontFamily = VisualsFont)
+        )
+    }
+
+    // --- CACHED GLARE BRUSH ---
+    val glareBrush = remember(d) {
+        val staticCenter = Offset(80f * d, 80f * d) // Center of the 160.dp canvas
+        val gCenter = Offset(staticCenter.x - clockRad * 0.35f, staticCenter.y - clockRad * 0.35f)
+        Brush.radialGradient(
+            colors = listOf(Color(0xFFE0F7FA).copy(alpha = 0.3f), Color.Transparent),
+            center = gCenter,
+            radius = clockRad * 1.2f
         )
     }
 
@@ -790,12 +828,12 @@ fun DynamiteVisual(
         val isFast = timeLeft <= 5f
         if (currentStep != lastTriggerStep) {
             if ((isFast || currentStep % 2 == 0) && timeLeft > 1.1f && !isPaused) {
-                textEffects.add(VisualText("TICK", (Math.random() * 100 - 50).toFloat(), tickOffsetY, if (isFast) NeonRed else TextGray, fontSize = 20f))
+                textEffects.add(VisualText(tickText, (Math.random() * 100 - 50).toFloat(), tickOffsetY, if (isFast) NeonRed else TextGray, fontSize = 20f))
             }
             lastTriggerStep = currentStep
         }
         if (timeLeft <= 1.0f && !hasShownDing && timeLeft > 0 && !isPaused) {
-            textEffects.add(VisualText("DING!", 0f, dingOffsetY, Color(0xFFFFD700), listOf(Color(0xFFFFFACD), Color(0xFFFFD700)), life = 2.0f, fontSize = 48f))
+            textEffects.add(VisualText(dingText, 0f, dingOffsetY, Color(0xFFFFD700), listOf(Color(0xFFFFFACD), Color(0xFFFFD700)), life = 2.0f, fontSize = 48f))
             hasShownDing = true
         }
     }
@@ -1102,8 +1140,20 @@ fun DynamiteVisual(
                 drawCircle(color = Slate800, radius = pinL, center = clockCenter)
                 drawCircle(color = NeonRed, radius = pinS, center = clockCenter)
 
-                val glareCenter = Offset(clockCenter.x - clockRad * 0.35f, clockCenter.y - clockRad * 0.35f)
-                drawCircle(brush = Brush.radialGradient(colors = listOf(Color(0xFFE0F7FA).copy(alpha = 0.3f), Color.Transparent), center = glareCenter, radius = clockRad * 0.8f), radius = clockRad * 0.7f, center = glareCenter)
+                // --- CONSTRAINED GLARE ---
+                // 1. Create a stencil that perfectly matches the inner rim of the clock
+                facePath.reset()
+                facePath.addOval(Rect(center = clockCenter, radius = clockRad - (clockStroke / 2f)))
+
+                // 2. Draw the glare inside the stencil using the CACHED brush!
+                clipPath(facePath) {
+                    val glareCenter = Offset(clockCenter.x - clockRad * 0.35f, clockCenter.y - clockRad * 0.35f)
+                    drawCircle(
+                        brush = glareBrush, // <--- ZERO ALLOCATION HERE NOW!
+                        radius = clockRad * 1.2f,
+                        center = glareCenter
+                    )
+                }
 
                 // --- PERFECTED: True Hard-Edged Crescent Shadow ---
                 if (!isDarkMode) {
@@ -1160,13 +1210,31 @@ fun DynamiteVisual(
             val cx = size.width / 2
             val cy = size.height / 2
             textEffects.forEach { effect ->
-                val style = if (effect.gradientColors != null) {
-                    TextStyle(brush = Brush.verticalGradient(effect.gradientColors.map { it.copy(alpha = effect.alpha) }), fontSize = effect.fontSize.sp, fontWeight = FontWeight.Bold, fontFamily = VisualsFont)
-                } else {
-                    TextStyle(color = effect.color.copy(alpha = effect.alpha), fontSize = effect.fontSize.sp, fontWeight = FontWeight.Bold, fontFamily = VisualsFont)
+                // 1. Pick the cached layout based on the text content
+                val textResult = when (effect.text) {
+                    tickText -> tickLayoutResult
+                    dingText -> dingLayoutResult
+                    else -> {
+                        // Fallback for any unknown text (creates a new style on the fly)
+                        val style = if (effect.gradientColors != null) {
+                            TextStyle(brush = Brush.verticalGradient(effect.gradientColors), fontSize = effect.fontSize.sp, fontWeight = FontWeight.Bold, fontFamily = VisualsFont)
+                        } else {
+                            TextStyle(color = effect.color, fontSize = effect.fontSize.sp, fontWeight = FontWeight.Bold, fontFamily = VisualsFont)
+                        }
+                        textMeasurer.measure(effect.text, style)
+                    }
                 }
-                val textResult = textMeasurer.measure(effect.text, style)
-                drawText(textLayoutResult = textResult, topLeft = Offset(cx + effect.x - (textResult.size.width / 2), cy + effect.y - (textResult.size.height / 2)))
+
+                // 2. Draw it!
+                val topLeft = Offset(cx + effect.x - (textResult.size.width / 2), cy + effect.y - (textResult.size.height / 2))
+
+                if (effect.text == tickText) {
+                    // For TICK: We override the cached Black color with the specific Red or Gray needed
+                    drawText(textLayoutResult = textResult, color = effect.color.copy(alpha = effect.alpha), topLeft = topLeft)
+                } else {
+                    // For DING (or others): We use the cached gradient and just apply the alpha
+                    drawText(textLayoutResult = textResult, alpha = effect.alpha, topLeft = topLeft)
+                }
             }
         }
     }

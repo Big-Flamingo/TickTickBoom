@@ -46,6 +46,8 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.remember
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.zIndex
 
 // --- SHARED DRAWING HELPERS ---
 
@@ -256,7 +258,7 @@ fun VolumeSlider(
     Column {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(if (label.contains("TIMER")) Icons.AutoMirrored.Filled.VolumeUp else Icons.Filled.Warning, null, tint = colors.textSecondary, modifier = Modifier.size(12.dp))
+                Icon(if (label == stringResource(R.string.timer_volume)) Icons.AutoMirrored.Filled.VolumeUp else Icons.Filled.Warning, null, tint = colors.textSecondary, modifier = Modifier.size(12.dp))
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(label, color = colors.textSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont)
             }
@@ -337,16 +339,16 @@ fun BombTextContent(
     if (isPaused) {
         when (style) {
             "FUSE" -> {
-                StrokeGlowText("PAUSED", NeonCyan, 48.sp)
+                StrokeGlowText(stringResource(R.string.paused), NeonCyan, 48.sp)
                 Spacer(modifier = Modifier.height(16.dp))
                 Surface(color = Color.Transparent, border = BorderStroke(1.dp, NeonCyan), shape = RoundedCornerShape(50)) {
-                    Text("EXTINGUISHED", color = NeonCyan, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp), fontFamily = CustomFont)
+                    Text(stringResource(R.string.extinguished), color = NeonCyan, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp), fontFamily = CustomFont)
                 }
             }
-            "FROG", "HEN" -> StrokeGlowText("PAUSED", NeonCyan, 48.sp)
+            "FROG", "HEN" -> StrokeGlowText(stringResource(R.string.paused), NeonCyan, 48.sp)
             else -> {
                 Surface(color = Color.Transparent, border = BorderStroke(1.dp, NeonCyan), shape = RoundedCornerShape(50), modifier = modifier) {
-                    Text("SYSTEM PAUSED", color = NeonCyan, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp), fontFamily = CustomFont)
+                    Text(stringResource(R.string.system_paused), color = NeonCyan, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp), fontFamily = CustomFont)
                 }
             }
         }
@@ -356,41 +358,41 @@ fun BombTextContent(
     when (style) {
         "FUSE" -> {
             if (!isCritical) {
-                StrokeGlowText("ARMED", NeonOrange, 48.sp)
+                StrokeGlowText(stringResource(R.string.armed), NeonOrange, 48.sp)
                 Spacer(modifier = Modifier.height(16.dp))
                 Surface(color = Color.Transparent, border = BorderStroke(1.dp, NeonOrange), shape = RoundedCornerShape(50)) {
-                    Text("FUSE BURNING", color = NeonOrange, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp), fontFamily = CustomFont)
+                    Text(stringResource(R.string.fuse_burning), color = NeonOrange, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp), fontFamily = CustomFont)
                 }
             } else {
                 val infiniteTransition = androidx.compose.animation.core.rememberInfiniteTransition()
                 val color by infiniteTransition.animateColor(initialValue = NeonRed, targetValue = colors.text, animationSpec = androidx.compose.animation.core.infiniteRepeatable(
                     tween(200), androidx.compose.animation.core.RepeatMode.Reverse), label = "crit")
 
-                StrokeGlowText("CRITICAL", color, 48.sp, fontWeight = FontWeight.Black, glowIntensity = 1.3f)
+                StrokeGlowText(stringResource(R.string.critical), color, 48.sp, fontWeight = FontWeight.Black, glowIntensity = 1.3f)
 
                 Spacer(modifier = Modifier.height(16.dp))
                 Surface(color = Color.Transparent, border = BorderStroke(1.dp, NeonRed), shape = RoundedCornerShape(50)) {
-                    Text("DETONATION IMMINENT", color = NeonRed, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp), fontFamily = CustomFont)
+                    Text(stringResource(R.string.detonation_imminent), color = NeonRed, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp), fontFamily = CustomFont)
                 }
             }
         }
         "FROG" -> {
             val text = when {
-                timeLeft <= 1.05f -> "RIBBIT!"
-                isCritical -> "RIBBIT?"
-                else -> "RIBBIT"
+                timeLeft <= 1.05f -> stringResource(R.string.ribbit_exclaim)
+                isCritical -> stringResource(R.string.ribbit_question)
+                else -> stringResource(R.string.ribbit)
             }
             StrokeGlowText(text, FrogBody, 48.sp)
         }
         "HEN" -> {
             val showCracking = henSequenceElapsed > 0.5f
-            val text = if (showCracking) "CRACKING" else "CLUCK"
+            val text = if (showCracking) stringResource(R.string.cracking) else stringResource(R.string.cluck)
             val color = if (showCracking) NeonRed else NeonOrange
             StrokeGlowText(text, color, 48.sp)
         }
         else -> {
             Surface(color = Color.Transparent, border = BorderStroke(1.dp, NeonRed), shape = RoundedCornerShape(50), modifier = modifier) {
-                Text("DETONATION SEQUENCE", color = NeonRed, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp), fontFamily = CustomFont)
+                Text(stringResource(R.string.detonation_sequence), color = NeonRed, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp), fontFamily = CustomFont)
             }
         }
     }
@@ -399,7 +401,7 @@ fun BombTextContent(
 @Composable
 fun AbortButtonContent(colors: AppColors, onAbort: () -> Unit) {
     ActionButton(
-        text = "ABORT",
+        text = stringResource(R.string.abort),
         icon = Icons.Filled.Close,
         color = colors.surface.copy(alpha=0.5f),
         textColor = colors.textSecondary,
@@ -407,4 +409,84 @@ fun AbortButtonContent(colors: AppColors, onAbort: () -> Unit) {
         borderWidth = 1.dp,
         onClick = { AudioService.playClick(); onAbort() }
     )
+}
+
+@Composable
+fun LanguageSwitch(
+    colors: AppColors,
+    onClick: () -> Unit
+) {
+    // 1. Determine current language state
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val currentLocale = androidx.core.os.ConfigurationCompat.getLocales(context.resources.configuration)[0]
+    val isEnglish = currentLocale?.language == "en"
+
+    // 2. Define the animation constants
+    val offsetSelected = 0.dp
+    val offsetUnselected = 12.dp // How far the back button peeks out
+    val zIndexSelected = 1f
+    val zIndexUnselected = 0f
+
+    // 3. Helper to draw a single language chip
+    @Composable
+    fun LanguageChip(
+        text: String,
+        isSelected: Boolean,
+        modifier: Modifier = Modifier
+    ) {
+        // Animate position and color
+        val targetOffset by androidx.compose.animation.core.animateDpAsState(
+            if (isSelected) offsetSelected else offsetUnselected,
+            label = "offset"
+        )
+        val targetColor = if (isSelected) NeonRed else Color.Gray
+        val animatedColor by animateColorAsState(targetColor, label = "color")
+
+        // If selected, it sits at 0,0. If unselected, it shifts down-right.
+        val x = if (isSelected) 0.dp else targetOffset
+        val y = if (isSelected) 0.dp else targetOffset
+
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = modifier
+                .offset(x, y)
+                .zIndex(if (isSelected) zIndexSelected else zIndexUnselected)
+                .size(28.dp)
+                .border(1.5.dp, animatedColor, RoundedCornerShape(8.dp))
+                .background(colors.background, RoundedCornerShape(8.dp)) // Opaque bg to hide the one behind
+        ) {
+            Text(
+                text = text,
+                color = animatedColor,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = CustomFont
+            )
+        }
+    }
+
+    // 4. Container Box
+    Box(
+        modifier = Modifier
+            .size(42.dp) // Big enough to hold both
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null
+            ) { onClick() }
+    ) {
+        // We draw both chips. The state determines which one is "red and top-left"
+        // and which one is "gray and bottom-right".
+
+        // English Chip
+        LanguageChip(
+            text = "En",
+            isSelected = isEnglish
+        )
+
+        // Chinese Chip
+        LanguageChip(
+            text = "中",
+            isSelected = !isEnglish
+        )
+    }
 }

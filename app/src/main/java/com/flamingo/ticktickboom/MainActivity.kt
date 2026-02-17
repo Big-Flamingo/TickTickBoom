@@ -4,7 +4,9 @@ import android.app.Activity
 import android.content.Context
 import android.os.Bundle
 import android.view.WindowManager
-import androidx.activity.ComponentActivity
+import androidx.appcompat.app.AppCompatActivity // <-- CHANGED
+import androidx.appcompat.app.AppCompatDelegate // <-- NEW
+import androidx.core.os.LocaleListCompat // <-- NEW
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.fillMaxSize
@@ -22,7 +24,7 @@ import androidx.core.content.edit
 import androidx.core.view.WindowCompat
 import kotlin.random.Random
 
-class MainActivity : ComponentActivity() {
+class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -81,6 +83,20 @@ fun BombApp() {
         isDarkMode = !isDarkMode
         prefs.edit { putBoolean("dark_mode", isDarkMode) }
         AudioService.playClick()
+    }
+
+    // --- NEW: Helper to toggle language ---
+    fun toggleLanguage() {
+        val currentLocales = AppCompatDelegate.getApplicationLocales()
+        val currentLang = currentLocales.get(0)?.language ?: "en"
+
+        // If current is English, switch to Chinese (Traditional), otherwise switch to English
+        val newLocale = if (currentLang == "en") {
+            LocaleListCompat.forLanguageTags("zh-TW")
+        } else {
+            LocaleListCompat.forLanguageTags("en")
+        }
+        AppCompatDelegate.setApplicationLocales(newLocale)
     }
 
     var appState by rememberSaveable { mutableStateOf(AppState.SETUP) }
@@ -142,7 +158,7 @@ fun BombApp() {
 
     Surface(modifier = Modifier.fillMaxSize(), color = colors.background) {
         when (appState) {
-            AppState.SETUP -> SetupScreen(colors, isDarkMode, { toggleTheme() }, { handleStart(it) })
+            AppState.SETUP -> SetupScreen(colors, isDarkMode, { toggleTheme() }, { handleStart(it) }, { toggleLanguage() })
             AppState.RUNNING -> BombScreen(
                 duration = duration,
                 startTime = startTime,

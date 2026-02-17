@@ -55,6 +55,7 @@ import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.random.Random
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 
 // NOTE: Uses VisualParticle from AppModels.kt
 // NOTE: Uses drawReflection and StrokeGlowText from Components.kt
@@ -63,7 +64,7 @@ import androidx.compose.ui.platform.LocalDensity
 // --- SCREENS ---
 
 @Composable
-fun SetupScreen(colors: AppColors, isDarkMode: Boolean, onToggleTheme: () -> Unit, onStart: (TimerSettings) -> Unit) {
+fun SetupScreen(colors: AppColors, isDarkMode: Boolean, onToggleTheme: () -> Unit, onStart: (TimerSettings) -> Unit, onToggleLanguage: () -> Unit) {
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
     val prefs = remember { context.getSharedPreferences("bomb_timer_prefs", Context.MODE_PRIVATE) }
@@ -200,117 +201,132 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, onToggleTheme: () -> Uni
             // Capture the rotation value outside the Canvas
             val currentRotation = if (isHoldingBomb) holdingShakeOffset else wobbleAnim.value
 
-            Box(
-                modifier = Modifier
-                    .size(80.dp)
-                    .pointerInput(Unit) {
-                        detectTapGestures(
-                            onPress = {
-                                val job = scope.launch {
-                                    delay(200)
-                                    isHoldingBomb = true
-                                    AudioService.startHoldingCluck()
-                                }
-                                tryAwaitRelease()
-                                job.cancel()
-                                if (isHoldingBomb) {
-                                    isHoldingBomb = false
-                                    AudioService.stopHoldingCluck()
-                                }
-                            },
-                            onTap = { handleBombTap() },
-                            onLongPress = { launchHen() }
-                        )
-                    }
-                    .graphicsLayer {
-                        scaleX = if (isHoldingBomb) 1.1f else 1f
-                        scaleY = if (isHoldingBomb) 1.1f else 1f
-                    },
-                contentAlignment = Alignment.Center
-            ) {
-                Canvas(modifier = Modifier.size(40.dp).offset(y = 10.dp)) {
-                    val bodyRadius = 12.dp.toPx()
-                    val floorY = center.y + bodyRadius
-
-                    val neckOffsetX = 4.dp.toPx(); val neckOffsetY = 14.dp.toPx()
-                    val neckW = 8.dp.toPx(); val neckH = 4.dp.toPx()
-
-                    // Using the shared drawReflection from Components.kt
-                    drawReflection(isDarkMode, floorY, 0.25f) { isReflection ->
-
-                        // 1. SHADOW (Stays flat! Outside the rotation block)
-                        if (!isReflection) {
-                            val shadowW = bodyRadius * 2f
-                            val shadowH = shadowW * 0.2f
-
-                            drawOval(
-                                color = Color.Black.copy(alpha = 0.2f),
-                                topLeft = Offset(center.x - shadowW / 2, floorY - shadowH / 2),
-                                size = Size(shadowW, shadowH)
+            // --- NEW: Wrapper Box to align Bomb and Language Switch ---
+            Box(modifier = Modifier.fillMaxWidth()) {
+                // 1. THE BOMB (Centered)
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .size(80.dp)
+                        .pointerInput(Unit) {
+                            detectTapGestures(
+                                onPress = {
+                                    val job = scope.launch {
+                                        delay(200)
+                                        isHoldingBomb = true
+                                        AudioService.startHoldingCluck()
+                                    }
+                                    tryAwaitRelease()
+                                    job.cancel()
+                                    if (isHoldingBomb) {
+                                        isHoldingBomb = false
+                                        AudioService.stopHoldingCluck()
+                                    }
+                                },
+                                onTap = { handleBombTap() },
+                                onLongPress = { launchHen() }
                             )
                         }
+                        .graphicsLayer {
+                            scaleX = if (isHoldingBomb) 1.1f else 1f
+                            scaleY = if (isHoldingBomb) 1.1f else 1f
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Canvas(modifier = Modifier.size(40.dp).offset(y = 10.dp)) {
+                        val bodyRadius = 12.dp.toPx()
+                        val floorY = center.y + bodyRadius
 
-                        // 2. ROTATING BOMB PARTS
-                        withTransform({ rotate(currentRotation, pivot = center) }) {
+                        val neckOffsetX = 4.dp.toPx(); val neckOffsetY = 14.dp.toPx()
+                        val neckW = 8.dp.toPx(); val neckH = 4.dp.toPx()
 
-                            // A. FUSE
-                            val fuseStart = Offset(center.x, center.y - 14.dp.toPx())
-                            setupFusePath.reset()
-                            setupFusePath.moveTo(fuseStart.x, fuseStart.y)
-                            setupFusePath.lineTo(fuseStart.x, fuseStart.y - 2.dp.toPx())
-                            setupFusePath.cubicTo(
-                                fuseStart.x, fuseStart.y - 7.dp.toPx(),
-                                fuseStart.x + 7.dp.toPx(), fuseStart.y - 7.dp.toPx(),
-                                fuseStart.x + 8.dp.toPx(), fuseStart.y + 1.dp.toPx()
-                            )
-                            drawPath(path = setupFusePath, brush = Brush.linearGradient(colors = listOf(Color(0xFFB91C1C), NeonRed, Color(0xFFB91C1C))), style = bombFuseStroke)
+                        // Using the shared drawReflection from Components.kt
+                        drawReflection(isDarkMode, floorY, 0.25f) { isReflection ->
 
-                            // B. NECK
-                            drawRoundRect(brush = Brush.linearGradient(colors = listOf(NeonRed, Color(0xFF7F1D1D))), topLeft = Offset(center.x - neckOffsetX, center.y - neckOffsetY), size = Size(neckW, neckH), cornerRadius = CornerRadius(2f, 2f))
+                            // 1. SHADOW (Stays flat! Outside the rotation block)
+                            if (!isReflection) {
+                                val shadowW = bodyRadius * 2f
+                                val shadowH = shadowW * 0.2f
 
-                            // C. BODY
-                            val bodyOffsetX = 4.dp.toPx(); val bodyOffsetY = 4.dp.toPx(); val gradRadius = 16.dp.toPx()
-                            drawCircle(brush = Brush.radialGradient(colors = listOf(Color(0xFFFF6B6B), NeonRed, Color(0xFF991B1B)), center = Offset(center.x - bodyOffsetX, center.y - bodyOffsetY), radius = gradRadius), radius = bodyRadius, center = center)
+                                drawOval(
+                                    color = Color.Black.copy(alpha = 0.2f),
+                                    topLeft = Offset(center.x - shadowW / 2, floorY - shadowH / 2),
+                                    size = Size(shadowW, shadowH)
+                                )
+                            }
 
-                            // D. GLINT
-                            val glintPivot = 3.dp.toPx(); val glintOffsetX = 8.dp.toPx(); val glintOffsetY = 8.dp.toPx(); val glintW = 8.dp.toPx(); val glintH = 5.dp.toPx()
-                            withTransform({ rotate(-20f, pivot = Offset(center.x - glintPivot, center.y - glintPivot)) }) {
-                                drawOval(brush = Brush.linearGradient(colors = listOf(Color.White.copy(0.4f), Color.White.copy(0.05f))), topLeft = Offset(center.x - glintOffsetX, center.y - glintOffsetY), size = Size(glintW, glintH))
+                            // 2. ROTATING BOMB PARTS
+                            withTransform({ rotate(currentRotation, pivot = center) }) {
+
+                                // A. FUSE
+                                val fuseStart = Offset(center.x, center.y - 14.dp.toPx())
+                                setupFusePath.reset()
+                                setupFusePath.moveTo(fuseStart.x, fuseStart.y)
+                                setupFusePath.lineTo(fuseStart.x, fuseStart.y - 2.dp.toPx())
+                                setupFusePath.cubicTo(
+                                    fuseStart.x, fuseStart.y - 7.dp.toPx(),
+                                    fuseStart.x + 7.dp.toPx(), fuseStart.y - 7.dp.toPx(),
+                                    fuseStart.x + 8.dp.toPx(), fuseStart.y + 1.dp.toPx()
+                                )
+                                drawPath(path = setupFusePath, brush = Brush.linearGradient(colors = listOf(Color(0xFFB91C1C), NeonRed, Color(0xFFB91C1C))), style = bombFuseStroke)
+
+                                // B. NECK
+                                drawRoundRect(brush = Brush.linearGradient(colors = listOf(NeonRed, Color(0xFF7F1D1D))), topLeft = Offset(center.x - neckOffsetX, center.y - neckOffsetY), size = Size(neckW, neckH), cornerRadius = CornerRadius(2f, 2f))
+
+                                // C. BODY
+                                val bodyOffsetX = 4.dp.toPx(); val bodyOffsetY = 4.dp.toPx(); val gradRadius = 16.dp.toPx()
+                                drawCircle(brush = Brush.radialGradient(colors = listOf(Color(0xFFFF6B6B), NeonRed, Color(0xFF991B1B)), center = Offset(center.x - bodyOffsetX, center.y - bodyOffsetY), radius = gradRadius), radius = bodyRadius, center = center)
+
+                                // D. GLINT
+                                val glintPivot = 3.dp.toPx(); val glintOffsetX = 8.dp.toPx(); val glintOffsetY = 8.dp.toPx(); val glintW = 8.dp.toPx(); val glintH = 5.dp.toPx()
+                                withTransform({ rotate(-20f, pivot = Offset(center.x - glintPivot, center.y - glintPivot)) }) {
+                                    drawOval(brush = Brush.linearGradient(colors = listOf(Color.White.copy(0.4f), Color.White.copy(0.05f))), topLeft = Offset(center.x - glintOffsetX, center.y - glintOffsetY), size = Size(glintW, glintH))
+                                }
                             }
                         }
                     }
                 }
+
+                // 2. THE LANGUAGE SWITCH (Top Right)
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(top = 24.dp, end = 0.dp) // <--- FIX 2: Nudges it down and left!
+                ) {
+                    LanguageSwitch(colors = colors, onClick = onToggleLanguage)
+                }
             }
+
             Spacer(modifier = Modifier.height(4.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("TICKTICK", color = colors.text, fontSize = 26.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont, letterSpacing = 1.sp)
-                Text("BOOM", color = NeonRed, fontSize = 26.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont, letterSpacing = 1.sp)
+                Text(stringResource(R.string.app_title_tick), color = colors.text, fontSize = 26.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont, letterSpacing = 1.sp)
+                Text(stringResource(R.string.app_title_boom), color = NeonRed, fontSize = 26.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont, letterSpacing = 1.sp)
             }
-            Text("RANDOMIZED DETONATION SEQUENCE", color = colors.textSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, modifier = Modifier.padding(top=4.dp), fontFamily = CustomFont)
+            Text(stringResource(R.string.randomized_sequence), color = colors.textSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, modifier = Modifier.padding(top=4.dp), fontFamily = CustomFont)
             Spacer(modifier = Modifier.height(32.dp))
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                StyleButton("DIGITAL", Icons.Rounded.DeveloperBoard, style == "C4", NeonCyan, colors) { saveStyle("C4") }
-                StyleButton("FUSE", Icons.Rounded.LocalFireDepartment, style == "FUSE", NeonOrange, colors) { saveStyle("FUSE") }
-                StyleButton("TIMER", Icons.Rounded.AccessTime, style == "DYNAMITE", NeonRed, colors) { saveStyle("DYNAMITE") }
+                StyleButton(stringResource(R.string.style_digital), Icons.Rounded.DeveloperBoard, style == "C4", NeonCyan, colors) { saveStyle("C4") }
+                StyleButton(stringResource(R.string.style_fuse), Icons.Rounded.LocalFireDepartment, style == "FUSE", NeonOrange, colors) { saveStyle("FUSE") }
+                StyleButton(stringResource(R.string.style_timer), Icons.Rounded.AccessTime, style == "DYNAMITE", NeonRed, colors) { saveStyle("DYNAMITE") }
             }
             Spacer(modifier = Modifier.height(24.dp))
 
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                TimeInput("MIN SECS", minText, { saveMin(it) }, NeonCyan, colors, Modifier.weight(1f), { validateMin() })
-                TimeInput("MAX SECS", maxText, { saveMax(it) }, NeonRed, colors, Modifier.weight(1f), { validateMax() })
+                TimeInput(stringResource(R.string.min_secs), minText, { saveMin(it) }, NeonCyan, colors, Modifier.weight(1f), { validateMin() })
+                TimeInput(stringResource(R.string.max_secs), maxText, { saveMax(it) }, NeonRed, colors, Modifier.weight(1f), { validateMax() })
             }
             Spacer(modifier = Modifier.height(32.dp))
 
-            VolumeSlider("TIMER VOLUME", timerVol, NeonCyan, colors) { saveTimerVol(it) }
+            VolumeSlider(stringResource(R.string.timer_volume), timerVol, NeonCyan, colors) { saveTimerVol(it) }
             Spacer(modifier = Modifier.height(16.dp))
-            VolumeSlider("EXPLOSION VOLUME", explodeVol, NeonRed, colors) { saveExplodeVol(it) }
+            VolumeSlider(stringResource(R.string.explosion_volume), explodeVol, NeonRed, colors) { saveExplodeVol(it) }
             Spacer(modifier = Modifier.height(24.dp))
 
             Row(modifier = Modifier.fillMaxWidth().height(48.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
                 Icon(Icons.Filled.LightMode, null, tint = if(!isDarkMode) NeonOrange else colors.textSecondary, modifier = Modifier.size(20.dp))
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("LIGHT MODE", color = if(!isDarkMode) NeonOrange else colors.textSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont)
+                Text(stringResource(R.string.light_mode), color = if(!isDarkMode) NeonOrange else colors.textSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont)
                 Spacer(modifier = Modifier.width(16.dp))
                 Switch(
                     checked = isDarkMode,
@@ -318,7 +334,7 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, onToggleTheme: () -> Uni
                     colors = SwitchDefaults.colors(checkedThumbColor = NeonCyan, checkedTrackColor = Color.Transparent, checkedBorderColor = NeonCyan, uncheckedThumbColor = NeonOrange, uncheckedTrackColor = Color.Transparent, uncheckedBorderColor = NeonOrange)
                 )
                 Spacer(modifier = Modifier.width(16.dp))
-                Text("DARK MODE", color = if(isDarkMode) NeonCyan else colors.textSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont)
+                Text(stringResource(R.string.dark_mode), color = if(isDarkMode) NeonCyan else colors.textSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont)
                 Spacer(modifier = Modifier.width(8.dp))
                 Icon(Icons.Filled.DarkMode, null, tint = if(isDarkMode) NeonCyan else colors.textSecondary, modifier = Modifier.size(20.dp))
             }
@@ -352,7 +368,7 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, onToggleTheme: () -> Uni
             ) {
                 Icon(Icons.Filled.PlayArrow, null, tint = Color.White)
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("ARM SYSTEM", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp, fontFamily = CustomFont)
+                Text(stringResource(R.string.arm_system), color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp, fontFamily = CustomFont)
             }
             Spacer(modifier = Modifier.height(48.dp))
         }
@@ -582,10 +598,10 @@ fun BombScreen(
         Box(modifier = Modifier.fillMaxSize().padding(16.dp).zIndex(1f), contentAlignment = Alignment.Center) {
             if (isLandscape) {
                 val (ghostText, ghostSize) = when (style) {
-                    "FUSE" -> "CRITICAL" to 48.sp
-                    "FROG" -> "RIBBIT!!" to 48.sp
-                    "HEN" -> "CRACKING" to 48.sp
-                    else -> "DETONATION SEQUENCE" to 12.sp
+                    "FUSE" -> stringResource(R.string.critical) to 48.sp
+                    "FROG" -> stringResource(R.string.ribbit_panic) to 48.sp
+                    "HEN" -> stringResource(R.string.cracking) to 48.sp
+                    else -> stringResource(R.string.detonation_sequence) to 12.sp
                 }
 
                 val leftPadding = if (style == "HEN") 160.dp else 192.dp
@@ -782,7 +798,7 @@ fun ExplosionScreen(colors: AppColors, style: String?, explosionOrigin: Offset? 
         val flashAlpha = (1f - (animationProgress.value * 2.0f)).coerceIn(0f, 1f)
         if (flashAlpha > 0f) Box(modifier = Modifier.fillMaxSize().background(Color.White.copy(alpha = flashAlpha)))
 
-        val titleText = if (style == "FROG") "CROAKED" else "BOOM"
+        val titleText = if (style == "FROG") stringResource(R.string.croaked) else stringResource(R.string.boom)
         val titleSize = if (style == "FROG") 72.sp else 96.sp
 
         // --- NEW FIERY BRUSH (Old Brighter Colors) ---
@@ -808,7 +824,7 @@ fun ExplosionScreen(colors: AppColors, style: String?, explosionOrigin: Offset? 
 
             // The visual button listens to the shared source to animate, but doesn't need click logic
             ActionButton(
-                text = "RESTART",
+                text = stringResource(R.string.restart),
                 icon = Icons.Filled.Refresh,
                 color = Slate900.copy(alpha = 0.5f),
                 textColor = NeonOrange,

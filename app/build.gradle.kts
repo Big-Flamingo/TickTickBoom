@@ -43,6 +43,7 @@ dependencies {
     // FIXED: Now using the Version Catalog alias
     implementation(libs.androidx.material.icons.extended)
 
+    implementation("androidx.appcompat:appcompat:1.6.1")
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
