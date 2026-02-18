@@ -133,6 +133,10 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, onToggleTheme: () -> Uni
 
     val scope = rememberCoroutineScope()
 
+    // --- ADD THIS BLOCK ---
+    val windowInfo = androidx.compose.ui.platform.LocalWindowInfo.current
+    val screenHeightPx = windowInfo.containerSize.height.toFloat()
+
     fun saveMin(text: String) { minText = text; text.toIntOrNull()?.let { prefs.edit { putInt("min", it) } } }
     fun saveMax(text: String) { maxText = text; text.toIntOrNull()?.let { prefs.edit { putInt("max", it) } } }
     fun saveStyle(newStyle: String) { style = newStyle; prefs.edit { putString("style", newStyle) }; AudioService.playClick() }
@@ -192,8 +196,7 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, onToggleTheme: () -> Uni
             AudioService.playBombCroak()
             wobbleAnim.snapTo(0f); wobbleAnim.animateTo(-15f, tween(50)); wobbleAnim.animateTo(15f, tween(50)); wobbleAnim.animateTo(0f, spring(stiffness = Spring.StiffnessMediumLow))
             if (easterEggTaps >= 3) {
-                val screenHeight = context.resources.displayMetrics.heightPixels.toFloat()
-                flyAwayAnim.animateTo(screenHeight + 500f, tween(800, easing = FastOutSlowInEasing))
+                flyAwayAnim.animateTo(screenHeightPx + 500f, tween(800, easing = FastOutSlowInEasing))
 
                 val min = minText.toIntOrNull() ?: 5
                 var max = maxText.toIntOrNull() ?: 10
@@ -212,8 +215,7 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, onToggleTheme: () -> Uni
             AudioService.stopHoldingCluck()
             AudioService.playLoudCluck()
 
-            val screenHeight = context.resources.displayMetrics.heightPixels.toFloat()
-            flyAwayAnim.animateTo(-screenHeight - 500f, tween(800, easing = FastOutSlowInEasing))
+            flyAwayAnim.animateTo(-screenHeightPx - 500f, tween(800, easing = FastOutSlowInEasing))
 
             val min = minText.toIntOrNull() ?: 5
             var max = maxText.toIntOrNull() ?: 10

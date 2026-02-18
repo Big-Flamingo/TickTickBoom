@@ -433,8 +433,8 @@ fun LanguageSwitch(
     onClick: () -> Unit
 ) {
     // 1. Determine current language state
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val currentLocale = androidx.core.os.ConfigurationCompat.getLocales(context.resources.configuration)[0]
+    val configuration = androidx.compose.ui.platform.LocalConfiguration.current
+    val currentLocale = androidx.core.os.ConfigurationCompat.getLocales(configuration)[0]
     val isEnglish = currentLocale?.language == "en"
 
     // 2. Define the animation constants
