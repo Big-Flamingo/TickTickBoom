@@ -4,16 +4,22 @@ import android.app.Activity
 import android.content.Context
 import android.os.Bundle
 import android.view.WindowManager
-import androidx.appcompat.app.AppCompatActivity // <-- CHANGED
-import androidx.appcompat.app.AppCompatDelegate // <-- NEW
-import androidx.core.os.LocaleListCompat // <-- NEW
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.app.AppCompatDelegate
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -21,6 +27,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.content.edit
+import androidx.core.os.LocaleListCompat
 import androidx.core.view.WindowCompat
 import kotlin.random.Random
 

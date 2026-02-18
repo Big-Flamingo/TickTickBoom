@@ -2,7 +2,16 @@ package com.flamingo.ticktickboom
 
 import android.graphics.BlurMaskFilter
 import android.graphics.BlurMaskFilter.Blur
-import androidx.compose.animation.core.*
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -10,30 +19,74 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.rounded.DeveloperBoard
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.listSaver
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.snapshots.SnapshotStateList
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawWithCache // <--- New optimization import
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.*
-import androidx.compose.ui.graphics.drawscope.*
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Paint
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathOperation
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.TileMode
+import androidx.compose.ui.graphics.asAndroidPath
+import androidx.compose.ui.graphics.asComposePath
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.graphics.drawscope.withTransform
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.Font
@@ -43,14 +96,13 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlin.math.*
-import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import kotlinx.coroutines.launch
-import androidx.compose.animation.core.Animatable
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.res.stringResource
+import kotlin.math.atan2
+import kotlin.math.ceil
+import kotlin.math.cos
+import kotlin.math.pow
+import kotlin.math.sin
+import kotlin.math.sqrt
 
 // --- FONTS ---
 val VisualsFont = FontFamily(Font(R.font.orbitron_bold))
@@ -775,44 +827,9 @@ fun DynamiteVisual(
         )
     }
 
-    @Suppress("RemoveExplicitTypeArguments", "UNCHECKED_CAST")
-    val textEffectsSaver = listSaver<SnapshotStateList<VisualText>, Any>(
-        save = { stateList ->
-            stateList.map {
-                listOf<Any>(
-                    it.text,
-                    it.x,
-                    it.y,
-                    it.color.toArgb(),
-                    it.gradientColors?.map { c -> c.toArgb() } ?: emptyList<Int>(),
-                    it.alpha,
-                    it.life,
-                    it.fontSize
-                )
-            }
-        },
-        restore = { savedList ->
-            val mutableList = mutableStateListOf<VisualText>()
-            savedList.forEach { item ->
-                val p = item as List<Any>
-                val g = p[4] as List<Int>
-                mutableList.add(VisualText(
-                    text = p[0] as String,
-                    x = (p[1] as? Number)?.toFloat() ?: 0f,
-                    y = (p[2] as? Number)?.toFloat() ?: 0f,
-                    color = Color(p[3] as Int),
-                    gradientColors = if (g.isEmpty()) null else g.map { Color(it) },
-                    alpha = (p[5] as? Number)?.toFloat() ?: 1f,
-                    life = (p[6] as? Number)?.toFloat() ?: 0f,
-                    fontSize = (p[7] as? Number)?.toFloat() ?: 0f
-                ))
-            }
-            mutableList
-        }
-    )
-    val textEffects = rememberSaveable(saver = textEffectsSaver) { mutableStateListOf() }
-    var lastTriggerStep by rememberSaveable { mutableIntStateOf(-1) }
-    var hasShownDing by rememberSaveable { mutableStateOf(false) }
+    val textEffects = remember { mutableStateListOf<VisualText>() }
+    var lastTriggerStep by remember { mutableIntStateOf(-1) }
+    var hasShownDing by remember { mutableStateOf(false) }
 
     // --- NEW: Bell Decay Animation ---
     val vibrationMagnitude = remember { Animatable(1f) }

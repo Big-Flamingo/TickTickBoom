@@ -1,17 +1,16 @@
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
 }
 
 android {
     namespace = "com.flamingo.ticktickboom"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.flamingo.ticktickboom"
         minSdk = 24
-        targetSdk = 35
+        targetSdk = 36
         versionCode = 1
         versionName = "1.0"
 
@@ -31,9 +30,6 @@ android {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
-    kotlinOptions {
-        jvmTarget = "11"
-    }
     buildFeatures {
         compose = true
     }
@@ -42,8 +38,7 @@ android {
 dependencies {
     // FIXED: Now using the Version Catalog alias
     implementation(libs.androidx.material.icons.extended)
-
-    implementation("androidx.appcompat:appcompat:1.6.1")
+    implementation(libs.androidx.appcompat)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)

@@ -2,12 +2,37 @@ package com.flamingo.ticktickboom
 
 import android.content.Context
 import android.content.res.Configuration
-import androidx.compose.animation.core.*
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -19,9 +44,21 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.rounded.AccessTime
 import androidx.compose.material.icons.rounded.DeveloperBoard
 import androidx.compose.material.icons.rounded.LocalFireDepartment
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -40,22 +77,19 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
-import androidx.compose.animation.animateColorAsState
 import androidx.core.content.edit
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.random.Random
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.res.stringResource
 
 // NOTE: Uses VisualParticle from AppModels.kt
 // NOTE: Uses drawReflection and StrokeGlowText from Components.kt
@@ -403,16 +437,16 @@ fun BombScreen(
     val isCritical = timeLeft <= 5f
     var isFuseFinished by remember { mutableStateOf(isCriticalStart) }
 
-    var hasPlayedDing by rememberSaveable { mutableStateOf(false) }
-    var hasPlayedFlail by rememberSaveable { mutableStateOf(false) }
-    var hasPlayedAlert by rememberSaveable { mutableStateOf(false) }
-    var hasPlayedFly by rememberSaveable { mutableStateOf(false) }
+    var hasPlayedDing by remember { mutableStateOf(false) }
+    var hasPlayedFlail by remember { mutableStateOf(false) }
+    var hasPlayedAlert by remember { mutableStateOf(false) }
+    var hasPlayedFly by remember { mutableStateOf(false) }
 
-    var lastTickRunTime by rememberSaveable { mutableLongStateOf((initialElapsed * 1000).toLong() - 1000) }
+    var lastTickRunTime by remember { mutableLongStateOf((initialElapsed * 1000).toLong() - 1000) }
 
     // HEN ANIMATION STATE (Linear, always starts at 0)
-    var henSequenceElapsed by rememberSaveable { mutableFloatStateOf(0f) }
-    var isHenSequenceActive by rememberSaveable { mutableStateOf(false) }
+    var henSequenceElapsed by remember { mutableFloatStateOf(0f) }
+    var isHenSequenceActive by remember { mutableStateOf(false) }
 
     val flashAnim = remember { Animatable(0f) }
     val eggWobbleAnim = remember { Animatable(0f) }
@@ -429,7 +463,7 @@ fun BombScreen(
     }
 
     // Save the last played stage so it survives rotation
-    var lastPlayedCrackStage by rememberSaveable { mutableIntStateOf(0) }
+    var lastPlayedCrackStage by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(crackStage) {
         if (style == "HEN" && crackStage > lastPlayedCrackStage && !isPaused) {
@@ -683,18 +717,18 @@ fun ExplosionScreen(colors: AppColors, style: String?, explosionOrigin: Offset? 
         List(30) { _ -> SmokeParticle(x = 0f, y = 0f, vx = (Math.random() * 100 - 50).toFloat(), vy = (Math.random() * 100 - 50).toFloat(), size = (20 + Math.random() * 40).toFloat(), alpha = 0.8f, life = 1f, maxLife = 1f) }
     }
 
-    var hasPlayedExplosion by rememberSaveable { mutableStateOf(false) }
+    var hasPlayedExplosion by remember { mutableStateOf(false) }
     val animationProgress = remember { Animatable(if (hasPlayedExplosion) 1f else 0f) }
 
-    var henAnimTime by rememberSaveable { mutableFloatStateOf(2.5f) }
-    var isHenPaused by rememberSaveable { mutableStateOf(false) }
+    var henAnimTime by remember { mutableFloatStateOf(2.5f) }
+    var isHenPaused by remember { mutableStateOf(false) }
 
-    var hasPlayedWhistle by rememberSaveable { mutableStateOf(false) }
-    var hasPlayedThud by rememberSaveable { mutableStateOf(false) }
-    var hasPlayedSlide by rememberSaveable { mutableStateOf(false) }
+    var hasPlayedWhistle by remember { mutableStateOf(false) }
+    var hasPlayedThud by remember { mutableStateOf(false) }
+    var hasPlayedSlide by remember { mutableStateOf(false) }
 
-    var isPainedBeakClosed by rememberSaveable { mutableStateOf(false) }
-    var isPainedBeakOpen by rememberSaveable { mutableStateOf(false) }
+    var isPainedBeakClosed by remember { mutableStateOf(false) }
+    var isPainedBeakOpen by remember { mutableStateOf(false) }
 
     val scope = rememberCoroutineScope()
 
