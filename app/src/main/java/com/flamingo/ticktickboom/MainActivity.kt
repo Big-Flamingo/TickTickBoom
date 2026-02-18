@@ -24,9 +24,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.core.content.edit
+import androidx.core.os.ConfigurationCompat
 import androidx.core.os.LocaleListCompat
 import androidx.core.view.WindowCompat
 import kotlin.random.Random
@@ -163,24 +166,52 @@ fun BombApp() {
         else if (appState == AppState.EXPLODED) handleReset()
     }
 
-    Surface(modifier = Modifier.fillMaxSize(), color = colors.background) {
-        when (appState) {
-            AppState.SETUP -> SetupScreen(colors, isDarkMode, { toggleTheme() }, { handleStart(it) }, { toggleLanguage() })
-            AppState.RUNNING -> BombScreen(
-                duration = duration,
-                startTime = startTime,
-                style = bombStyle,
-                colors = colors,
-                isDarkMode = isDarkMode,
-                isPaused = isPaused,
-                totalPausedTime = totalPausedTime,
-                currentPauseStart = currentPauseStart,
-                onExplode = { handleExplode() },
-                onAbort = { handleAbort() },
-                onTogglePause = { handleTogglePause() },
-                onUpdateExplosionOrigin = { explosionOrigin = it }
-            )
-            AppState.EXPLODED -> ExplosionScreen(colors, bombStyle, explosionOrigin) { handleReset() }
+    // --- 1. NEW: DETECT LANGUAGE AND BOOST FONT SCALE ---
+    val configuration = LocalConfiguration.current
+    val currentLocale = ConfigurationCompat.getLocales(configuration)[0]
+    val isChinese = currentLocale?.language == "zh"
+
+    val currentDensity = LocalDensity.current
+    val customDensity = remember(currentDensity, isChinese) {
+        androidx.compose.ui.unit.Density(
+            density = currentDensity.density,
+            // Boost Chinese fonts by 20% (1.2f). Leave English at 1.0f.
+            fontScale = if (isChinese) currentDensity.fontScale * 1.2f else currentDensity.fontScale
+        )
+    }
+
+    // --- 2. NEW: WRAP THE SURFACE IN THE CUSTOM DENSITY ---
+    androidx.compose.runtime.CompositionLocalProvider(LocalDensity provides customDensity) {
+        Surface(modifier = Modifier.fillMaxSize(), color = colors.background) {
+            when (appState) {
+                AppState.SETUP -> SetupScreen(
+                    colors,
+                    isDarkMode,
+                    { toggleTheme() },
+                    { handleStart(it) },
+                    { toggleLanguage() })
+
+                AppState.RUNNING -> BombScreen(
+                    duration = duration,
+                    startTime = startTime,
+                    style = bombStyle,
+                    colors = colors,
+                    isDarkMode = isDarkMode,
+                    isPaused = isPaused,
+                    totalPausedTime = totalPausedTime,
+                    currentPauseStart = currentPauseStart,
+                    onExplode = { handleExplode() },
+                    onAbort = { handleAbort() },
+                    onTogglePause = { handleTogglePause() },
+                    onUpdateExplosionOrigin = { explosionOrigin = it }
+                )
+
+                AppState.EXPLODED -> ExplosionScreen(
+                    colors,
+                    bombStyle,
+                    explosionOrigin
+                ) { handleReset() }
+            }
         }
     }
 }

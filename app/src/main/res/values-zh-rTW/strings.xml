@@ -8,25 +8,28 @@
     <string name="style_digital">數位</string>
     <string name="style_fuse">導火線</string>
     <string name="style_timer">定時器</string>
-    <string name="min_secs">最少秒數</string>
-    <string name="max_secs">最多秒數</string>
+    <string name="min_secs">最短秒數</string>
+    <string name="max_secs">最長秒數</string>
     <string name="timer_volume">計時音量</string>
     <string name="explosion_volume">爆炸音量</string>
     <string name="light_mode">淺色模式</string>
     <string name="dark_mode">深色模式</string>
-    <string name="arm_system">啟動系統</string>
+    <string name="arm_system">武裝系統</string>
 
-    <string name="armed">已啟動</string>
+    <string name="armed">已武裝</string>
     <string name="paused">已暫停</string>
     <string name="system_paused">系統已暫停</string>
     <string name="extinguished">已熄滅</string>
-    <string name="critical">危急</string>
+    <string name="critical">臨界狀態</string>
     <string name="detonation_sequence">起爆程序</string>
     <string name="detonation_imminent">即將引爆</string>
     <string name="fuse_burning">導火線燃燒中</string>
-    <string name="high_voltage_warning">高壓電 // 請勿觸碰</string>
+    <string name="high_voltage_warning">高壓電 // 請勿擅動</string>
     <string name="abort">中止</string>
+    <string name="empty_time">--:--</string>
 
+    <string name="acme_corp">安心工業</string>
+    <string name="high_explosive">"高    爆    炸    藥"</string>
     <string name="tick">滴答</string>
     <string name="ding">叮！</string>
 
@@ -35,9 +38,9 @@
     <string name="ribbit_question">呱？</string>
     <string name="ribbit_panic">呱！！</string>
     <string name="cluck">咯</string>
-    <string name="cracking">破裂中</string>
+    <string name="cracking">碎裂中</string>
 
-    <string name="boom">砰</string>
+    <string name="boom">轟</string>
     <string name="croaked">呱了</string>
     <string name="restart">重新開始</string>
 </resources>
