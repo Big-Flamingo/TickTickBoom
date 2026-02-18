@@ -489,6 +489,19 @@ fun FrogVisual(timeLeft: Float, isCritical: Boolean, isPaused: Boolean, onToggle
     }
 }
 
+// This lives outside the UI, so it survives screen transitions!
+object HenCache {
+    var cachedSize = Size.Zero
+    val combPath = Path()
+    val upperBeakPath = Path()
+    val lowerBeakPath = Path()
+    val wattlePath = Path()
+    val wincePath = Path()
+    val crack1Path = Path()
+    val crack2Path = Path()
+    val crack3Path = Path()
+}
+
 @Composable
 fun HenVisual(modifier: Modifier = Modifier, timeLeft: Float, isPaused: Boolean, onTogglePause: () -> Unit, eggWobbleRotation: Float, henSequenceElapsed: Float, showEgg: Boolean = true, crackStage: Int = 0, isPainedBeakOpen: Boolean = false, isPainedBeakClosed: Boolean = false, isDarkMode: Boolean = false) {
     val infiniteTransition = rememberInfiniteTransition("hen_anim")
@@ -556,8 +569,6 @@ fun HenVisual(modifier: Modifier = Modifier, timeLeft: Float, isPaused: Boolean,
     LaunchedEffect(Unit) { while (true) { delay(Random.nextLong(2000, 4000)); isBlinking = true; delay(150); isBlinking = false } }
 
     val wingFlapRotation by infiniteTransition.animateFloat(0f, 45f, infiniteRepeatable(tween(150, easing = LinearEasing), RepeatMode.Reverse), "wing")
-    val combPath = remember { Path() }; val wattlePath = remember { Path() }; val upperBeakPath = remember { Path() }; val lowerBeakPath = remember { Path() }; val wincePath = remember { Path() }; val crack1Path = remember { Path() }; val crack2Path = remember { Path() }; val crack3Path = remember { Path() }
-    var cachedSize by remember { mutableStateOf(Size.Zero) }
     val scope = rememberCoroutineScope(); val boingAnim = remember { Animatable(1f) }
     val fraction = timeLeft % 1f
     var isStandardBeakOpen = !isPaused && (fraction > 0.8f && fraction < 0.95f); if (henSequenceElapsed > 0.0f) isStandardBeakOpen = false
@@ -613,37 +624,37 @@ fun HenVisual(modifier: Modifier = Modifier, timeLeft: Float, isPaused: Boolean,
         }) {
             val cx = size.width / 2; val cy = size.height / 2
 
-            if (size != cachedSize) {
+            if (size != HenCache.cachedSize) {
                 val cRadius = 28f * d; val cX = 0f * d; val cY = -henBodyRadius + 5f * d
                 val lRadius = 20f * d; val lX = -38f * d; val lY = -henBodyRadius + 10f * d
                 val rRadius = 32f * d; val rX = 50f * d; val rY = -henBodyRadius + 5f * d
 
-                combPath.reset()
-                combPath.addOval(Rect(center = Offset(cX, cY), radius = cRadius))
-                combPath.addOval(Rect(center = Offset(lX, lY), radius = lRadius))
-                combPath.addOval(Rect(center = Offset(rX, rY), radius = rRadius))
+                HenCache.combPath.reset()
+                HenCache.combPath.addOval(Rect(center = Offset(cX, cY), radius = cRadius))
+                HenCache.combPath.addOval(Rect(center = Offset(lX, lY), radius = lRadius))
+                HenCache.combPath.addOval(Rect(center = Offset(rX, rY), radius = rRadius))
 
                 val faceEdgeX = henBodyRadius * 0.82f; val beakYBase = -6f * d; val beakH = 24f * d; val beakLen = 26f * d
-                upperBeakPath.reset(); upperBeakPath.moveTo(faceEdgeX, beakYBase - beakH/2)
-                upperBeakPath.quadraticTo(faceEdgeX + beakLen * 0.5f, beakYBase - beakH * 0.7f, faceEdgeX + beakLen, beakYBase)
-                upperBeakPath.lineTo(faceEdgeX, beakYBase); upperBeakPath.close()
+                HenCache.upperBeakPath.reset(); HenCache.upperBeakPath.moveTo(faceEdgeX, beakYBase - beakH/2)
+                HenCache.upperBeakPath.quadraticTo(faceEdgeX + beakLen * 0.5f, beakYBase - beakH * 0.7f, faceEdgeX + beakLen, beakYBase)
+                HenCache.upperBeakPath.lineTo(faceEdgeX, beakYBase); HenCache.upperBeakPath.close()
 
-                lowerBeakPath.reset(); lowerBeakPath.moveTo(faceEdgeX, beakYBase); lowerBeakPath.lineTo(faceEdgeX + beakLen * 0.8f, beakYBase)
-                lowerBeakPath.quadraticTo(faceEdgeX + beakLen * 0.3f, beakYBase + beakH * 0.7f, faceEdgeX, beakYBase + beakH / 2); lowerBeakPath.close()
+                HenCache.lowerBeakPath.reset(); HenCache.lowerBeakPath.moveTo(faceEdgeX, beakYBase); HenCache.lowerBeakPath.lineTo(faceEdgeX + beakLen * 0.8f, beakYBase)
+                HenCache.lowerBeakPath.quadraticTo(faceEdgeX + beakLen * 0.3f, beakYBase + beakH * 0.7f, faceEdgeX, beakYBase + beakH / 2); HenCache.lowerBeakPath.close()
 
                 val lowerBeakBottomY = beakYBase + beakH / 2
                 val wattleWidth = 24f * d; val wattleHeight = 32f * d
-                wattlePath.reset(); wattlePath.moveTo(faceEdgeX, lowerBeakBottomY)
-                wattlePath.cubicTo(faceEdgeX - wattleWidth, lowerBeakBottomY + wattleHeight * 0.5f, faceEdgeX - (wattleWidth * 0.5f), lowerBeakBottomY + wattleHeight, faceEdgeX, lowerBeakBottomY + wattleHeight)
-                wattlePath.cubicTo(faceEdgeX + (wattleWidth * 0.5f), lowerBeakBottomY + wattleHeight, faceEdgeX + wattleWidth, lowerBeakBottomY + wattleHeight * 0.5f, faceEdgeX, lowerBeakBottomY)
-                wattlePath.close()
+                HenCache.wattlePath.reset(); HenCache.wattlePath.moveTo(faceEdgeX, lowerBeakBottomY)
+                HenCache.wattlePath.cubicTo(faceEdgeX - wattleWidth, lowerBeakBottomY + wattleHeight * 0.5f, faceEdgeX - (wattleWidth * 0.5f), lowerBeakBottomY + wattleHeight, faceEdgeX, lowerBeakBottomY + wattleHeight)
+                HenCache.wattlePath.cubicTo(faceEdgeX + (wattleWidth * 0.5f), lowerBeakBottomY + wattleHeight, faceEdgeX + wattleWidth, lowerBeakBottomY + wattleHeight * 0.5f, faceEdgeX, lowerBeakBottomY)
+                HenCache.wattlePath.close()
 
-                val eyeX = faceEdgeX - 25f * d; val eyeYBase = -25f * d; wincePath.reset(); wincePath.moveTo(eyeX - 8f * d, eyeYBase - 8f * d); wincePath.lineTo(eyeX, eyeYBase); wincePath.lineTo(eyeX - 8f * d, eyeYBase + 8f * d)
+                val eyeX = faceEdgeX - 25f * d; val eyeYBase = -25f * d; HenCache.wincePath.reset(); HenCache.wincePath.moveTo(eyeX - 8f * d, eyeYBase - 8f * d); HenCache.wincePath.lineTo(eyeX, eyeYBase); HenCache.wincePath.lineTo(eyeX - 8f * d, eyeYBase + 8f * d)
                 val eggHeight = 150f * d; val eggTop = (cy + henBodyRadius - 10f * d) - eggHeight; val eggCenterY = eggTop + eggHeight/2
-                crack1Path.reset(); crack1Path.moveTo(0f, eggTop + eggHeight * 0.1f); crack1Path.lineTo(5f, eggTop + eggHeight * 0.3f); crack1Path.lineTo(-5f, eggCenterY)
-                crack2Path.reset(); crack2Path.moveTo(-5f, eggCenterY); crack2Path.lineTo(-25f, eggCenterY + eggHeight * 0.2f); crack2Path.lineTo(-15f, eggCenterY + eggHeight * 0.35f)
-                crack3Path.reset(); crack3Path.moveTo(-25f, eggCenterY + eggHeight * 0.2f); crack3Path.lineTo(10f, eggCenterY + eggHeight * 0.25f); crack3Path.lineTo(35f, eggCenterY + eggHeight * 0.4f)
-                cachedSize = size
+                HenCache.crack1Path.reset(); HenCache.crack1Path.moveTo(0f, eggTop + eggHeight * 0.1f); HenCache.crack1Path.lineTo(5f, eggTop + eggHeight * 0.3f); HenCache.crack1Path.lineTo(-5f, eggCenterY)
+                HenCache.crack2Path.reset(); HenCache.crack2Path.moveTo(-5f, eggCenterY); HenCache.crack2Path.lineTo(-25f, eggCenterY + eggHeight * 0.2f); HenCache.crack2Path.lineTo(-15f, eggCenterY + eggHeight * 0.35f)
+                HenCache.crack3Path.reset(); HenCache.crack3Path.moveTo(-25f, eggCenterY + eggHeight * 0.2f); HenCache.crack3Path.lineTo(10f, eggCenterY + eggHeight * 0.25f); HenCache.crack3Path.lineTo(35f, eggCenterY + eggHeight * 0.4f)
+                HenCache.cachedSize = size
             }
 
             val floorY = cy + henBodyRadius
@@ -662,7 +673,7 @@ fun HenVisual(modifier: Modifier = Modifier, timeLeft: Float, isPaused: Boolean,
                 withTransform({ scale(stretchX, squashY, pivot = Offset(cx, henY + henBodyRadius)) }) {
 
                     withTransform({ translate(cx, henY) }) {
-                        drawPath(combPath, brush = combBrush)
+                        drawPath(HenCache.combPath, brush = combBrush)
                     }
 
                     withTransform({ translate(cx, henY) }) {
@@ -677,14 +688,14 @@ fun HenVisual(modifier: Modifier = Modifier, timeLeft: Float, isPaused: Boolean,
                 val faceShiftX = faceRelX * (stretchX - 1f); val faceShiftY = (faceRelY - henBodyRadius) * (squashY - 1f)
 
                 withTransform({ translate(cx + faceShiftX, henY + faceShiftY) }) {
-                    drawPath(wattlePath, brush = wattleBrush)
+                    drawPath(HenCache.wattlePath, brush = wattleBrush)
 
                     val relBeakY = -6f * d
                     withTransform({ rotate(if (effectiveBeakOpen) -15f else 0f, pivot = Offset(faceRelX, relBeakY)) }) {
-                        drawPath(upperBeakPath, brush = beakBrush)
+                        drawPath(HenCache.upperBeakPath, brush = beakBrush)
                     }
                     withTransform({ rotate(if (effectiveBeakOpen) 10f else 0f, pivot = Offset(faceRelX, relBeakY)) }) {
-                        drawPath(lowerBeakPath, brush = beakBrush)
+                        drawPath(HenCache.lowerBeakPath, brush = beakBrush)
                     }
                 }
 
@@ -692,7 +703,7 @@ fun HenVisual(modifier: Modifier = Modifier, timeLeft: Float, isPaused: Boolean,
                 val eyeShiftX = eyeRelX * (stretchX - 1f); val eyeShiftY = (eyeRelY - henBodyRadius) * (squashY - 1f)
 
                 if (isSmushed) {
-                    withTransform({ translate(cx + eyeShiftX, henY + eyeShiftY) }) { drawPath(wincePath, Color.Black, style = Stroke(5f * d, cap = StrokeCap.Round, join = StrokeJoin.Round)) }
+                    withTransform({ translate(cx + eyeShiftX, henY + eyeShiftY) }) { drawPath(HenCache.wincePath, Color.Black, style = Stroke(5f * d, cap = StrokeCap.Round, join = StrokeJoin.Round)) }
                 } else if (isBlinking) {
                     val eyeCenter = Offset(cx + eyeRelX + eyeShiftX, henY + eyeRelY + eyeShiftY)
                     drawLine(color = Color.Black, start = Offset(eyeCenter.x - 12f * d, eyeCenter.y), end = Offset(eyeCenter.x + 12f * d, eyeCenter.y), strokeWidth = 5f * d, cap = StrokeCap.Round)
@@ -749,7 +760,7 @@ fun HenVisual(modifier: Modifier = Modifier, timeLeft: Float, isPaused: Boolean,
                                 withTransform({ rotate(-20f, pivot = Offset(cx - eggWidth * 0.2f, eggTop + eggHeight * 0.25f)) }) {
                                     drawOval(color = Color.White.copy(alpha = 0.4f), topLeft = Offset(cx - eggWidth * 0.3f, eggTop + eggHeight * 0.15f), size = Size(eggWidth * 0.3f, eggHeight * 0.15f))
                                 }
-                                withTransform({ translate(cx, 0f) }) { if (crackStage >= 1) drawPath(crack1Path, Color.Black, style = crackStroke); if (crackStage >= 2) drawPath(crack2Path, Color.Black, style = crackStroke); if (crackStage >= 3) drawPath(crack3Path, Color.Black, style = crackStroke) }
+                                withTransform({ translate(cx, 0f) }) { if (crackStage >= 1) drawPath(HenCache.crack1Path, Color.Black, style = crackStroke); if (crackStage >= 2) drawPath(HenCache.crack2Path, Color.Black, style = crackStroke); if (crackStage >= 3) drawPath(HenCache.crack3Path, Color.Black, style = crackStroke) }
                             }
                         }
                         if (henY > -3000f && henY < size.height + 5000f && henSequenceElapsed < 2.5f) {
@@ -831,7 +842,7 @@ fun HenVisual(modifier: Modifier = Modifier, timeLeft: Float, isPaused: Boolean,
                     }
 
                     val crackStroke = Stroke(width = 3f * d, cap = StrokeCap.Round, join = StrokeJoin.Round)
-                    withTransform({ translate(cx, 0f) }) { if (crackStage >= 1) drawPath(crack1Path, Color.Black, style = crackStroke); if (crackStage >= 2) drawPath(crack2Path, Color.Black, style = crackStroke); if (crackStage >= 3) drawPath(crack3Path, Color.Black, style = crackStroke) }
+                    withTransform({ translate(cx, 0f) }) { if (crackStage >= 1) drawPath(HenCache.crack1Path, Color.Black, style = crackStroke); if (crackStage >= 2) drawPath(HenCache.crack2Path, Color.Black, style = crackStroke); if (crackStage >= 3) drawPath(HenCache.crack3Path, Color.Black, style = crackStroke) }
                 }
             }
 

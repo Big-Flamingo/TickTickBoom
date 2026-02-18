@@ -87,8 +87,6 @@ import androidx.compose.ui.zIndex
 import androidx.core.content.edit
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlin.math.cos
-import kotlin.math.sin
 import kotlin.random.Random
 
 // NOTE: Uses VisualParticle from AppModels.kt
@@ -529,6 +527,7 @@ fun BombScreen(
 
     LaunchedEffect(key1 = startTime, key2 = isPaused, key3 = totalPausedTime) {
         var lastFrameTime = 0L
+        var lastWingVolUpdateTime = 0L // <-- NEW: Throttle timer for wing flaps
 
         while (timeLeft > 0.01) {
             withFrameNanos { frameTimeNanos ->
@@ -554,7 +553,12 @@ fun BombScreen(
                             hasPlayedFly = true
                         }
 
-                        if (henSequenceElapsed > 0.5f && henSequenceElapsed < 2.5f) {
+                        // --- THE FIX: WING FLAP THROTTLING ---
+                        val currentMs = frameTimeNanos / 1_000_000
+
+                        if (henSequenceElapsed > 0.5f && henSequenceElapsed < 2.5f && (currentMs - lastWingVolUpdateTime > 50)) {
+                            lastWingVolUpdateTime = currentMs // Reset the throttle
+
                             var currentVol = 1.0f
                             if (henSequenceElapsed > 2.0f) {
                                 currentVol = (2.5f - henSequenceElapsed) / 0.5f
@@ -730,27 +734,14 @@ fun BombScreen(
 }
 
 @Composable
-fun ExplosionScreen(colors: AppColors, style: String?, explosionOrigin: Offset? = null, onReset: () -> Unit) {
-    val context = LocalContext.current
-    val particles = remember {
-        val colorsList = listOf(NeonRed, NeonOrange, Color.Yellow, Color.White)
-        List(100) { i ->
-            val angle = Math.random() * Math.PI * 2 // Calculate angle once!
-            Particle(
-                id = i,
-                dirX = cos(angle).toFloat(),
-                dirY = sin(angle).toFloat(),
-                velocity = (200 + Math.random() * 800).toFloat(),
-                size = (3 + Math.random() * 5).toFloat(),
-                color = colorsList.random(),
-                rotationSpeed = (Math.random() * 20 - 10).toFloat()
-            )
-        }
-    }
-    val smoke = remember {
-        List(30) { _ -> SmokeParticle(x = 0f, y = 0f, vx = (Math.random() * 100 - 50).toFloat(), vy = (Math.random() * 100 - 50).toFloat(), size = (20 + Math.random() * 40).toFloat(), alpha = 0.8f, life = 1f, maxLife = 1f) }
-    }
-
+fun ExplosionScreen(
+    colors: AppColors,
+    style: String?,
+    explosionOrigin: Offset? = null,
+    particles: List<Particle>,         // <-- ADD THIS
+    smoke: List<SmokeParticle>,        // <-- ADD THIS
+    onReset: () -> Unit
+) {
     var hasPlayedExplosion by remember { mutableStateOf(false) }
     val animationProgress = remember { Animatable(if (hasPlayedExplosion) 1f else 0f) }
 
@@ -768,7 +759,7 @@ fun ExplosionScreen(colors: AppColors, style: String?, explosionOrigin: Offset? 
 
     LaunchedEffect(Unit) {
         if (!hasPlayedExplosion) {
-            AudioService.playExplosion(context)
+            AudioService.playExplosion()
             launch { animationProgress.animateTo(1f, tween(1500, easing = LinearOutSlowInEasing)) }
             hasPlayedExplosion = true
         }
@@ -799,6 +790,8 @@ fun ExplosionScreen(colors: AppColors, style: String?, explosionOrigin: Offset? 
 
         LaunchedEffect(isHenPaused) {
             var lastFrameTime = 0L
+            var lastVolumeUpdateTime = 0L // <-- NEW: Throttle timer for the OS
+
             while (true) {
                 withFrameNanos { nanos ->
                     val dt = if (lastFrameTime == 0L) 0.016f else (nanos - lastFrameTime) / 1_000_000_000f
@@ -822,7 +815,9 @@ fun ExplosionScreen(colors: AppColors, style: String?, explosionOrigin: Offset? 
                             hasPlayedSlide = true
                         }
 
-                        if (henAnimTime > 6.0f) {
+                        val currentMs = nanos / 1_000_000
+                        if (henAnimTime > 6.0f && (currentMs - lastVolumeUpdateTime > 50)) {
+                            lastVolumeUpdateTime = currentMs
                             val slideProgress = (henAnimTime - 6.0f) / 2.5f
                             val fadeVol = (1f - slideProgress).coerceIn(0f, 1f)
                             AudioService.updateSlideVolume(fadeVol)

@@ -18,7 +18,6 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -109,16 +108,19 @@ fun BombApp() {
         AppCompatDelegate.setApplicationLocales(newLocale)
     }
 
-    var appState by rememberSaveable { mutableStateOf(AppState.SETUP) }
-    var duration by rememberSaveable { mutableIntStateOf(0) }
-    var bombStyle by rememberSaveable { mutableStateOf("C4") }
-    var startTime by rememberSaveable { mutableLongStateOf(0L) }
+    var appState by remember { mutableStateOf(AppState.SETUP) }
+    var duration by remember { mutableIntStateOf(10) }
+    var bombStyle by remember { mutableStateOf("C4") }
+    var startTime by remember { mutableLongStateOf(0L) }
 
-    var isPaused by rememberSaveable { mutableStateOf(false) }
-    var totalPausedTime by rememberSaveable { mutableLongStateOf(0L) }
-    var currentPauseStart by rememberSaveable { mutableLongStateOf(0L) }
+    var isPaused by remember { mutableStateOf(false) }
+    var totalPausedTime by remember { mutableLongStateOf(0L) }
+    var currentPauseStart by remember { mutableLongStateOf(0L) }
 
     var explosionOrigin by remember { mutableStateOf(Offset.Zero) }
+
+    var precalculatedParticles by remember { mutableStateOf<List<Particle>>(emptyList()) }
+    var precalculatedSmoke by remember { mutableStateOf<List<SmokeParticle>>(emptyList()) }
 
     fun handleStart(settings: TimerSettings) {
         duration = Random.nextInt(settings.minSeconds, settings.maxSeconds + 1)
@@ -132,6 +134,34 @@ fun BombApp() {
 
     fun handleExplode() {
         AudioService.stopAll()
+
+        // PRE-CALCULATE: Do all the heavy math before the UI transition!
+        val colorsList = listOf(Color(0xFFEF4444), Color(0xFFFB923C), Color.Yellow, Color.White)
+
+        precalculatedParticles = List(100) { i ->
+            val angle = Random.nextFloat() * 2f * kotlin.math.PI.toFloat()
+            Particle(
+                id = i,
+                dirX = kotlin.math.cos(angle),
+                dirY = kotlin.math.sin(angle),
+                velocity = Random.nextFloat() * 800f + 200f,
+                size = Random.nextFloat() * 5f + 3f,
+                color = colorsList.random(),
+                rotationSpeed = Random.nextFloat() * 20f - 10f
+            )
+        }
+
+        precalculatedSmoke = List(30) {
+            SmokeParticle(
+                x = 0f, y = 0f,
+                vx = Random.nextFloat() * 100f - 50f,
+                vy = Random.nextFloat() * 100f - 50f,
+                size = Random.nextFloat() * 40f + 20f,
+                alpha = 0.8f, life = 1f, maxLife = 1f
+            )
+        }
+
+        // FIRE: Now that memory is allocated, flip the screen state!
         appState = AppState.EXPLODED
     }
 
@@ -207,9 +237,11 @@ fun BombApp() {
                 )
 
                 AppState.EXPLODED -> ExplosionScreen(
-                    colors,
-                    bombStyle,
-                    explosionOrigin
+                    colors = colors,
+                    style = bombStyle,
+                    explosionOrigin = explosionOrigin,
+                    particles = precalculatedParticles, // <-- Pass the pre-warmed list!
+                    smoke = precalculatedSmoke          // <-- Pass the pre-warmed list!
                 ) { handleReset() }
             }
         }

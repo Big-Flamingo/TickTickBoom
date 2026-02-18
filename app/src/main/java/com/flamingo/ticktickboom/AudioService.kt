@@ -12,6 +12,8 @@ import android.os.VibratorManager
 object AudioService {
     private var soundPool: SoundPool? = null
 
+    private var vibrator: Vibrator? = null
+
     // Persistent MediaPlayers
     private var slidePlayer: MediaPlayer? = null
     private var wingFlapPlayer: MediaPlayer? = null
@@ -93,6 +95,14 @@ object AudioService {
             henHoldingSoundId = it.load(appContext, R.raw.hen_holding, 1)
             // NEW: Load the pained cluck
             painedCluckSoundId = it.load(appContext, R.raw.pained_cluck, 1)
+        }
+
+        // Grab the vibrator from Android once, and keep it on our desk!
+        vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            (appContext?.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager)?.defaultVibrator
+        } else {
+            @Suppress("DEPRECATION")
+            appContext?.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
         }
     }
 
@@ -294,21 +304,19 @@ object AudioService {
         soundPool?.play(soundId, timerVolume, timerVolume, 1, 0, 1f)
     }
 
-    fun playExplosion(context: Context) {
+    fun playExplosion() {
         stopAll()
         soundPool?.play(explosionSoundId, explosionVolume, explosionVolume, 2, 0, 1f)
-        val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            (context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager).defaultVibrator
-        } else {
-            @Suppress("DEPRECATION")
-            context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
-        }
-        if (vibrator.hasVibrator()) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                vibrator.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 100, 50, 400, 100, 200), -1))
-            } else {
-                @Suppress("DEPRECATION")
-                vibrator.vibrate(800)
+
+        // Just hit the ON button for the machine we already grabbed!
+        vibrator?.let { vib ->
+            if (vib.hasVibrator()) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    vib.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 100, 50, 400, 100, 200), -1))
+                } else {
+                    @Suppress("DEPRECATION")
+                    vib.vibrate(800)
+                }
             }
         }
     }
