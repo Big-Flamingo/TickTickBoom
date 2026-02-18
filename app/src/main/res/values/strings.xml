@@ -27,8 +27,8 @@
     <string name="abort">ABORT</string>
     <string name="empty_time" translatable="false">--:--</string>
 
-    <string name="acme_corp">ACME CORP</string>
-    <string name="high_explosive">HIGH EXPLOSIVE</string>
+    <string name="acme_corp" translatable="false">ACME CORP</string>
+    <string name="high_explosive" translatable="false">HIGH EXPLOSIVE</string>
     <string name="tick">TICK</string>
     <string name="ding">DING!</string>
 

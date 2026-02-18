@@ -27,10 +27,6 @@
     <string name="high_voltage_warning">高壓電 // 請勿觸碰</string>
     <string name="abort">中止</string>
 
-    <string name="empty_time" translatable="false">--:--</string>
-
-    <string name="acme_corp">艾克美公司</string>
-    <string name="high_explosive">高度爆裂物</string>
     <string name="tick">滴答</string>
     <string name="ding">叮！</string>
 

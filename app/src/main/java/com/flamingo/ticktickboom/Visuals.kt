@@ -46,7 +46,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -73,7 +72,6 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.asAndroidPath
-import androidx.compose.ui.graphics.asComposePath
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
@@ -89,8 +87,6 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
-import androidx.compose.ui.text.font.Font
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
@@ -103,12 +99,6 @@ import kotlin.math.cos
 import kotlin.math.pow
 import kotlin.math.sin
 import kotlin.math.sqrt
-
-// --- FONTS ---
-val VisualsFont = FontFamily(Font(R.font.orbitron_bold))
-
-// NOTE: VisualParticle and VisualText are now in AppModels.kt
-// NOTE: drawReflection, lerp, and StrokeGlowText are now in Components.kt
 
 // --- VISUALS ---
 
@@ -124,7 +114,7 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors, isPaused
     val fusePath = remember { Path() }
     val fuseLayerPaint = remember { Paint() }
     val frontRimPath = remember { Path() }
-    val androidSegmentPath = remember { android.graphics.Path() }
+    val ashPath = remember { Path() } // Create ONE Compose Path
     val pathMeasure = remember { android.graphics.PathMeasure() }
     var cachedSize by remember { mutableStateOf(Size.Zero) }
 
@@ -320,14 +310,14 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors, isPaused
                 drawOval(color = currentHoleColor, topLeft = innerHoleRect.topLeft, size = innerHoleRect.size)
 
                 if (!isCritical) {
-                    androidSegmentPath.rewind() // CLEAR the cached path!
-                    pathMeasure.getSegment(0f, currentBurnPoint, androidSegmentPath, true)
-                    val composePath = androidSegmentPath.asComposePath()
+                    val androidAshPath = ashPath.asAndroidPath()
+                    androidAshPath.rewind() // CLEAR the cached path!
+                    pathMeasure.getSegment(0f, currentBurnPoint, androidAshPath, true)
 
-                    // USE CACHED STROKES!
-                    drawPath(path = composePath, color = Color(0xFFCCC9C6), style = ashStrokeMain)
-                    drawPath(path = composePath, color = Color(0xFFD6D3D1), style = ashStrokeMid)
-                    drawPath(path = composePath, color = Color.White.copy(alpha = 0.5f), style = ashStrokeInner)
+                    // USE CACHED STROKES! (No new objects created!)
+                    drawPath(path = ashPath, color = Color(0xFFCCC9C6), style = ashStrokeMain)
+                    drawPath(path = ashPath, color = Color(0xFFD6D3D1), style = ashStrokeMid)
+                    drawPath(path = ashPath, color = Color.White.copy(alpha = 0.5f), style = ashStrokeInner)
                 }
 
                 frontRimPath.reset(); frontRimPath.arcTo(outerRimRect, 0f, 180f, false); frontRimPath.lineTo(innerHoleRect.left, innerHoleRect.center.y); frontRimPath.arcTo(innerHoleRect, 180f, -180f, false); frontRimPath.close()
@@ -617,7 +607,7 @@ fun C4Visual(
                             if (isLedOn) {
                                 StrokeGlowText(armedText, NeonRed, 12.sp, blurRadius = 20f)
                             } else {
-                                Text(armedText, color = Color(0xFF450a0a), fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp, fontFamily = VisualsFont)
+                                Text(armedText, color = Color(0xFF450a0a), fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp, fontFamily = CustomFont)
                             }
                         }
                     }
@@ -671,7 +661,7 @@ fun C4Visual(
                 Row(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Filled.Warning, null, tint = warningTextIcon, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text(warningText, color = warningTextIcon, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = VisualsFont)
+                    Text(warningText, color = warningTextIcon, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont)
                 }
             }
 
@@ -790,20 +780,20 @@ fun DynamiteVisual(
     val textLayoutResult = remember(d, acmeText) {
         textMeasurer.measure(
             text = acmeText,
-            style = TextStyle(color = TextGray, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = VisualsFont)
+            style = TextStyle(color = TextGray, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont)
         )
     }
     val stickTextResult = remember(d, explosiveText) {
         textMeasurer.measure(
             text = explosiveText,
-            style = TextStyle(color = Color.Black.copy(alpha=0.3f), fontSize = 14.sp, fontWeight = FontWeight.Black, fontFamily = VisualsFont)
+            style = TextStyle(color = Color.Black.copy(alpha=0.3f), fontSize = 14.sp, fontWeight = FontWeight.Black, fontFamily = CustomFont)
         )
     }
 
     val tickLayoutResult = remember(d, tickText) {
         textMeasurer.measure(
             text = tickText,
-            style = TextStyle(color = Color.Black, fontSize = 20.sp, fontWeight = FontWeight.Bold, fontFamily = VisualsFont)
+            style = TextStyle(color = Color.Black, fontSize = 20.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont)
         )
     }
 
@@ -812,7 +802,7 @@ fun DynamiteVisual(
         val dingBrush = Brush.verticalGradient(listOf(Color(0xFFFFFACD), Color(0xFFFFD700)))
         textMeasurer.measure(
             text = dingText,
-            style = TextStyle(brush = dingBrush, fontSize = 48.sp, fontWeight = FontWeight.Bold, fontFamily = VisualsFont)
+            style = TextStyle(brush = dingBrush, fontSize = 48.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont)
         )
     }
 
@@ -827,7 +817,8 @@ fun DynamiteVisual(
         )
     }
 
-    val textEffects = remember { mutableStateListOf<VisualText>() }
+    // Standard mutable list. Zero Compose overhead!
+    val textEffects = remember { mutableListOf<VisualText>() }
     var lastTriggerStep by remember { mutableIntStateOf(-1) }
     var hasShownDing by remember { mutableStateOf(false) }
 
@@ -1234,9 +1225,9 @@ fun DynamiteVisual(
                     else -> {
                         // Fallback for any unknown text (creates a new style on the fly)
                         val style = if (effect.gradientColors != null) {
-                            TextStyle(brush = Brush.verticalGradient(effect.gradientColors), fontSize = effect.fontSize.sp, fontWeight = FontWeight.Bold, fontFamily = VisualsFont)
+                            TextStyle(brush = Brush.verticalGradient(effect.gradientColors), fontSize = effect.fontSize.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont)
                         } else {
-                            TextStyle(color = effect.color, fontSize = effect.fontSize.sp, fontWeight = FontWeight.Bold, fontFamily = VisualsFont)
+                            TextStyle(color = effect.color, fontSize = effect.fontSize.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont)
                         }
                         textMeasurer.measure(effect.text, style)
                     }

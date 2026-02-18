@@ -24,3 +24,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "TickTickBoom"
 include(":app")
+include(":baselineprofile")

@@ -2,11 +2,16 @@ package com.flamingo.ticktickboom
 
 import androidx.compose.animation.animateColor
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.VectorConverter
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -38,8 +43,12 @@ import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -54,6 +63,8 @@ import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -64,6 +75,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
+import androidx.core.os.ConfigurationCompat
 
 // --- SHARED DRAWING HELPERS ---
 
@@ -199,16 +211,16 @@ fun RowScope.StyleButton(
     colors: AppColors,
     onClick: () -> Unit
 ) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
+    // 1. We use our own state instead of interactionSource to bypass the scroll delay!
+    // Changed 'var' to 'val' and removed 'by'
+    val isActuallyPressed = remember { mutableStateOf(false) }
 
     val baseBgColor = if (isSelected) colors.surface else colors.surface.copy(alpha = 0.3f)
 
-    // --- OPTIMIZED: Animate a float instead of the color! ---
-    // This makes theme swaps instant, but keeps the press animation smooth.
+    // 2. Animate based on our new raw touch state
     val pressBlend by androidx.compose.animation.core.animateFloatAsState(
-        targetValue = if (isPressed) 0.4f else 0f,
-        animationSpec = tween(durationMillis = 150),
+        targetValue = if (isActuallyPressed.value) 0.4f else 0f, // <-- Added .value
+        animationSpec = if (isActuallyPressed.value) tween(0) else tween(150), // <-- Added .value
         label = "pressBlend"
     )
     val animatedBgColor = lerp(baseBgColor, Color.Gray, pressBlend)
@@ -222,10 +234,17 @@ fun RowScope.StyleButton(
         .clip(RoundedCornerShape(16.dp))
         .background(animatedBgColor)
         .border(1.dp, borderColor, RoundedCornerShape(16.dp))
-        .clickable(
-            interactionSource = interactionSource,
-            indication = null
-        ) { onClick() }
+        // 3. Swap .clickable for .pointerInput to catch the exact moment of touch
+        .pointerInput(Unit) {
+            detectTapGestures(
+                onPress = {
+                    isActuallyPressed.value = true  // <-- Added .value
+                    tryAwaitRelease()
+                    isActuallyPressed.value = false // <-- Added .value
+                },
+                onTap = { onClick() }         // Trigger the actual button logic
+            )
+        }
         .padding(12.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
@@ -355,10 +374,26 @@ fun BombTextContent(
     if (isPaused) {
         when (style) {
             "FUSE" -> {
-                StrokeGlowText(stringResource(R.string.paused), NeonCyan, 48.sp)
-                Spacer(modifier = Modifier.height(16.dp))
-                Surface(color = Color.Transparent, border = BorderStroke(1.dp, NeonCyan), shape = RoundedCornerShape(50)) {
-                    Text(stringResource(R.string.extinguished), color = NeonCyan, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp), fontFamily = CustomFont)
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    StrokeGlowText(stringResource(R.string.paused), NeonCyan, 48.sp)
+                    Surface(
+                        color = Color.Transparent,
+                        border = BorderStroke(1.dp, NeonCyan),
+                        shape = RoundedCornerShape(50)
+                    ) {
+                        Text(
+                            stringResource(R.string.extinguished),
+                            color = NeonCyan,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 2.sp,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                            fontFamily = CustomFont
+                        )
+                    }
                 }
             }
             "FROG", "HEN" -> StrokeGlowText(stringResource(R.string.paused), NeonCyan, 48.sp)
@@ -373,22 +408,62 @@ fun BombTextContent(
 
     when (style) {
         "FUSE" -> {
-            if (!isCritical) {
-                StrokeGlowText(stringResource(R.string.armed), NeonOrange, 48.sp)
-                Spacer(modifier = Modifier.height(16.dp))
-                Surface(color = Color.Transparent, border = BorderStroke(1.dp, NeonOrange), shape = RoundedCornerShape(50)) {
-                    Text(stringResource(R.string.fuse_burning), color = NeonOrange, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp), fontFamily = CustomFont)
-                }
-            } else {
-                val infiniteTransition = androidx.compose.animation.core.rememberInfiniteTransition()
-                val color by infiniteTransition.animateColor(initialValue = NeonRed, targetValue = colors.text, animationSpec = androidx.compose.animation.core.infiniteRepeatable(
-                    tween(200), androidx.compose.animation.core.RepeatMode.Reverse), label = "crit")
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                if (!isCritical) {
+                    StrokeGlowText(stringResource(R.string.armed), NeonOrange, 48.sp)
+                    Surface(
+                        color = Color.Transparent,
+                        border = BorderStroke(1.dp, NeonOrange),
+                        shape = RoundedCornerShape(50)
+                    ) {
+                        Text(
+                            stringResource(R.string.fuse_burning),
+                            color = NeonOrange,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 2.sp,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                            fontFamily = CustomFont
+                        )
+                    }
+                } else {
+                    val infiniteTransition =
+                        androidx.compose.animation.core.rememberInfiniteTransition()
+                    val color by infiniteTransition.animateColor(
+                        initialValue = NeonRed,
+                        targetValue = colors.text,
+                        animationSpec = androidx.compose.animation.core.infiniteRepeatable(
+                            tween(200), androidx.compose.animation.core.RepeatMode.Reverse
+                        ),
+                        label = "crit"
+                    )
 
-                StrokeGlowText(stringResource(R.string.critical), color, 48.sp, fontWeight = FontWeight.Black, glowIntensity = 1.3f)
+                    StrokeGlowText(
+                        stringResource(R.string.critical),
+                        color,
+                        48.sp,
+                        fontWeight = FontWeight.Black,
+                        glowIntensity = 1.3f
+                    )
 
-                Spacer(modifier = Modifier.height(16.dp))
-                Surface(color = Color.Transparent, border = BorderStroke(1.dp, NeonRed), shape = RoundedCornerShape(50)) {
-                    Text(stringResource(R.string.detonation_imminent), color = NeonRed, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp), fontFamily = CustomFont)
+                    Surface(
+                        color = Color.Transparent,
+                        border = BorderStroke(1.dp, NeonRed),
+                        shape = RoundedCornerShape(50)
+                    ) {
+                        Text(
+                            stringResource(R.string.detonation_imminent),
+                            color = NeonRed,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 2.sp,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                            fontFamily = CustomFont
+                        )
+                    }
                 }
             }
         }
@@ -419,7 +494,7 @@ fun AbortButtonContent(colors: AppColors, onAbort: () -> Unit) {
     ActionButton(
         text = stringResource(R.string.abort),
         icon = Icons.Filled.Close,
-        color = colors.surface.copy(alpha=0.5f),
+        color = Color.Transparent, // <-- Changed from colors.surface.copy(alpha=0.5f)
         textColor = colors.textSecondary,
         borderColor = colors.textSecondary,
         borderWidth = 1.dp,
@@ -433,43 +508,94 @@ fun LanguageSwitch(
     onClick: () -> Unit
 ) {
     // 1. Determine current language state
-    val configuration = androidx.compose.ui.platform.LocalConfiguration.current
-    val currentLocale = androidx.core.os.ConfigurationCompat.getLocales(configuration)[0]
+    val configuration = LocalConfiguration.current
+    val currentLocale = ConfigurationCompat.getLocales(configuration)[0]
     val isEnglish = currentLocale?.language == "en"
 
-    // 2. Define the animation constants
-    val offsetSelected = 0.dp
-    val offsetUnselected = 12.dp // How far the back button peeks out
-    val zIndexSelected = 1f
-    val zIndexUnselected = 0f
+    // Constants for the animation offsets
+    val selectedOffset = 0.dp
+    val restingBackOffset = 12.dp
+    // This is how far out it pushes before dropping behind.
+    // Since chips are 28dp, 30dp ensures it completely clears the other one.
+    val farOutOffset = 30.dp
 
-    // 3. Helper to draw a single language chip
+    // Animation timing specs
+    val animationDuration = 350 // Slightly longer total time for the complex move
+    val halfDuration = animationDuration / 2
+
+    // 2. Helper to draw a single language chip with complex animation logic
     @Composable
     fun LanguageChip(
         text: String,
-        isSelected: Boolean,
+        amISelected: Boolean, // Renamed for clarity inside the effect
         modifier: Modifier = Modifier
     ) {
-        // Animate position and color
-        val targetOffset by androidx.compose.animation.core.animateDpAsState(
-            if (isSelected) offsetSelected else offsetUnselected,
-            label = "offset"
-        )
-        val targetColor = if (isSelected) NeonRed else Color.Gray
-        val animatedColor by animateColorAsState(targetColor, label = "color")
+        // We need manual control over the offset value
+        val offsetAnimatable = remember { Animatable(if (amISelected) selectedOffset else restingBackOffset, Dp.VectorConverter) }
+        // We also need manual control over the zIndex to flip it mid-animation
+        var zIndex by remember { mutableFloatStateOf(if (amISelected) 1f else 0f) }
 
-        // If selected, it sits at 0,0. If unselected, it shifts down-right.
-        val x = if (isSelected) 0.dp else targetOffset
-        val y = if (isSelected) 0.dp else targetOffset
+        // NEW: Remember if this is the first time the chip is being drawn
+        var isInitialRender by remember { mutableStateOf(true) }
+
+        // The complex animation sequence
+        LaunchedEffect(amISelected) {
+            // NEW: Skip the animation if we just got to the screen!
+            if (isInitialRender) {
+                isInitialRender = false
+                return@LaunchedEffect
+            }
+
+            if (amISelected) {
+                // CASE 1: Becoming Selected (Moving to Front-Left)
+                // Incoming chip goes to Layer 1
+                zIndex = 1f
+                offsetAnimatable.animateTo(
+                    targetValue = selectedOffset,
+                    animationSpec = tween(animationDuration, easing = FastOutSlowInEasing)
+                )
+            } else {
+                // CASE 2: Becoming Unselected (The "Pop-Out" move)
+                // Fix: Push the outgoing chip to Layer 2 ("Super Foreground")
+                // so it always beats the incoming chip!
+                zIndex = 2f
+
+                // Stage 1: Slide far out diagonally (down-right)
+                offsetAnimatable.animateTo(
+                    targetValue = farOutOffset,
+                    animationSpec = tween(halfDuration, easing = LinearOutSlowInEasing)
+                )
+
+                // Stage 2: MID-POINT - Drop to the background layer (Layer 0)
+                zIndex = 0f
+
+                // Stage 3: Slide back in to the resting position (down-right)
+                offsetAnimatable.animateTo(
+                    targetValue = restingBackOffset,
+                    animationSpec = tween(halfDuration, easing = FastOutSlowInEasing)
+                )
+            }
+        }
+
+        // Color animation stays simple
+        val targetColor = if (amISelected) NeonRed else Color.Gray
+        val animatedColor by animateColorAsState(
+            targetValue = targetColor,
+            animationSpec = tween(animationDuration),
+            label = "color"
+        )
 
         Box(
             contentAlignment = Alignment.Center,
             modifier = modifier
-                .offset(x, y)
-                .zIndex(if (isSelected) zIndexSelected else zIndexUnselected)
+                // Use the current value of our manual animatable
+                .offset(x = offsetAnimatable.value, y = offsetAnimatable.value)
+                // Use our manually managed zIndex
+                .zIndex(zIndex)
                 .size(28.dp)
                 .border(1.5.dp, animatedColor, RoundedCornerShape(8.dp))
-                .background(colors.background, RoundedCornerShape(8.dp)) // Opaque bg to hide the one behind
+                // Crucial: Opaque background so the "pop-out" actually hides things
+                .background(colors.background, RoundedCornerShape(8.dp))
         ) {
             Text(
                 text = text,
@@ -481,28 +607,29 @@ fun LanguageSwitch(
         }
     }
 
-    // 4. Container Box
+    // 3. Container Box
     Box(
         modifier = Modifier
-            .size(42.dp) // Big enough to hold both
+            // Increased slightly from 42dp to accommodate the "far out" push without clipping
+            .size(48.dp)
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null
-            ) { onClick() }
+            ) {
+                AudioService.playClick()
+                onClick()
+            }
     ) {
-        // We draw both chips. The state determines which one is "red and top-left"
-        // and which one is "gray and bottom-right".
-
         // English Chip
         LanguageChip(
             text = "En",
-            isSelected = isEnglish
+            amISelected = isEnglish
         )
 
         // Chinese Chip
         LanguageChip(
             text = "中",
-            isSelected = !isEnglish
+            amISelected = !isEnglish
         )
     }
 }

@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.res.Configuration
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
@@ -19,7 +20,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -196,7 +196,8 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, onToggleTheme: () -> Uni
             AudioService.playBombCroak()
             wobbleAnim.snapTo(0f); wobbleAnim.animateTo(-15f, tween(50)); wobbleAnim.animateTo(15f, tween(50)); wobbleAnim.animateTo(0f, spring(stiffness = Spring.StiffnessMediumLow))
             if (easterEggTaps >= 3) {
-                flyAwayAnim.animateTo(screenHeightPx + 500f, tween(800, easing = FastOutSlowInEasing))
+                // Shorter distance, faster time, accelerates out!
+                flyAwayAnim.animateTo(screenHeightPx + 100f, tween(400, easing = FastOutLinearInEasing))
 
                 val min = minText.toIntOrNull() ?: 5
                 var max = maxText.toIntOrNull() ?: 10
@@ -215,7 +216,8 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, onToggleTheme: () -> Uni
             AudioService.stopHoldingCluck()
             AudioService.playLoudCluck()
 
-            flyAwayAnim.animateTo(-screenHeightPx - 500f, tween(800, easing = FastOutSlowInEasing))
+            // Shorter distance, faster time, accelerates out!
+            flyAwayAnim.animateTo(-screenHeightPx - 100f, tween(400, easing = FastOutLinearInEasing))
 
             val min = minText.toIntOrNull() ?: 5
             var max = maxText.toIntOrNull() ?: 10
@@ -378,14 +380,14 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, onToggleTheme: () -> Uni
             Spacer(modifier = Modifier.height(32.dp))
             if (errorMsg.isNotEmpty()) { Text(errorMsg, color = NeonRed, fontSize = 14.sp, modifier = Modifier.padding(bottom = 16.dp), fontFamily = CustomFont) }
 
-            val armInteractionSource = remember { MutableInteractionSource() }
-            val isArmPressed by armInteractionSource.collectIsPressedAsState()
+            // 1. Swap from interactionSource to raw state
+            var isArmPressed by remember { mutableStateOf(false) }
 
-            // Blend the red towards gray for a tactile press feel
-            val targetArmColor = if (isArmPressed) lerp(NeonRed, Color.Gray, 0.4f) else NeonRed
+            val targetArmColor = if (isArmPressed) Color(0xFF991B1B) else NeonRed
             val armAnimatedColor by animateColorAsState(
                 targetValue = targetArmColor,
-                animationSpec = tween(durationMillis = 150),
+                // 2. Snap instantly to crimson on touch, fade back smoothly on release
+                animationSpec = if (isArmPressed) tween(0) else tween(150),
                 label = "armButtonHighlight"
             )
 
@@ -395,10 +397,17 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, onToggleTheme: () -> Uni
                     .height(60.dp)
                     .clip(RoundedCornerShape(12.dp))
                     .background(armAnimatedColor)
-                    .clickable(
-                        interactionSource = armInteractionSource,
-                        indication = null
-                    ) { tryStart() },
+                    // 3. Swap clickable for pointerInput to catch the exact touch millisecond
+                    .pointerInput(Unit) {
+                        detectTapGestures(
+                            onPress = {
+                                isArmPressed = true
+                                tryAwaitRelease()
+                                isArmPressed = false
+                            },
+                            onTap = { tryStart() }
+                        )
+                    },
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -455,6 +464,25 @@ fun BombScreen(
 
     val configuration = LocalConfiguration.current
     val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+
+    // --- NEW: Entrance Animation for Frog and Hen (OPTIMIZED) ---
+    val windowInfo = androidx.compose.ui.platform.LocalWindowInfo.current
+    val screenHeightPx = windowInfo.containerSize.height.toFloat()
+
+    val slideInAnim = remember { Animatable(
+        when (style) {
+            "FROG" -> -screenHeightPx - 100f // Starts much closer to the edge
+            "HEN" -> screenHeightPx + 100f   // Starts much closer to the edge
+            else -> 0f
+        }
+    ) }
+
+    LaunchedEffect(style) {
+        if (style == "FROG" || style == "HEN") {
+            // Enters at top speed, then smoothly decelerates to 0f
+            slideInAnim.animateTo(0f, tween(500, easing = LinearOutSlowInEasing))
+        }
+    }
 
     // Calculate Crack Stage purely based on Time Left
     val crackStage = if (style != "HEN") 0 else when {
@@ -583,7 +611,12 @@ fun BombScreen(
         }
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    // Apply the graphicsLayer here so the ENTIRE screen moves together!
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .graphicsLayer { translationY = slideInAnim.value }
+    ) {
 
         // --- NEW: INVERTED BACKGROUND FLASH ---
         if (flashAnim.value > 0f) {
@@ -633,46 +666,45 @@ fun BombScreen(
 
         Box(modifier = Modifier.fillMaxSize().padding(16.dp).zIndex(1f), contentAlignment = Alignment.Center) {
             if (isLandscape) {
-                val (ghostText, ghostSize) = when (style) {
-                    "FUSE" -> stringResource(R.string.critical) to 48.sp
-                    "FROG" -> stringResource(R.string.ribbit_panic) to 48.sp
-                    "HEN" -> stringResource(R.string.cracking) to 48.sp
-                    else -> stringResource(R.string.detonation_sequence) to 12.sp
+                // Calculate the distance from the center of the screen to the visual right edge of each bomb
+                val bombHalfWidth = when (style) {
+                    "C4" -> 160.dp       // Wide rectangle
+                    "FUSE" -> 130.dp     // Round ball
+                    "DYNAMITE" -> 110.dp // Thin vertical sticks
+                    "FROG" -> 140.dp     // Squishy round body
+                    "HEN" -> 130.dp      // Round body
+                    else -> 160.dp
                 }
 
-                val leftPadding = if (style == "HEN") 160.dp else 192.dp
-
                 Row(modifier = Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
+                    // Left half of the screen (behind the bomb)
                     Spacer(modifier = Modifier.weight(1f))
 
-                    Box(modifier = Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.CenterStart) {
+                    // Right half of the screen
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .padding(start = bombHalfWidth),
+                        contentAlignment = Alignment.Center
+                    ) {
                         Column(
-                            modifier = Modifier.padding(start = leftPadding),
                             horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center
+                            // This locks in the 16.dp gap between the real visible items
+                            verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically)
                         ) {
-                            Text(
-                                text = ghostText,
-                                color = Color.Transparent,
-                                fontSize = ghostSize,
-                                fontWeight = FontWeight.Bold,
-                                letterSpacing = 2.sp,
-                                fontFamily = CustomFont,
-                                modifier = Modifier.height(0.dp).padding(horizontal = 16.dp)
-                            )
-
+                            // 1. The Glowing Status Text (PAUSED / ARMED / CRITICAL)
                             BombTextContent(
                                 style = style,
                                 timeLeft = timeLeft,
                                 isCritical = isFuseFinished,
                                 isPaused = isPaused,
                                 colors = colors,
-                                modifier = Modifier.padding(bottom = 48.dp),
+                                modifier = Modifier,
                                 henSequenceElapsed = henSequenceElapsed
                             )
 
-                            Spacer(modifier = Modifier.height(16.dp))
-
+                            // 2. The Abort Button
                             AbortButtonContent(colors, onAbort)
                         }
                     }
@@ -807,10 +839,16 @@ fun ExplosionScreen(colors: AppColors, style: String?, explosionOrigin: Offset? 
             val progress = animationProgress.value
             var center = if (explosionOrigin != null && explosionOrigin != Offset.Zero) explosionOrigin else Offset(size.width / 2, size.height / 2)
 
-            if (style == "HEN") {
-                val eggOffset = 35.dp.toPx()
-                center = center.copy(y = center.y + eggOffset)
+            // Adjust the explosion origin to match the visual vertical center of each bomb's body
+            val yOffset = when (style) {
+                "HEN" -> 35.dp.toPx()     // Drops to the center of the egg
+                "FROG" -> 20.dp.toPx()    // Drops slightly to the center of the belly
+                "FUSE" -> 15.dp.toPx()    // Drops below the fuse, into the black sphere
+                "DYNAMITE" -> 0.dp.toPx() // Explodes perfectly from the center clock
+                "C4" -> (-30).dp.toPx()       // Explodes perfectly from the center LED display
+                else -> 0f
             }
+            center = center.copy(y = center.y + yOffset)
 
             smoke.forEach { s ->
                 val currentX = center.x + (s.vx * progress * 3f)
