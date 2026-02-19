@@ -517,6 +517,8 @@ fun HenVisual(modifier: Modifier = Modifier, timeLeft: Float, isPaused: Boolean,
     // --- THE FIX: Create a cache for the blur filters ---
     val cachedBlurs = remember { mutableMapOf<Int, BlurMaskFilter>() }
 
+    val eggBrushCache = remember { BrushCache() }
+
     val outlineStroke = remember(d) {
         Stroke(width = 3f * d, cap = StrokeCap.Round, join = StrokeJoin.Round)
     }
@@ -635,11 +637,17 @@ fun HenVisual(modifier: Modifier = Modifier, timeLeft: Float, isPaused: Boolean,
             val eggWidth = 120f * d
             val eggHeight = 150f * d
             val eggTop = floorY - eggHeight
-            val eggBrush = Brush.verticalGradient(
-                colors = listOf(Color(0xFFFEF3C7), Color(0xFFD4C27D)),
-                startY = eggTop,
-                endY = eggTop + eggHeight
-            )
+
+            // --- THE FIX: Only create the brush ONCE, and reuse it forever! ---
+            if (eggBrushCache.lastTop != eggTop || eggBrushCache.brush == null) {
+                eggBrushCache.lastTop = eggTop
+                eggBrushCache.brush = Brush.verticalGradient(
+                    colors = listOf(Color(0xFFFEF3C7), Color(0xFFD4C27D)),
+                    startY = eggTop,
+                    endY = eggTop + eggHeight
+                )
+            }
+            val eggBrush = eggBrushCache.brush!!
 
             if (size != HenCache.cachedSize) {
                 val cRadius = 28f * d; val cX = 0f * d; val cY = -henBodyRadius + 5f * d
@@ -902,4 +910,9 @@ fun HenVisual(modifier: Modifier = Modifier, timeLeft: Float, isPaused: Boolean,
             }
         }
     }
+}
+
+class BrushCache {
+    var lastTop: Float = -1f
+    var brush: Brush? = null
 }
