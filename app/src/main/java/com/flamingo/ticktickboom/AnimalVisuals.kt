@@ -839,7 +839,7 @@ fun HenVisual(modifier: Modifier = Modifier, timeLeft: Float, isPaused: Boolean,
             }
 
             if (!isDarkMode) {
-                if (drawHenShadow && henShadowAlpha > 0f && isHenOnScreen) {
+                if (drawHenShadow && henShadowAlpha > 0f) {
                     // Shadow reacts to both tapping and clucking
                     val stretchX = (2f - boingAnim.value) * (2f - cluckSquish)
                     val shadowResponseFactor = 1.5f
