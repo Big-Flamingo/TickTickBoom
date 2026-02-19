@@ -135,10 +135,12 @@ fun lerp(start: Color, stop: Color, fraction: Float): Color {
 }
 
 // Helper for Reflections (Used in all Visuals)
+// 1. Update signature to accept a 'clipHeight'
 fun DrawScope.drawReflection(
     isDarkMode: Boolean,
     pivotY: Float,
     alpha: Float = 0.25f,
+    clipHeight: Float? = null, // <-- New Parameter
     content: DrawScope.(Boolean) -> Unit
 ) {
     content(false) // Real Object
@@ -147,8 +149,12 @@ fun DrawScope.drawReflection(
             scale(1f, -1f, pivot = Offset(center.x, pivotY))
         }) {
             drawIntoCanvas { canvas ->
+                // 2. Use clipHeight if provided, otherwise default to full size
+                val layerBottom = clipHeight ?: (size.height * 2f)
+
+                // OPTIMIZATION: Only allocate what we actually need!
                 canvas.nativeCanvas.saveLayerAlpha(
-                    0f, -size.height, size.width, size.height * 2f,
+                    0f, -size.height, size.width, layerBottom,
                     (alpha * 255).toInt()
                 )
             }

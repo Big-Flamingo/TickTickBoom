@@ -94,18 +94,19 @@ fun BombApp() {
         AudioService.playClick()
     }
 
+    val configuration = LocalConfiguration.current
+
     // --- NEW: Helper to toggle language ---
     fun toggleLanguage() {
-        val currentLocales = AppCompatDelegate.getApplicationLocales()
-        val currentLang = currentLocales.get(0)?.language ?: "en"
+        // 1. Ask the core runtime what language is currently active.
+        // This completely bypasses Compose Lint and Android Context!
+        val currentLang = java.util.Locale.getDefault().language
 
-        // If current is English, switch to Chinese (Traditional), otherwise switch to English
-        val newLocale = if (currentLang == "en") {
-            LocaleListCompat.forLanguageTags("zh-TW")
-        } else {
-            LocaleListCompat.forLanguageTags("en")
-        }
-        AppCompatDelegate.setApplicationLocales(newLocale)
+        // 2. Flip it!
+        val targetLang = if (currentLang == "en") "zh-TW" else "en"
+
+        // 3. Lock it in
+        AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(targetLang))
     }
 
     var appState by remember { mutableStateOf(AppState.SETUP) }
@@ -197,7 +198,6 @@ fun BombApp() {
     }
 
     // --- 1. NEW: DETECT LANGUAGE AND BOOST FONT SCALE ---
-    val configuration = LocalConfiguration.current
     val currentLocale = ConfigurationCompat.getLocales(configuration)[0]
     val isChinese = currentLocale?.language == "zh"
 

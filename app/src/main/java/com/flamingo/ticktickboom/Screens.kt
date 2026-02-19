@@ -850,18 +850,18 @@ fun ExplosionScreen(
                 val currentY = center.y + (s.vy * progress * 3f)
                 val currentSize = s.size + (progress * 150f)
                 val currentAlpha = (s.alpha * (1f - progress)).coerceIn(0f, 1f)
-                drawCircle(color = colors.smokeColor.copy(alpha = currentAlpha), radius = currentSize, center = Offset(currentX, currentY))
+                drawCircle(color = colors.smokeColor, alpha = currentAlpha, radius = currentSize, center = Offset(currentX, currentY))
             }
             particles.forEach { p ->
                 val dist = p.velocity * progress * 2f
                 val x = center.x + (p.dirX * dist)
                 val y = center.y + (p.dirY * dist)
                 val alpha = (1f - progress).coerceIn(0f, 1f)
-                if (alpha > 0) drawCircle(color = p.color.copy(alpha = alpha), radius = p.size, center = Offset(x, y))
+                if (alpha > 0) drawCircle(color = p.color, alpha = alpha, radius = p.size, center = Offset(x, y))
             }
             val shockwaveRadius = progress * size.width * 0.8f
             val shockwaveAlpha = (1f - progress).coerceIn(0f, 1f)
-            if (shockwaveAlpha > 0) drawCircle(color = Color.White.copy(alpha = shockwaveAlpha * 0.5f), radius = shockwaveRadius, center = center, style = Stroke(width = 50f * (1f - progress)))
+            if (shockwaveAlpha > 0) drawCircle(color = Color.White, alpha = shockwaveAlpha * 0.5f, radius = shockwaveRadius, center = center, style = Stroke(width = 50f * (1f - progress)))
         }
 
         val flashAlpha = (1f - (animationProgress.value * 2.0f)).coerceIn(0f, 1f)

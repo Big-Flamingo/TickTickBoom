@@ -514,6 +514,9 @@ fun HenVisual(modifier: Modifier = Modifier, timeLeft: Float, isPaused: Boolean,
     val blurPaint = remember { android.graphics.Paint() }
     val blurRect = remember { android.graphics.RectF() }
 
+    // --- THE FIX: Create a cache for the blur filters ---
+    val cachedBlurs = remember { mutableMapOf<Int, BlurMaskFilter>() }
+
     val outlineStroke = remember(d) {
         Stroke(width = 3f * d, cap = StrokeCap.Round, join = StrokeJoin.Round)
     }
@@ -562,8 +565,6 @@ fun HenVisual(modifier: Modifier = Modifier, timeLeft: Float, isPaused: Boolean,
     val crackStroke = remember(d) {
         Stroke(width = 3f * d, cap = StrokeCap.Round, join = StrokeJoin.Round)
     }
-
-    val masterLayerPaint = remember { android.graphics.Paint() }
 
     var isBlinking by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { while (true) { delay(Random.nextLong(2000, 4000)); isBlinking = true; delay(150); isBlinking = false } }
@@ -624,6 +625,22 @@ fun HenVisual(modifier: Modifier = Modifier, timeLeft: Float, isPaused: Boolean,
         }) {
             val cx = size.width / 2; val cy = size.height / 2
 
+            // --- HOISTED MASTER VARIABLES ---
+            val floorY = cy + henBodyRadius
+            val henY = cy + animOffsetY
+            val henTop = henY - (henBodyRadius * 1.5f)
+            val henBottom = henY + (henBodyRadius * 1.5f)
+            val isHenOnScreen = henBottom > 0f && henTop < size.height
+
+            val eggWidth = 120f * d
+            val eggHeight = 150f * d
+            val eggTop = floorY - eggHeight
+            val eggBrush = Brush.verticalGradient(
+                colors = listOf(Color(0xFFFEF3C7), Color(0xFFD4C27D)),
+                startY = eggTop,
+                endY = eggTop + eggHeight
+            )
+
             if (size != HenCache.cachedSize) {
                 val cRadius = 28f * d; val cX = 0f * d; val cY = -henBodyRadius + 5f * d
                 val lRadius = 20f * d; val lX = -38f * d; val lY = -henBodyRadius + 10f * d
@@ -649,22 +666,28 @@ fun HenVisual(modifier: Modifier = Modifier, timeLeft: Float, isPaused: Boolean,
                 HenCache.wattlePath.cubicTo(faceEdgeX + (wattleWidth * 0.5f), lowerBeakBottomY + wattleHeight, faceEdgeX + wattleWidth, lowerBeakBottomY + wattleHeight * 0.5f, faceEdgeX, lowerBeakBottomY)
                 HenCache.wattlePath.close()
 
-                val eyeX = faceEdgeX - 25f * d; val eyeYBase = -25f * d; HenCache.wincePath.reset(); HenCache.wincePath.moveTo(eyeX - 8f * d, eyeYBase - 8f * d); HenCache.wincePath.lineTo(eyeX, eyeYBase); HenCache.wincePath.lineTo(eyeX - 8f * d, eyeYBase + 8f * d)
-                val eggHeight = 150f * d; val eggTop = (cy + henBodyRadius - 10f * d) - eggHeight; val eggCenterY = eggTop + eggHeight/2
-                HenCache.crack1Path.reset(); HenCache.crack1Path.moveTo(0f, eggTop + eggHeight * 0.1f); HenCache.crack1Path.lineTo(5f, eggTop + eggHeight * 0.3f); HenCache.crack1Path.lineTo(-5f, eggCenterY)
-                HenCache.crack2Path.reset(); HenCache.crack2Path.moveTo(-5f, eggCenterY); HenCache.crack2Path.lineTo(-25f, eggCenterY + eggHeight * 0.2f); HenCache.crack2Path.lineTo(-15f, eggCenterY + eggHeight * 0.35f)
-                HenCache.crack3Path.reset(); HenCache.crack3Path.moveTo(-25f, eggCenterY + eggHeight * 0.2f); HenCache.crack3Path.lineTo(10f, eggCenterY + eggHeight * 0.25f); HenCache.crack3Path.lineTo(35f, eggCenterY + eggHeight * 0.4f)
+                val eyeX = faceEdgeX - 25f * d; val eyeYBase = -25f * d
+                HenCache.wincePath.reset(); HenCache.wincePath.moveTo(eyeX - 8f * d, eyeYBase - 8f * d); HenCache.wincePath.lineTo(eyeX, eyeYBase); HenCache.wincePath.lineTo(eyeX - 8f * d, eyeYBase + 8f * d)
+
+                // YOUR OPTIMIZATION: Removed duplicate eggHeight/eggTop calculations!
+                val eggCenterY = eggTop + eggHeight / 2
+
+                // --- NEW: Add this offset to shift just the cracks up or down! ---
+                val crackOffset = -13f * d // Change this number to tweak the height! (-10 moves them UP)
+                val cTop = eggTop + crackOffset
+                val cCenterY = eggCenterY + crackOffset
+
+                HenCache.crack1Path.reset(); HenCache.crack1Path.moveTo(0f, cTop + eggHeight * 0.1f); HenCache.crack1Path.lineTo(5f, cTop + eggHeight * 0.3f); HenCache.crack1Path.lineTo(-5f, cCenterY)
+                HenCache.crack2Path.reset(); HenCache.crack2Path.moveTo(-5f, cCenterY); HenCache.crack2Path.lineTo(-25f, cCenterY + eggHeight * 0.2f); HenCache.crack2Path.lineTo(-15f, cCenterY + eggHeight * 0.35f)
+                HenCache.crack3Path.reset(); HenCache.crack3Path.moveTo(-25f, cCenterY + eggHeight * 0.2f); HenCache.crack3Path.lineTo(10f, cCenterY + eggHeight * 0.25f); HenCache.crack3Path.lineTo(35f, cCenterY + eggHeight * 0.4f)
                 HenCache.cachedSize = size
             }
-
-            val floorY = cy + henBodyRadius
             val heightFade = (1f - (abs(animOffsetY) / 800f)).coerceIn(0f, 1f)
             val layerVisible = !(isSmushed || animOffsetY > 0f)
             val baseReflectionAlpha = if (layerVisible) 0.25f else 0f
 
             // --- THE NEW DRAWING LAMBDA ---
             // We calculate these here so both the reflection and main body can share them!
-            val henY = cy + animOffsetY
             val squashY = boingAnim.value * cluckSquish
             val stretchX = (2f - boingAnim.value) * (2f - cluckSquish)
 
@@ -736,24 +759,23 @@ fun HenVisual(modifier: Modifier = Modifier, timeLeft: Float, isPaused: Boolean,
             }
             // --- END OF LAMBDA DEFINITION ---
 
-            if (isDarkMode && baseReflectionAlpha > 0f) {
-                drawReflection(true, floorY, baseReflectionAlpha) { isReflection ->
+            // SMART REFLECTION CULLING: Skip if there's no egg and the hen is off-screen
+            val isReflectionContentVisible = showEgg || heightFade > 0.01f
+
+            if (isDarkMode && baseReflectionAlpha > 0f && isReflectionContentVisible) {
+                // Only add extra height if the hen is actually fading out
+                val extraHeight = if (heightFade > 0f) abs(animOffsetY) else 0f
+                val reflectionHeight = floorY + (henBodyRadius * 4f) + extraHeight
+
+                drawReflection(
+                    isDarkMode = true,
+                    pivotY = floorY,
+                    alpha = baseReflectionAlpha, // <--- REVERTED: Keeps Egg visible!
+                    clipHeight = reflectionHeight
+                ) { isReflection ->
                     if (isReflection) {
-
-                        // --- 1. NEW MASTER LAYER ---
-                        // USE CACHED NATIVE PAINT!
-                        drawIntoCanvas { it.nativeCanvas.saveLayer(null, masterLayerPaint) }
-
                         if (showEgg) {
-                            val eggWidth = 120f * d; val eggHeight = 150f * d
-                            val eggTop = floorY - eggHeight
                             withTransform({ scale(1f, 1f, pivot = Offset(cx, eggTop + eggHeight/2)); rotate(if (!isPaused) eggWobbleRotation else 0f, pivot = Offset(cx, floorY)) }) {
-
-                                // --- NEW: Egg Gradient ---
-                                val eggBrush = Brush.verticalGradient(
-                                    colors = listOf(Color(0xFFFEF3C7), Color(0xFFD4C27D)), // Pale yellow to deep shadow
-                                    startY = eggTop, endY = eggTop + eggHeight
-                                )
                                 drawOval(brush = eggBrush, topLeft = Offset(cx - eggWidth/2, eggTop), size = Size(eggWidth, eggHeight))
 
                                 // --- RESTORED: Your original, perfectly angled highlight! ---
@@ -763,22 +785,40 @@ fun HenVisual(modifier: Modifier = Modifier, timeLeft: Float, isPaused: Boolean,
                                 withTransform({ translate(cx, 0f) }) { if (crackStage >= 1) drawPath(HenCache.crack1Path, Color.Black, style = crackStroke); if (crackStage >= 2) drawPath(HenCache.crack2Path, Color.Black, style = crackStroke); if (crackStage >= 3) drawPath(HenCache.crack3Path, Color.Black, style = crackStroke) }
                             }
                         }
+
                         if (henY > -3000f && henY < size.height + 5000f && henSequenceElapsed < 2.5f) {
                             if (heightFade > 0.01f) {
+
+                                // OPTIMIZATION: Calculate strict bounds for the layer.
+                                // Instead of the whole screen, we only allocate a box around the Hen.
+                                // We use * 3 to account for wings, squashing, and stretching safely.
+                                val safeRadius = henBodyRadius * 3f
+                                val layerLeft = cx - safeRadius
+                                val layerTop = henY - safeRadius
+                                val layerRight = cx + safeRadius
+                                val layerBottom = henY + safeRadius
 
                                 withTransform({
                                     rotate(glassRotation, pivot = Offset(cx, henY))
                                     scale(glassScale, glassScale, pivot = Offset(cx, henY))
                                 }) {
-                                    // --- 1. THE ERASER PASS (Must be OUTSIDE the fading layer!) ---
+                                    // 1. THE ERASER PASS (Preserves the "Blocking" effect)
+                                    // This punches a hole in the Egg reflection so the Hen looks solid.
                                     withTransform({ scale(stretchX, squashY, pivot = Offset(cx, henY + henBodyRadius)) }) {
                                         drawCircle(color = Color.Black, radius = henBodyRadius, center = Offset(cx, henY), blendMode = BlendMode.Clear)
                                     }
 
-                                    // --- 2. The Hen Fade Layer ---
-                                    drawIntoCanvas { it.nativeCanvas.saveLayerAlpha(0f, -size.height, size.width, size.height * 2f, (heightFade * 255).toInt()) }
+                                    // 2. THE FADE LAYER (Optimized)
+                                    // We pass strict bounds (left, top, right, bottom) so the GPU only
+                                    // allocates a tiny texture instead of a full-screen one.
+                                    drawIntoCanvas {
+                                        it.nativeCanvas.saveLayerAlpha(
+                                            layerLeft, layerTop, layerRight, layerBottom,
+                                            (heightFade * 255).toInt()
+                                        )
+                                    }
 
-                                    // Draw the ghostly reflection hen!
+                                    // Draw the Hen into this tiny, faded layer
                                     drawHen()
 
                                     // Closes the Hen Fade Layer
@@ -786,15 +826,12 @@ fun HenVisual(modifier: Modifier = Modifier, timeLeft: Float, isPaused: Boolean,
                                 }
                             }
                         }
-
-                        // --- 4. CLOSE MASTER LAYER ---
-                        drawIntoCanvas { it.nativeCanvas.restore() }
                     }
                 }
             }
 
             if (!isDarkMode) {
-                if (drawHenShadow && henShadowAlpha > 0f) {
+                if (drawHenShadow && henShadowAlpha > 0f && isHenOnScreen) {
                     // Shadow reacts to both tapping and clucking
                     val stretchX = (2f - boingAnim.value) * (2f - cluckSquish)
                     val shadowResponseFactor = 1.5f
@@ -806,14 +843,30 @@ fun HenVisual(modifier: Modifier = Modifier, timeLeft: Float, isPaused: Boolean,
                     if (shadowBlurRadius > 0.5f) {
                         drawIntoCanvas { canvas ->
                             blurPaint.color = Color.Black.copy(alpha = 0.3f * henShadowAlpha).toArgb()
-                            // Reassigning the mask filter is necessary because the radius changes dynamically,
-                            // but caching the Paint and RectF saves 2 out of 3 allocations per frame!
-                            blurPaint.maskFilter = BlurMaskFilter(shadowBlurRadius, Blur.NORMAL)
+
+                            // --- THE FIX: Look up the BlurMaskFilter from the cache! ---
+                            val blurKey = shadowBlurRadius.toInt()
+
+                            // We only apply the blur if the integer is at least 1
+                            if (blurKey > 0) {
+                                blurPaint.maskFilter = cachedBlurs.getOrPut(blurKey) {
+                                    BlurMaskFilter(blurKey.toFloat(), Blur.NORMAL)
+                                }
+                            } else {
+                                // Safety fallback just in case the float was 0.6 but the int truncated to 0
+                                blurPaint.maskFilter = null
+                            }
+
                             blurRect.set(cx - hShadowW/2, floorY - hShadowH/2, cx + hShadowW/2, floorY + hShadowH/2)
                             canvas.nativeCanvas.drawOval(blurRect, blurPaint)
                         }
                     } else {
-                        drawOval(color = Color.Black.copy(alpha = 0.3f * henShadowAlpha), topLeft = Offset(cx - hShadowW/2, floorY - hShadowH/2), size = Size(hShadowW, hShadowH))
+                        // DO NOT DELETE THIS: This draws the sharp shadow when she is on the floor!
+                        drawOval(
+                            color = Color.Black.copy(alpha = 0.3f * henShadowAlpha),
+                            topLeft = Offset(cx - hShadowW/2, floorY - hShadowH/2),
+                            size = Size(hShadowW, hShadowH)
+                        )
                     }
                 }
                 if (showEgg && eggShadowAlpha > 0f) {
@@ -825,15 +878,7 @@ fun HenVisual(modifier: Modifier = Modifier, timeLeft: Float, isPaused: Boolean,
             }
 
             if (showEgg && henSequenceElapsed > 0.0f) {
-                val eggWidth = 120f * d; val eggHeight = 150f * d
-                val eggTop = floorY - eggHeight
                 withTransform({ scale(1f, 1f, pivot = Offset(cx, eggTop + eggHeight/2)); rotate(if (!isPaused) eggWobbleRotation else 0f, pivot = Offset(cx, floorY)) }) {
-
-                    // --- NEW: Egg Gradient ---
-                    val eggBrush = Brush.verticalGradient(
-                        colors = listOf(Color(0xFFFEF3C7), Color(0xFFD4C27D)), // Pale yellow to deep shadow
-                        startY = eggTop, endY = eggTop + eggHeight
-                    )
                     drawOval(brush = eggBrush, topLeft = Offset(cx - eggWidth/2, eggTop), size = Size(eggWidth, eggHeight))
 
                     // --- RESTORED: Your original, perfectly angled highlight! ---
@@ -841,12 +886,11 @@ fun HenVisual(modifier: Modifier = Modifier, timeLeft: Float, isPaused: Boolean,
                         drawOval(color = Color.White.copy(alpha = 0.4f), topLeft = Offset(cx - eggWidth * 0.3f, eggTop + eggHeight * 0.15f), size = Size(eggWidth * 0.3f, eggHeight * 0.15f))
                     }
 
-                    val crackStroke = Stroke(width = 3f * d, cap = StrokeCap.Round, join = StrokeJoin.Round)
                     withTransform({ translate(cx, 0f) }) { if (crackStage >= 1) drawPath(HenCache.crack1Path, Color.Black, style = crackStroke); if (crackStage >= 2) drawPath(HenCache.crack2Path, Color.Black, style = crackStroke); if (crackStage >= 3) drawPath(HenCache.crack3Path, Color.Black, style = crackStroke) }
                 }
             }
 
-            if (henY > -3000f && henY < size.height + 5000f) {
+            if (henY > -3000f && henY < size.height + 5000f && isHenOnScreen) {
                 // Combine tap boing and automatic cluck squish for the main draw
 
                 withTransform({
