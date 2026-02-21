@@ -106,7 +106,8 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, onToggleTheme: () -> Uni
     var style by remember { mutableStateOf(prefs.getString("style", "C4") ?: "C4") }
     var timerVol by remember { mutableFloatStateOf(prefs.getFloat("vol_timer", 0.8f)) }
     var explodeVol by remember { mutableFloatStateOf(prefs.getFloat("vol_explode", 1.0f)) }
-    var errorMsg by remember { mutableStateOf("") }
+    // Holds the Resource ID of the error, or null if there is no error
+    var errorResId by remember { mutableStateOf<Int?>(null) }
 
     var easterEggTaps by remember { mutableIntStateOf(0) }
     val wobbleAnim = remember { Animatable(0f) }
@@ -142,13 +143,21 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, onToggleTheme: () -> Uni
     fun saveExplodeVol(vol: Float) { explodeVol = vol; AudioService.explosionVolume = vol; prefs.edit { putFloat("vol_explode", vol) } }
 
     fun validateMin() {
-        var min = minText.toIntOrNull() ?: 1
+        val rawMin = minText.toIntOrNull() ?: 1
+
+        // --- Assign the Resource ID instead of the string! ---
+        errorResId = when {
+            rawMin > 99999 -> R.string.error_max_time
+            rawMin <= 0 -> R.string.error_min_time
+            else -> null
+        }
+
+        var min = rawMin.coerceAtMost(99999)
         if (min <= 0) min = 1
         minText = min.toString()
         prefs.edit { putInt("min", min) }
 
         val max = maxText.toIntOrNull() ?: min
-        // Rule 1: If Min is higher than Max, push Max UP to match Min
         if (min > max) {
             maxText = min.toString()
             prefs.edit { putInt("max", min) }
@@ -157,13 +166,21 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, onToggleTheme: () -> Uni
     }
 
     fun validateMax() {
-        var max = maxText.toIntOrNull() ?: 1
+        val rawMax = maxText.toIntOrNull() ?: 1
+
+        // --- Assign the Resource ID instead of the string! ---
+        errorResId = when {
+            rawMax > 99999 -> R.string.error_max_time
+            rawMax <= 0 -> R.string.error_min_time
+            else -> null
+        }
+
+        var max = rawMax.coerceAtMost(99999)
         if (max <= 0) max = 1
         maxText = max.toString()
         prefs.edit { putInt("max", max) }
 
         val min = minText.toIntOrNull() ?: max
-        // Rule 2: If Max is lower than Min, pull Min DOWN to match Max
         if (max < min) {
             minText = max.toString()
             prefs.edit { putInt("min", max) }
@@ -352,6 +369,18 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, onToggleTheme: () -> Uni
                 TimeInput(stringResource(R.string.min_secs), minText, { saveMin(it) }, NeonCyan, colors, Modifier.weight(1f), { validateMin() })
                 TimeInput(stringResource(R.string.max_secs), maxText, { saveMax(it) }, NeonRed, colors, Modifier.weight(1f), { validateMax() })
             }
+
+            // --- NEW: If we have an ID, grab the string for the current language! ---
+            if (errorResId != null) {
+                Text(
+                    text = stringResource(errorResId!!),
+                    color = NeonRed,
+                    fontSize = 14.sp,
+                    modifier = Modifier.padding(top = 8.dp),
+                    fontFamily = CustomFont
+                )
+            }
+
             Spacer(modifier = Modifier.height(32.dp))
 
             VolumeSlider(stringResource(R.string.timer_volume), timerVol, NeonCyan, colors) { saveTimerVol(it) }
@@ -376,7 +405,6 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, onToggleTheme: () -> Uni
             }
 
             Spacer(modifier = Modifier.height(32.dp))
-            if (errorMsg.isNotEmpty()) { Text(errorMsg, color = NeonRed, fontSize = 14.sp, modifier = Modifier.padding(bottom = 16.dp), fontFamily = CustomFont) }
 
             // 1. Swap from interactionSource to raw state
             var isArmPressed by remember { mutableStateOf(false) }
@@ -527,7 +555,10 @@ fun BombScreen(
 
     LaunchedEffect(key1 = startTime, key2 = isPaused, key3 = totalPausedTime) {
         var lastFrameTime = 0L
-        var lastWingVolUpdateTime = 0L // <-- NEW: Throttle timer for wing flaps
+        var lastWingVolUpdateTime = 0L
+
+        // --- NEW: Track exact elapsed time monotonically ---
+        var exactElapsedSeconds = initialElapsed
 
         while (timeLeft > 0.01) {
             withFrameNanos { frameTimeNanos ->
@@ -535,10 +566,11 @@ fun BombScreen(
                 lastFrameTime = frameTimeNanos
 
                 if (!isPaused) {
-                    val now = System.currentTimeMillis()
-                    val currentRunTimeMs = now - startTime - totalPausedTime
-                    val elapsed = currentRunTimeMs / 1000f
-                    timeLeft = (duration - elapsed)
+                    // --- NEW: Accumulate dt instead of checking the jittery wall clock! ---
+                    exactElapsedSeconds += dt
+
+                    val currentRunTimeMs = (exactElapsedSeconds * 1000).toLong()
+                    timeLeft = (duration - exactElapsedSeconds)
 
                     if (style == "HEN" && timeLeft <= 6.0f && !isHenSequenceActive) {
                         isHenSequenceActive = true
@@ -560,10 +592,14 @@ fun BombScreen(
                             lastWingVolUpdateTime = currentMs // Reset the throttle
 
                             var currentVol = 1.0f
-                            if (henSequenceElapsed > 2.0f) {
-                                currentVol = (2.5f - henSequenceElapsed) / 0.5f
+                            if (henSequenceElapsed > 1.0f) { // Starts fading at 1.0 seconds
+                                currentVol = (2.5f - henSequenceElapsed) / 1.5f // Fades over 1.5 seconds
                             }
-                            AudioService.updateWingFlapVolume(currentVol.coerceIn(0f, 1f))
+
+                            val coercedVol = currentVol.coerceIn(0f, 1f)
+
+                            // Fade the wings...
+                            AudioService.updateWingFlapVolume(coercedVol)
                         }
 
                         if (henSequenceElapsed > 2.5f) {
@@ -794,7 +830,7 @@ fun ExplosionScreen(
 
             while (true) {
                 withFrameNanos { nanos ->
-                    val dt = if (lastFrameTime == 0L) 0.016f else (nanos - lastFrameTime) / 1_000_000_000f
+                    val dt = if (lastFrameTime == 0L) 0.016f else ((nanos - lastFrameTime) / 1_000_000_000f).coerceAtMost(0.1f)
                     lastFrameTime = nanos
 
                     if (!isHenPaused) {

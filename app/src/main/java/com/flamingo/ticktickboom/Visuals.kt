@@ -117,6 +117,9 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors, isPaused
     val ashPath = remember { Path() } // Create ONE Compose Path
     val pathMeasure = remember { android.graphics.PathMeasure() }
     var cachedSize by remember { mutableStateOf(Size.Zero) }
+// --- NEW: Size-dependent Brush Caches ---
+    var cachedBombBodyBrush by remember { mutableStateOf<Brush?>(null) }
+    var cachedSpecularBrush by remember { mutableStateOf<Brush?>(null) }
 
     val infiniteTransition = rememberInfiniteTransition("glint")
     val glintScale by infiniteTransition.animateFloat(
@@ -152,11 +155,12 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors, isPaused
     val glintSizeL = 24f * d; val glintSizeS = 4f * d; val glintOffsetL = 12f * d; val glintOffsetS = 2f * d
     val glowRadius = 25f * d; val coreRadius = 8f * d; val whiteRadius = 4f * d
     val particleRad = 3f * d; val particleRadS = 1.5f * d; val tapThreshold = 60f * d; val fuseYOffset = 5f * d
+    val sparkPos = remember { floatArrayOf(0f, 0f) }
 
     LaunchedEffect(isPaused) {
         while (true) {
             withFrameNanos { nanos ->
-                val dt = if (lastFrameTime == 0L) 0.016f else (nanos - lastFrameTime) / 1_000_000_000f
+                val dt = if (lastFrameTime == 0L) 0.016f else ((nanos - lastFrameTime) / 1_000_000_000f).coerceAtMost(0.1f)
                 lastFrameTime = nanos
                 for (i in sparks.indices.reversed()) { val s = sparks[i]; s.life -= dt; s.x += s.vx * dt * 100; s.y += s.vy * dt * 100 + (9.8f * dt * dt * 50); if (s.life <= 0) sparks.removeAt(i) }
                 for (i in smokePuffs.indices.reversed()) { val p = smokePuffs[i]; p.life -= dt; if (p.life <= 0) smokePuffs.removeAt(i) else { p.x += p.vx * dt * 50; p.y += p.vy * dt * 50 } }
@@ -190,6 +194,18 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors, isPaused
                 fusePath.lineTo(bombCenterX, neckTopY - 20f * d)
                 fusePath.cubicTo(bombCenterX, neckTopY - 70f * d, bombCenterX + 70f * d, neckTopY - 70f * d, bombCenterX + 80f * d, neckTopY + 10f * d)
                 cachedSize = size
+                // --- NEW: Cache the heavy radial gradients! ---
+                cachedBombBodyBrush = Brush.radialGradient(
+                    colors = listOf(Color(0xFF475569), Color(0xFF0F172A)),
+                    center = Offset(bombCenterX - 20, bombCenterY - 20),
+                    radius = bodyRadius
+                )
+                cachedSpecularBrush = Brush.radialGradient(
+                    colors = listOf(Color.White.copy(alpha = 0.3f), Color.Transparent),
+                    center = Offset(bombCenterX - bodyRadius * 0.4f, bombCenterY - bodyRadius * 0.4f),
+                    radius = bodyRadius * 0.3f
+                )
+                cachedSize = size
             }
 
             drawReflection(isDarkMode, floorY, 0.25f) { isReflection ->
@@ -199,7 +215,7 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors, isPaused
                     drawOval(color = Color.Black.copy(alpha = 0.2f), topLeft = Offset(bombCenterX - shadowW / 2, floorY - shadowH / 2), size = Size(shadowW, shadowH))
                 }
 
-                drawCircle(brush = Brush.radialGradient(colors = listOf(Color(0xFF475569), Color(0xFF0F172A)), center = Offset(bombCenterX - 20, bombCenterY - 20), radius = bodyRadius), radius = bodyRadius, center = Offset(bombCenterX, bombCenterY))
+                drawCircle(brush = cachedBombBodyBrush!!, radius = bodyRadius, center = Offset(bombCenterX, bombCenterY))
 
                 pathMeasure.setPath(fusePath.asAndroidPath(), false)
                 val totalLength = pathMeasure.length
@@ -207,7 +223,6 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors, isPaused
                 val effectiveProgress = if (isCritical) 1f else progress
                 val currentBurnPoint = fuseInnerOffset + (visibleLength * (1f - effectiveProgress))
 
-                val sparkPos = floatArrayOf(0f, 0f)
                 pathMeasure.getPosTan(currentBurnPoint, sparkPos, null)
                 val realSparkX = sparkPos[0]
                 val realSparkY = sparkPos[1]
@@ -239,7 +254,7 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors, isPaused
                 }
 
                 val specularCenter = Offset(bombCenterX - bodyRadius * 0.4f, bombCenterY - bodyRadius * 0.4f)
-                drawCircle(brush = Brush.radialGradient(colors = listOf(Color.White.copy(alpha = 0.3f), Color.Transparent), center = specularCenter, radius = bodyRadius * 0.3f), radius = bodyRadius * 0.3f, center = specularCenter)
+                drawCircle(brush = cachedSpecularBrush!!, radius = bodyRadius * 0.3f, center = specularCenter)
 
                 val baseDark = Color(0xFF0F172A)
                 val baseLight = Color(0xFF475569)
@@ -251,7 +266,8 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors, isPaused
                 val rimLeft = lerp(rimDark, orangeDark, symmetry * lightIntensity)
                 val rimCenter = lerp(rimLight, orangeLight, symmetry * lightIntensity)
                 val rimRight = lerp(rimDark, orangeDark, lightIntensity)
-                val rimCenterOffset = 0.7f - (0.2f * symmetry)
+                // --- FIX: Defaults to 0.5f (dead center) and dynamically shifts only when lit! ---
+                val rimCenterOffset = 0.5f + (0.2f * (1f - symmetry) * lightIntensity)
 
                 val rectLeft = bombCenterX - protrusionW / 2
                 val rectRight = bombCenterX + protrusionW / 2
@@ -339,8 +355,23 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors, isPaused
                     if (Math.random() < 0.3) { val angle = Math.random() * Math.PI * 2; val speed = (2f + Math.random() * 4f).toFloat(); val sx = if (isCritical) innerHoleRect.center.x else sparkCenter.x; val sy = if (isCritical) innerHoleRect.center.y else sparkCenter.y; sparks.add(VisualParticle(x = sx, y = sy, vx = cos(angle).toFloat() * speed, vy = (sin(angle) * speed - 2f).toFloat(), life = (0.2f + Math.random() * 0.3f).toFloat(), maxLife = 0.5f)) }
                     if (Math.random() < 0.2) { val angle = -Math.PI / 2 + (Math.random() - 0.5) * 0.5; val speed = (1f + Math.random() * 2f).toFloat(); val sx = if (isCritical) innerHoleRect.center.x else sparkCenter.x; val sy = if (isCritical) innerHoleRect.center.y else sparkCenter.y; val smokeVy = if (isCritical) sin(angle).toFloat() * speed * 2f else sin(angle).toFloat() * speed; smokePuffs.add(VisualParticle(x = sx, y = sy - fuseYOffset, vx = (cos(angle) * speed).toFloat(), vy = smokeVy, life = (1f + Math.random().toFloat() * 0.5f), maxLife = 1.5f)) }
                 }
-                smokePuffs.forEach { puff -> val p = 1f - (puff.life / puff.maxLife); val size = 10f + p * 20f; val alpha = (1f - p).coerceIn(0f, 0.6f); drawCircle(color = colors.smokeColor.copy(alpha = alpha), radius = size, center = Offset(puff.x, puff.y)) }
-                sparks.forEach { spark -> val alpha = (spark.life / spark.maxLife).coerceIn(0f, 1f); drawCircle(color = NeonOrange.copy(alpha = alpha), radius = particleRad * alpha, center = Offset(spark.x, spark.y)); drawCircle(color = Color.Yellow.copy(alpha = alpha), radius = particleRadS * alpha, center = Offset(spark.x, spark.y)) }
+                // FIX SMOKE:
+                smokePuffs.forEach { puff ->
+                    val p = 1f - (puff.life / puff.maxLife)
+                    val size = 10f + p * 20f
+                    val currentAlpha = (1f - p).coerceIn(0f, 0.6f)
+                    // Pass alpha separately!
+                    drawCircle(color = colors.smokeColor, alpha = currentAlpha, radius = size, center = Offset(puff.x, puff.y))
+                }
+
+                // FIX SPARKS:
+                sparks.forEach { spark ->
+                    val currentAlpha = (spark.life / spark.maxLife).coerceIn(0f, 1f)
+                    // Pass alpha separately!
+                    drawCircle(color = NeonOrange, alpha = currentAlpha, radius = particleRad * currentAlpha, center = Offset(spark.x, spark.y))
+                    drawCircle(color = Color.Yellow, alpha = currentAlpha, radius = particleRadS * currentAlpha, center = Offset(spark.x, spark.y))
+                }
+
                 if (!isCritical && !isPaused) {
                     drawCircle(brush = Brush.radialGradient(colors = listOf(NeonOrange.copy(alpha = 0.5f * lightIntensity), Color.Transparent), center = sparkCenter, radius = glowRadius), radius = glowRadius, center = sparkCenter)
                     drawCircle(color = NeonOrange.copy(alpha=0.8f * lightIntensity), radius = coreRadius, center = sparkCenter); drawCircle(color = Color.White.copy(alpha=lightIntensity), radius = whiteRadius, center = sparkCenter)
@@ -757,6 +788,40 @@ fun DynamiteVisual(
     val glossStroke = remember(d) { Stroke(width = 1.5f * d, cap = StrokeCap.Round, join = StrokeJoin.Round) }
     val clockOutlineStroke = remember(d) { Stroke(width = clockStroke) }
 
+    // --- RESTORED: Explicitly Sized Local Brushes ---
+    // 1. Dynamite Sticks (Horizontal: 0 to 60dp wide)
+    val stickBrush = remember(d) { Brush.horizontalGradient(colors = listOf(Color(0xFFB91C1C), Color(0xFFEF4444), Color(0xFFB91C1C)), startX = 0f, endX = 60f * d) }
+
+    // 2. Hammer Shaft (Vertical: Top to Bottom, 0 to 4.5dp thick)
+    val shaftBrush = remember(d) { Brush.verticalGradient(colors = listOf(Color(0xFF4B5563), Color(0xFFE5E7EB), Color(0xFF4B5563)), startY = 0f, endY = 4.5f * d) }
+
+    // 3. Hammer Head (Vertical: Top to Bottom, 0 to 16dp tall)
+    val headBrush = remember(d) { Brush.verticalGradient(colors = listOf(Color.White, Color(0xFF9CA3AF), Color(0xFF374151)), startY = 0f, endY = 16f * d) }
+
+    // 4. Bell Knob (Horizontal: Right to Left, 0 to 8dp wide)
+    val knobBrush = remember(d) { Brush.horizontalGradient(colors = listOf(Color.White, Color(0xFFEAB308), Color(0xFF78350F)), startX = 8f * d, endX = 5f) }
+
+    // 5. Brass Bell Body (Horizontal: Right to Left, mapping to its -28dp to +28dp drawing bounds)
+    val bellBrush = remember(d) { Brush.horizontalGradient(colors = listOf(Color.White, Color(0xFFEAB308), Color(0xFF78350F)), startX = 28f * d, endX = 0f * d) }
+
+    // 6. Clock Base (Vertical metallic shine: Top to Bottom, -80dp to +80dp)
+    val clockBaseBrush = remember(d) {
+        Brush.verticalGradient(
+            colors = listOf(MetallicLight, MetallicDark),
+            startY = -80f * d,
+            endY = 80f * d
+        )
+    }
+
+    // 7. Clock Rim (Vertical Dark Gray Metallic shine: Top to Bottom)
+    val clockRimBrush = remember(d) {
+        Brush.verticalGradient(
+            colors = listOf(Color(0xFF334155), Color(0xFF0F172A)), // Light slate edge to deep slate shadow
+            startY = -80f * d,
+            endY = 80f * d
+        )
+    }
+
     // --- NEW: Bell Vibration Animation ---
     val infiniteTransition = rememberInfiniteTransition()
     val bellVibrate by infiniteTransition.animateFloat(
@@ -850,12 +915,17 @@ fun DynamiteVisual(
         var lastTime = 0L
         while(true) {
             withFrameNanos { nanos ->
-                val dt = if (lastTime == 0L) 0.016f else (nanos - lastTime) / 1_000_000_000f
+                val dt = if (lastTime == 0L) 0.016f else ((nanos - lastTime) / 1_000_000_000f).coerceAtMost(0.1f)
                 lastTime = nanos
                 for (i in textEffects.indices.reversed()) {
                     val effect = textEffects[i]
-                    val newLife = effect.life - dt
-                    if (newLife <= 0) textEffects.removeAt(i) else textEffects[i] = effect.copy(y = effect.y - (15f * dt), life = newLife, alpha = (newLife / 1.0f).coerceIn(0f, 1f))
+                    effect.life -= dt
+                    if (effect.life <= 0f) {
+                        textEffects.removeAt(i)
+                    } else {
+                        effect.y -= (15f * dt)
+                        effect.alpha = (effect.life / 1.0f).coerceIn(0f, 1f)
+                    }
                 }
             }
         }
@@ -866,8 +936,6 @@ fun DynamiteVisual(
             val totalSticksWidth = 3 * stickW + 2 * spacing
             val startX = (size.width - totalSticksWidth) / 2
             val startY = (size.height - stickH) / 2
-
-            val stickBrush = Brush.horizontalGradient(colors = listOf(Color(0xFF7F1D1D), Color(0xFFEF4444), Color(0xFF7F1D1D)))
 
             // --- OPTIMIZATION: Helper lambda to draw any stick ---
             val drawStick = { index: Int ->
@@ -898,27 +966,17 @@ fun DynamiteVisual(
                 }
 
                 // Draw Red Stick Body
-                drawRoundRect(brush = stickBrush, topLeft = Offset(stickLeft, startY), size = Size(stickW, stickH + 30f * d), cornerRadius = CornerRadius(cornerRad, cornerRad))
+                withTransform({ translate(stickLeft, startY) }) {
+                    drawRoundRect(brush = stickBrush, topLeft = Offset.Zero, size = Size(stickW, stickH + 30f * d), cornerRadius = CornerRadius(cornerRad, cornerRad))
 
-                // --- UPDATED: Draw Sideways Text (Mathematically Centered) ---
-                val fullStickH = stickH + 30f * d
-                val stickCenterX = stickLeft + stickW / 2f
-                val stickCenterY = startY + fullStickH / 2f
-
-                withTransform({
-                    // 1. Move the origin to the center of the cylinder
-                    translate(stickCenterX, stickCenterY)
-                    // 2. Rotate -90 degrees around that center
-                    rotate(-90f, pivot = Offset.Zero)
-                }) {
-                    // 3. Draw the text centered on the new 0,0 origin
-                    drawText(
-                        textLayoutResult = stickTextResult,
-                        topLeft = Offset(
-                            x = -stickTextResult.size.width / 2f,
-                            y = -stickTextResult.size.height / 2f
-                        )
-                    )
+                    val stickCenterX = stickW / 2f
+                    val stickCenterY = (stickH + 30f * d) / 2f
+                    withTransform({
+                        translate(stickCenterX, stickCenterY)
+                        rotate(-90f, pivot = Offset.Zero)
+                    }) {
+                        drawText(textLayoutResult = stickTextResult, topLeft = Offset(-stickTextResult.size.width / 2f, -stickTextResult.size.height / 2f))
+                    }
                 }
             }
 
@@ -1043,25 +1101,12 @@ fun DynamiteVisual(
                         }
 
                         // --- UPDATED: Draw the knob FIRST so it sits behind the bell body! ---
-                        val knobBrush = Brush.linearGradient(
-                            colors = listOf(Color(0xFFEAB308), Color(0xFF78350F)), // Gold -> Dark Bronze
-                            // Swap these so the top (+X) is Gold, and the bottom is Dark Bronze
-                            start = Offset(bellRadius + 6f * d, 0f),
-                            end = Offset(bellRadius - 2f * d, 0f)
-                        )
-                        drawCircle(
-                            brush = knobBrush,
-                            radius = 4f * d,
-                            center = Offset(bellRadius + 1f * d, 0f)
-                        )
+                        // 1. The Bell Knob
+                        withTransform({ translate(bellRadius + -4f * d, -4f * d) }) { // Shift translation up
+                            drawCircle(brush = knobBrush, radius = 4f * d, center = Offset(4f * d, 4f * d)) // Draw in positive space
+                        }
 
                         // Brass Bell Body
-                        val bellBrush = Brush.linearGradient(
-                            colors = listOf(Color.White, Color(0xFFEAB308), Color(0xFF78350F)),
-                            start = Offset(bellRadius, 0f),
-                            end = Offset(0f, 0f)
-                        )
-
                         drawArc(
                             brush = bellBrush,
                             startAngle = -90f,
@@ -1115,27 +1160,36 @@ fun DynamiteVisual(
                     rotate(currentHammerAngle, pivot = Offset.Zero)
                 }) {
                     // Shaft: Lighter in the middle, darker at the sides (Shading across the local Y axis)
-                    val shaftBrush = Brush.verticalGradient(
-                        colors = listOf(Color(0xFF4B5563), Color(0xFFE5E7EB), Color(0xFF4B5563)),
-                        startY = -shaftWidth / 2f,
-                        endY = shaftWidth / 2f
-                    )
-                    drawRect(brush = shaftBrush, topLeft = Offset(shaftStart, -shaftWidth / 2f), size = Size(shaftLength, shaftWidth))
+                    // 2. Hammer Shaft
+                    withTransform({ translate(shaftStart, -shaftWidth / 2f) }) { // Apply Y offset to translation
+                        drawRect(brush = shaftBrush, topLeft = Offset.Zero, size = Size(shaftLength, shaftWidth)) // Draw at Zero
+                    }
 
                     // Head: Metallic Gray, lighter at the top, darker at the bottom (Shading down the local Y axis)
-                    val headBrush = Brush.linearGradient(
-                        colors = listOf(Color.White, Color(0xFF9CA3AF), Color(0xFF374151)),
-                        start = Offset(shaftEnd, -headH / 2f),
-                        end = Offset(shaftEnd, headH / 2f)
-                    )
-                    drawRoundRect(brush = headBrush, topLeft = Offset(shaftEnd, -headH / 2f), size = Size(headW, headH), cornerRadius = CornerRadius(4f * d, 4f * d))
+                    // 3. Hammer Head
+                    withTransform({ translate(shaftEnd, -headH / 2f) }) { // Apply Y offset to translation
+                        drawRoundRect(brush = headBrush, topLeft = Offset.Zero, size = Size(headW, headH), cornerRadius = CornerRadius(4f * d, 4f * d)) // Draw at Zero
+                    }
                 }
 
                 // The actual metal clock base
-                drawCircle(brush = Brush.radialGradient(colors = listOf(MetallicLight, MetallicDark), center = clockCenter, radius = clockRad), center = clockCenter, radius = clockRad)
+                withTransform({ translate(clockCenter.x, clockCenter.y) }) {
+                    drawCircle(
+                        brush = clockBaseBrush,
+                        radius = clockRad,
+                        center = Offset.Zero // Draws at local 0,0 to match the brush bounds!
+                    )
+                }
 
-                // USE CACHED STROKE!
-                drawCircle(color = Slate800, style = clockOutlineStroke, center = clockCenter)
+                // USE CACHED STROKE AND BRUSH!
+                withTransform({ translate(clockCenter.x, clockCenter.y) }) {
+                    drawCircle(
+                        brush = clockRimBrush, // <--- Replaced solid color with the Gradient Brush!
+                        radius = clockRad,
+                        center = Offset.Zero,
+                        style = clockOutlineStroke // <--- Keeps it hollow!
+                    )
+                }
 
                 drawText(textLayoutResult = textLayoutResult, topLeft = Offset(clockCenter.x - textLayoutResult.size.width / 2, clockCenter.y + textYOffset))
 

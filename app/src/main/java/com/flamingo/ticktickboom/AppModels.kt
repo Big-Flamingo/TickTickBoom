@@ -35,7 +35,7 @@ data class VisualParticle(
 )
 
 data class VisualText(
-    val text: String, val x: Float, val y: Float,
+    val text: String, val x: Float, var y: Float, // <-- Changed to var
     val color: Color, val gradientColors: List<Color>? = null,
-    val alpha: Float = 1f, val life: Float = 1.0f, val fontSize: Float
+    var alpha: Float = 1f, var life: Float = 1.0f, val fontSize: Float // <-- Changed to var
 )

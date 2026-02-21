@@ -2,7 +2,6 @@ package com.flamingo.ticktickboom
 
 import android.content.Context
 import android.media.AudioAttributes
-import android.media.MediaPlayer
 import android.media.SoundPool
 import android.os.Build
 import android.os.VibrationEffect
@@ -14,18 +13,17 @@ object AudioService {
 
     private var vibrator: Vibrator? = null
 
-    // Persistent MediaPlayers
-    private var slidePlayer: MediaPlayer? = null
-    private var wingFlapPlayer: MediaPlayer? = null
-    private var whistlePlayer: MediaPlayer? = null
-
     // --- SOUND IDs ---
     private var tickSoundId: Int = 0
     private var clockSoundId: Int = 0
     private var explosionSoundId: Int = 0
     private var fuseSoundId: Int = 0
     private var croakSoundId: Int = 0
+    private var croakHighSoundId: Int = 0
+    private var croakLowSoundId: Int = 0
     private var croakFastSoundId: Int = 0
+    private var croakFastHighSoundId: Int = 0
+    private var croakFastLowSoundId: Int = 0
     private var bombCroakSoundId: Int = 0
     private var flailSoundId: Int = 0
     private var dingSoundId: Int = 0
@@ -44,12 +42,18 @@ object AudioService {
     private var eggCrackSoundId: Int = 0
     private var henHoldingSoundId: Int = 0
     private var painedCluckSoundId: Int = 0 // NEW
+    private var slideSoundId: Int = 0
+    private var flapSoundId: Int = 0
+    private var whistleSoundId: Int = 0
 
     // Stream IDs
     private var fuseStreamId: Int = 0
     private var flailStreamId: Int = 0
     private var holdingStreamId: Int = 0
     private var henFlyStreamId: Int = 0
+    private var slideStreamId: Int = 0
+    private var flapStreamId: Int = 0
+    private var whistleStreamId: Int = 0
 
     var timerVolume: Float = 1.0f
     var explosionVolume: Float = 1.0f
@@ -76,7 +80,11 @@ object AudioService {
             explosionSoundId = it.load(appContext, R.raw.explosion, 1)
             fuseSoundId = it.load(appContext, R.raw.fuse, 1)
             croakSoundId = it.load(appContext, R.raw.croak, 1)
+            croakHighSoundId = it.load(appContext, R.raw.croak_high, 1)
+            croakLowSoundId = it.load(appContext, R.raw.croak_low, 1)
             croakFastSoundId = it.load(appContext, R.raw.croak_fast, 1)
+            croakFastHighSoundId = it.load(appContext, R.raw.croak_fast_high, 1)
+            croakFastLowSoundId = it.load(appContext, R.raw.croak_fast_low, 1)
             bombCroakSoundId = it.load(appContext, R.raw.bomb_croak, 1)
             flailSoundId = it.load(appContext, R.raw.flail, 1)
             dingSoundId = it.load(appContext, R.raw.ding, 1)
@@ -95,6 +103,9 @@ object AudioService {
             henHoldingSoundId = it.load(appContext, R.raw.hen_holding, 1)
             // NEW: Load the pained cluck
             painedCluckSoundId = it.load(appContext, R.raw.pained_cluck, 1)
+            slideSoundId = it.load(appContext, R.raw.hen_slide, 1)
+            flapSoundId = it.load(appContext, R.raw.flap, 1)
+            whistleSoundId = it.load(appContext, R.raw.whistle, 1)
         }
 
         // Grab the vibrator from Android once, and keep it on our desk!
@@ -106,116 +117,61 @@ object AudioService {
         }
     }
 
-    // --- HELPER: Ensure Players ---
-    private fun ensureSlidePlayer() {
-        if (slidePlayer == null) {
-            appContext?.let { ctx ->
-                try {
-                    slidePlayer = MediaPlayer.create(ctx, R.raw.hen_slide)
-                    slidePlayer?.setOnCompletionListener { }
-                } catch (e: Exception) { e.printStackTrace() }
-            }
-        }
-    }
-
-    private fun ensureWingFlapPlayer() {
-        if (wingFlapPlayer == null) {
-            appContext?.let { ctx ->
-                try {
-                    wingFlapPlayer = MediaPlayer.create(ctx, R.raw.flap)
-                    // FIX: No looping (User feedback: sound is long enough)
-                } catch (e: Exception) { e.printStackTrace() }
-            }
-        }
-    }
-
-    private fun ensureWhistlePlayer() {
-        if (whistlePlayer == null) {
-            appContext?.let { ctx ->
-                try {
-                    whistlePlayer = MediaPlayer.create(ctx, R.raw.whistle)
-                } catch (e: Exception) { e.printStackTrace() }
-            }
-        }
-    }
-
     // --- PLAYER CONTROLS ---
 
+    // --- SLIDE ---
     fun playHenSlide() {
-        stopSlide()
-        ensureSlidePlayer()
-        try {
-            slidePlayer?.setVolume(timerVolume, timerVolume)
-            slidePlayer?.start()
-        } catch (_: Exception) { }
+        if (slideStreamId != 0) soundPool?.stop(slideStreamId)
+        slideStreamId = soundPool?.play(slideSoundId, timerVolume, timerVolume, 1, 0, 1f) ?: 0
     }
 
     fun updateSlideVolume(fadeFraction: Float) {
-        try {
-            if (slidePlayer?.isPlaying == true) {
-                val vol = timerVolume * fadeFraction
-                slidePlayer?.setVolume(vol, vol)
-            }
-        } catch (_: Exception) {}
+        if (slideStreamId != 0) {
+            val vol = timerVolume * fadeFraction
+            soundPool?.setVolume(slideStreamId, vol, vol)
+        }
     }
 
     fun stopSlide() {
-        try {
-            if (slidePlayer?.isPlaying == true) {
-                slidePlayer?.pause()
-                slidePlayer?.seekTo(0)
-            }
-        } catch (_: Exception) { }
+        if (slideStreamId != 0) {
+            soundPool?.stop(slideStreamId)
+            slideStreamId = 0
+        }
     }
 
-    // --- WING FLAP (MediaPlayer) ---
+    // --- WING FLAP ---
     fun playWingFlap(startVol: Float? = null) {
-        ensureWingFlapPlayer()
-        try {
-            if (wingFlapPlayer?.isPlaying == false) {
-                // FIX: Use specific start volume if provided (for resume), else max timerVolume
-                val vol = startVol ?: timerVolume
-                wingFlapPlayer?.setVolume(vol, vol)
-                wingFlapPlayer?.start()
-            }
-        } catch (e: Exception) { e.printStackTrace() }
+        if (flapStreamId != 0) soundPool?.stop(flapStreamId)
+        val vol = startVol ?: timerVolume
+        // We use priority 2 here so the flaps aren't interrupted by background ticks
+        flapStreamId = soundPool?.play(flapSoundId, vol, vol, 2, -1, 1f) ?: 0 // Changed 0 to -1
     }
 
     fun stopWingFlap() {
-        try {
-            if (wingFlapPlayer?.isPlaying == true) {
-                wingFlapPlayer?.pause()
-                wingFlapPlayer?.seekTo(0)
-            }
-        } catch (e: Exception) { e.printStackTrace() }
+        if (flapStreamId != 0) {
+            soundPool?.stop(flapStreamId)
+            flapStreamId = 0
+        }
     }
 
-    // FIX: Restored this function for the fade effect
     fun updateWingFlapVolume(vol: Float) {
-        try {
-            // Scale the requested volume (0..1) by the master timerVolume
+        if (flapStreamId != 0) {
             val finalVol = vol * timerVolume
-            wingFlapPlayer?.setVolume(finalVol, finalVol)
-        } catch (e: Exception) { e.printStackTrace() }
+            soundPool?.setVolume(flapStreamId, finalVol, finalVol)
+        }
     }
 
-    // --- WHISTLE (MediaPlayer) ---
+    // --- WHISTLE ---
     fun playWhistle() {
-        stopWhistle()
-        ensureWhistlePlayer()
-        try {
-            whistlePlayer?.setVolume(timerVolume, timerVolume)
-            whistlePlayer?.start()
-        } catch (e: Exception) { e.printStackTrace() }
+        if (whistleStreamId != 0) soundPool?.stop(whistleStreamId)
+        whistleStreamId = soundPool?.play(whistleSoundId, timerVolume, timerVolume, 2, 0, 1f) ?: 0
     }
 
     fun stopWhistle() {
-        try {
-            if (whistlePlayer?.isPlaying == true) {
-                whistlePlayer?.pause()
-                whistlePlayer?.seekTo(0)
-            }
-        } catch (e: Exception) { e.printStackTrace() }
+        if (whistleStreamId != 0) {
+            soundPool?.stop(whistleStreamId)
+            whistleStreamId = 0
+        }
     }
 
     fun playPainedCluck() {
@@ -233,7 +189,8 @@ object AudioService {
 
     fun playLoudCluck() {
         if (henFlyStreamId != 0) soundPool?.stop(henFlyStreamId)
-        henFlyStreamId = soundPool?.play(henFlySoundId, 1.0f, 1.0f, 1, 0, 1.0f) ?: 0
+        // FIX: Replaced 1.0f with timerVolume so it obeys the user's settings!
+        henFlyStreamId = soundPool?.play(henFlySoundId, timerVolume, timerVolume, 1, 0, 1.0f) ?: 0
     }
 
     fun stopLoudCluck() {
@@ -244,19 +201,25 @@ object AudioService {
     }
 
     fun playCroak(isFast: Boolean = false) {
-        val soundId = if (isFast) croakFastSoundId else croakSoundId
+        // Generate a random number between 0 and 2 (Zero Allocation!)
+        val randomPick = kotlin.random.Random.nextInt(3)
 
-        // --- MIXED PITCH LOGIC ---
-        // Normal Phase (!isFast): Loose, organic variation (0.90 to 1.10)
-        // Critical Phase (isFast): Tight, panic-inducing precision (0.98 to 1.02)
-        val pitch = if (isFast) {
-            0.98f + Math.random().toFloat() * 0.04f
+        val soundId = if (isFast) {
+            when (randomPick) {
+                0 -> croakFastHighSoundId
+                1 -> croakFastLowSoundId
+                else -> croakFastSoundId // The original
+            }
         } else {
-            0.9f + Math.random().toFloat() * 0.2f
+            when (randomPick) {
+                0 -> croakHighSoundId
+                1 -> croakLowSoundId
+                else -> croakSoundId // The original
+            }
         }
 
-        // We keep Priority 2 for both to ensure the frog is never silenced by a tick sound
-        soundPool?.play(soundId, timerVolume, timerVolume, 2, 0, pitch)
+        // Play the chosen sound with a mathematically locked 1.0f pitch!
+        soundPool?.play(soundId, timerVolume, timerVolume, 2, 0, 1.0f)
     }
 
     fun playHenCluck() {
@@ -354,11 +317,5 @@ object AudioService {
         stopAll()
         soundPool?.release()
         soundPool = null
-        slidePlayer?.release()
-        slidePlayer = null
-        wingFlapPlayer?.release()
-        wingFlapPlayer = null
-        whistlePlayer?.release()
-        whistlePlayer = null
     }
 }
