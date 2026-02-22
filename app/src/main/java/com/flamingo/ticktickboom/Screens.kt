@@ -53,10 +53,10 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
@@ -87,7 +87,6 @@ import androidx.compose.ui.zIndex
 import androidx.core.content.edit
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlin.random.Random
 
 // NOTE: Uses VisualParticle from AppModels.kt
 // NOTE: Uses drawReflection and StrokeGlowText from Components.kt
@@ -448,135 +447,129 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, onToggleTheme: () -> Uni
 
 @Composable
 fun BombScreen(
-    duration: Int,
-    startTime: Long,
-    style: String,
+    state: GameState, // <-- Now takes the Master State!
     colors: AppColors,
     isDarkMode: Boolean,
-    isPaused: Boolean,
-    totalPausedTime: Long,
-    currentPauseStart: Long,
-    onExplode: () -> Unit,
-    onAbort: () -> Unit,
-    onTogglePause: () -> Unit,
-    onUpdateExplosionOrigin: (Offset) -> Unit
+    onIntent: (GameIntent) -> Unit // <-- Now sends Intents instead of callbacks!
 ) {
-    val initialElapsed = if (isPaused) {
-        (currentPauseStart - startTime - totalPausedTime) / 1000f
-    } else {
-        (System.currentTimeMillis() - startTime - totalPausedTime) / 1000f
-    }
     val coroutineScope = rememberCoroutineScope()
-    var timeLeft by remember { mutableFloatStateOf((duration - initialElapsed).coerceAtLeast(0f)) }
-    var isLedOn by remember { mutableStateOf(false) }
 
-    val isCriticalStart = duration <= 5
-    val isCritical = timeLeft <= 5f
-    var isFuseFinished by remember { mutableStateOf(isCriticalStart) }
+    // We only keep purely VISUAL state in the Composable now (like wobbles and flashes)
+    var hasPlayedCrack1 by remember { mutableStateOf(false) }
+    var hasPlayedCrack2 by remember { mutableStateOf(false) }
+    var hasPlayedCrack3 by remember { mutableStateOf(false) }
 
-    var hasPlayedDing by remember { mutableStateOf(false) }
-    var hasPlayedFlail by remember { mutableStateOf(false) }
-    var hasPlayedAlert by remember { mutableStateOf(false) }
     var hasPlayedFly by remember { mutableStateOf(false) }
-
-    var lastTickRunTime by remember { mutableLongStateOf((initialElapsed * 1000).toLong() - 1000) }
-
-    // HEN ANIMATION STATE (Linear, always starts at 0)
     var henSequenceElapsed by remember { mutableFloatStateOf(0f) }
-    var isHenSequenceActive by remember { mutableStateOf(false) }
 
     val flashAnim = remember { Animatable(0f) }
     val eggWobbleAnim = remember { Animatable(0f) }
 
     val configuration = LocalConfiguration.current
     val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
-
-    // --- NEW: Entrance Animation for Frog and Hen (OPTIMIZED) ---
     val windowInfo = androidx.compose.ui.platform.LocalWindowInfo.current
     val screenHeightPx = windowInfo.containerSize.height.toFloat()
 
     val slideInAnim = remember { Animatable(
-        when (style) {
-            "FROG" -> -screenHeightPx - 100f // Starts much closer to the edge
-            "HEN" -> screenHeightPx + 100f   // Starts much closer to the edge
+        when (state.bombStyle) {
+            "FROG" -> -screenHeightPx - 100f
+            "HEN" -> screenHeightPx + 100f
             else -> 0f
         }
     ) }
 
-    LaunchedEffect(style) {
-        if (style == "FROG" || style == "HEN") {
-            // Enters at top speed, then smoothly decelerates to 0f
+    LaunchedEffect(state.bombStyle) {
+        if (state.bombStyle == "FROG" || state.bombStyle == "HEN") {
             slideInAnim.animateTo(0f, tween(500, easing = LinearOutSlowInEasing))
         }
     }
 
-    // Calculate Crack Stage purely based on Time Left
-    val crackStage = if (style != "HEN") 0 else when {
-        timeLeft <= 1.5f -> 3
-        timeLeft <= 3.0f -> 2
-        timeLeft <= 4.5f -> 1
+    // Calculate Crack Stage purely based on the State's Time Left
+    val crackStage = if (state.bombStyle != "HEN") 0 else when {
+        state.timeLeft <= 1.5f -> 3
+        state.timeLeft <= 3.0f -> 2
+        state.timeLeft <= 4.5f -> 1
         else -> 0
     }
 
-    // Save the last played stage so it survives rotation
-    var lastPlayedCrackStage by remember { mutableIntStateOf(0) }
-
     LaunchedEffect(crackStage) {
-        if (style == "HEN" && crackStage > lastPlayedCrackStage && !isPaused) {
-            lastPlayedCrackStage = crackStage
-            AudioService.playCrack()
-            launch {
-                eggWobbleAnim.snapTo(0f)
-                eggWobbleAnim.animateTo(15f, tween(50))
-                eggWobbleAnim.animateTo(-15f, tween(50))
-                eggWobbleAnim.animateTo(0f, spring(stiffness = Spring.StiffnessMediumLow))
-            }
-        }
-    }
+        if (state.bombStyle == "HEN" && !state.isPaused) {
+            val shouldPlay = (crackStage == 1 && !hasPlayedCrack1) ||
+                    (crackStage == 2 && !hasPlayedCrack2) ||
+                    (crackStage == 3 && !hasPlayedCrack3)
 
-    LaunchedEffect(isPaused) {
-        if (isPaused) {
-            AudioService.stopSlide()
-            AudioService.stopHoldingCluck()
-            AudioService.stopWingFlap()
-            AudioService.stopLoudCluck()
-        } else {
-            if (style == "FUSE") AudioService.startFuse(isCritical)
+            if (shouldPlay) {
+                if (crackStage == 1) hasPlayedCrack1 = true
+                if (crackStage == 2) hasPlayedCrack2 = true
+                if (crackStage == 3) hasPlayedCrack3 = true
 
-            if (style == "HEN" && henSequenceElapsed > 0.5f && henSequenceElapsed < 2.5f) {
-                var resumeVol = 1.0f
-                if (henSequenceElapsed > 2.0f) {
-                    resumeVol = (2.5f - henSequenceElapsed) / 0.5f
+                launch {
+                    eggWobbleAnim.snapTo(0f)
+                    eggWobbleAnim.animateTo(15f, tween(50))
+                    eggWobbleAnim.animateTo(-15f, tween(50))
+                    eggWobbleAnim.animateTo(0f, spring(stiffness = Spring.StiffnessMediumLow))
                 }
-                AudioService.playWingFlap(startVol = resumeVol.coerceIn(0f, 1f) * AudioService.timerVolume)
             }
         }
     }
 
-    LaunchedEffect(key1 = startTime, key2 = isPaused, key3 = totalPausedTime) {
-        var lastFrameTime = 0L
-        var lastWingVolUpdateTime = 0L
+    // --- RESTORED: Resume Wing Flap Audio when Unpausing ---
+    LaunchedEffect(state.isPaused) {
+        if (!state.isPaused && state.bombStyle == "HEN") {
+            // Only resume if we are actively in the middle of the flapping animation!
+            if (henSequenceElapsed > 0.5f && henSequenceElapsed < 2.5f) {
+                var resumeVol = 1.0f
 
-        // --- NEW: Track exact elapsed time monotonically ---
-        var exactElapsedSeconds = initialElapsed
+                // Match the exact fade-out math used in the animation loop
+                if (henSequenceElapsed > 1.0f) {
+                    resumeVol = (2.5f - henSequenceElapsed) / 1.5f
+                }
 
-        while (timeLeft > 0.01) {
-            withFrameNanos { frameTimeNanos ->
-                val dt = if (lastFrameTime == 0L) 0.016f else (frameTimeNanos - lastFrameTime) / 1_000_000_000f
-                lastFrameTime = frameTimeNanos
+                val finalVol = resumeVol.coerceIn(0f, 1f) * AudioService.timerVolume
+                AudioService.playWingFlap(startVol = finalVol)
+            }
+        }
+    }
 
-                if (!isPaused) {
-                    // --- NEW: Accumulate dt instead of checking the jittery wall clock! ---
-                    exactElapsedSeconds += dt
+    // --- MASTER VISUAL TIMER (Client-Side Prediction) ---
+    val currentIsPaused by rememberUpdatedState(state.isPaused)
+    val masterTimeLeft by rememberUpdatedState(state.timeLeft)
 
-                    val currentRunTimeMs = (exactElapsedSeconds * 1000).toLong()
-                    timeLeft = (duration - exactElapsedSeconds)
+    // The smooth timer that the UI will actually use to draw
+    var visualTimeLeft by remember(state.duration) { mutableFloatStateOf(state.duration.toFloat()) }
 
-                    if (style == "HEN" && timeLeft <= 6.0f && !isHenSequenceActive) {
-                        isHenSequenceActive = true
+    LaunchedEffect(state.duration) {
+        var lastFrameNanos = System.nanoTime()
+        while(true) {
+            withFrameNanos { nanos ->
+                val dt = ((nanos - lastFrameNanos) / 1_000_000_000f).coerceAtMost(0.1f)
+                lastFrameNanos = nanos
+
+                if (!currentIsPaused && visualTimeLeft > 0f) {
+                    visualTimeLeft -= dt
+
+                    // Soft-Sync: If the visual timer drifts from the ViewModel's master timer
+                    // by more than 50ms, we gently snap it back into place to prevent desync.
+                    if (kotlin.math.abs(visualTimeLeft - masterTimeLeft) > 0.05f) {
+                        visualTimeLeft = masterTimeLeft
                     }
+                } else if (currentIsPaused) {
+                    visualTimeLeft = masterTimeLeft // Keep perfectly synced when paused
+                }
+            }
+        }
+    }
 
-                    if (isHenSequenceActive) {
+    // --- THE FIX: Display-synced animation loop! ---
+    LaunchedEffect(state.bombStyle) {
+        if (state.bombStyle == "HEN") {
+            var lastFrameNanos = System.nanoTime()
+            while(true) {
+                withFrameNanos { nanos ->
+                    val dt = ((nanos - lastFrameNanos) / 1_000_000_000f).coerceAtMost(0.1f)
+                    lastFrameNanos = nanos
+
+                    if (!currentIsPaused && visualTimeLeft <= 6.0f) {
                         henSequenceElapsed += dt
 
                         if (henSequenceElapsed > 0.5f && !hasPlayedFly) {
@@ -584,89 +577,29 @@ fun BombScreen(
                             AudioService.playWingFlap(AudioService.timerVolume)
                             hasPlayedFly = true
                         }
-
-                        // --- THE FIX: WING FLAP THROTTLING ---
-                        val currentMs = frameTimeNanos / 1_000_000
-
-                        if (henSequenceElapsed > 0.5f && henSequenceElapsed < 2.5f && (currentMs - lastWingVolUpdateTime > 50)) {
-                            lastWingVolUpdateTime = currentMs // Reset the throttle
-
-                            var currentVol = 1.0f
-                            if (henSequenceElapsed > 1.0f) { // Starts fading at 1.0 seconds
-                                currentVol = (2.5f - henSequenceElapsed) / 1.5f // Fades over 1.5 seconds
-                            }
-
-                            val coercedVol = currentVol.coerceIn(0f, 1f)
-
-                            // Fade the wings...
-                            AudioService.updateWingFlapVolume(coercedVol)
+                        if (henSequenceElapsed > 1.0f && henSequenceElapsed < 2.5f) {
+                            val currentVol = (2.5f - henSequenceElapsed) / 1.5f
+                            AudioService.updateWingFlapVolume(currentVol.coerceIn(0f, 1f))
                         }
-
-                        if (henSequenceElapsed > 2.5f) {
-                            AudioService.stopWingFlap()
-                        }
+                        if (henSequenceElapsed > 2.5f) AudioService.stopWingFlap()
                     }
-
-                    if (timeLeft <= 5f && !isFuseFinished) {
-                        isFuseFinished = true
-                        if (style == "FUSE") AudioService.dimFuse()
-                    }
-                    if (style == "DYNAMITE" && timeLeft <= 1.0f && !hasPlayedDing && timeLeft > 0) {
-                        AudioService.playDing(); hasPlayedDing = true
-                    }
-                    if (style == "FROG" && timeLeft <= 1.05f && !hasPlayedAlert && timeLeft > 0) {
-                        AudioService.playAlert(); hasPlayedAlert = true
-                    }
-                    if (style == "FROG" && timeLeft <= 1.0f && !hasPlayedFlail && timeLeft > 0) {
-                        AudioService.playFlail(); hasPlayedFlail = true
-                    }
-
-                    val tickInterval = if (style == "HEN") 1000L else if (timeLeft < 5) 500L else 1000L
-
-                    if (currentRunTimeMs - lastTickRunTime >= tickInterval && timeLeft > 0) {
-                        if (style == "C4") { AudioService.playTick(); isLedOn = true }
-                        if (style == "DYNAMITE" && timeLeft > 1.0) AudioService.playClockTick()
-                        if (style == "FROG") { AudioService.playCroak(timeLeft < 5) }
-                        if (style == "HEN") {
-                            if (!isHenSequenceActive) {
-                                AudioService.playHenCluck()
-                            }
-                        }
-                        if (currentRunTimeMs - lastTickRunTime > tickInterval * 1.5f) {
-                            lastTickRunTime = currentRunTimeMs
-                        } else {
-                            lastTickRunTime += tickInterval
-                        }
-                    }
-                    if (isLedOn && (currentRunTimeMs - lastTickRunTime > 50)) isLedOn = false
-                } else {
-                    lastFrameTime = frameTimeNanos
                 }
             }
         }
-
-        if (!isPaused) {
-            timeLeft = 0f
-            onExplode()
-        }
     }
 
-    // Apply the graphicsLayer here so the ENTIRE screen moves together!
     Box(
         modifier = Modifier
             .fillMaxSize()
             .graphicsLayer { translationY = slideInAnim.value }
     ) {
-
-        // --- NEW: INVERTED BACKGROUND FLASH ---
         if (flashAnim.value > 0f) {
-            // Dark mode flashes White, Light mode flashes Dark
             val flashColor = if (isDarkMode) Color.White else Slate950
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(flashColor.copy(alpha = flashAnim.value))
-                    .zIndex(-1f) // Render strictly behind the bomb!
+                    .zIndex(-1f)
             )
         }
 
@@ -674,21 +607,23 @@ fun BombScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .zIndex(0f)
-                .onGloballyPositioned { onUpdateExplosionOrigin(it.positionInRoot() + Offset(it.size.width/2f, it.size.height/2f)) },
+                .onGloballyPositioned {
+                    // Send Intent to ViewModel regarding origin!
+                    onIntent(GameIntent.UpdateExplosionOrigin(it.positionInRoot() + Offset(it.size.width/2f, it.size.height/2f)))
+                },
             contentAlignment = Alignment.Center
         ) {
             BombVisualContent(
-                style = style,
-                duration = duration,
-                timeLeft = timeLeft,
-                isCritical = isCritical,
-                isLedOn = isLedOn,
+                style = state.bombStyle,
+                duration = state.duration,
+                timeLeft = visualTimeLeft,
+                isCritical = state.isCritical,
+                isLedOn = state.isLedOn,
                 isDarkMode = isDarkMode,
                 colors = colors,
-                isPaused = isPaused,
-                onTogglePause = onTogglePause,
+                isPaused = state.isPaused,
+                onTogglePause = { onIntent(GameIntent.TogglePause) }, // Send Intent!
                 onShock = {
-                    // Trigger the screen flash animation!
                     coroutineScope.launch {
                         flashAnim.snapTo(1f)
                         flashAnim.animateTo(0f, tween(1000, easing = FastOutSlowInEasing))
@@ -698,29 +633,23 @@ fun BombScreen(
                 henSequenceElapsed = henSequenceElapsed.coerceAtMost(2.5f),
                 showEgg = true,
                 crackStage = crackStage,
-                isPainedBeakOpen = false,
-                isPainedBeakClosed = false,
                 isDarkModeShadows = isDarkMode
             )
         }
 
         Box(modifier = Modifier.fillMaxSize().padding(16.dp).zIndex(1f), contentAlignment = Alignment.Center) {
             if (isLandscape) {
-                // Calculate the distance from the center of the screen to the visual right edge of each bomb
-                val bombHalfWidth = when (style) {
-                    "C4" -> 160.dp       // Wide rectangle
-                    "FUSE" -> 130.dp     // Round ball
-                    "DYNAMITE" -> 110.dp // Thin vertical sticks
-                    "FROG" -> 140.dp     // Squishy round body
-                    "HEN" -> 130.dp      // Round body
+                val bombHalfWidth = when (state.bombStyle) {
+                    "C4" -> 160.dp
+                    "FUSE" -> 130.dp
+                    "DYNAMITE" -> 110.dp
+                    "FROG" -> 140.dp
+                    "HEN" -> 130.dp
                     else -> 160.dp
                 }
 
                 Row(modifier = Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
-                    // Left half of the screen (behind the bomb)
                     Spacer(modifier = Modifier.weight(1f))
-
-                    // Right half of the screen
                     Box(
                         modifier = Modifier
                             .weight(1f)
@@ -730,39 +659,34 @@ fun BombScreen(
                     ) {
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
-                            // This locks in the 16.dp gap between the real visible items
                             verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically)
                         ) {
-                            // 1. The Glowing Status Text (PAUSED / ARMED / CRITICAL)
                             BombTextContent(
-                                style = style,
-                                timeLeft = timeLeft,
-                                isCritical = isFuseFinished,
-                                isPaused = isPaused,
+                                style = state.bombStyle,
+                                visualTimeLeft,
+                                isCritical = state.isCritical,
+                                isPaused = state.isPaused,
                                 colors = colors,
-                                modifier = Modifier,
                                 henSequenceElapsed = henSequenceElapsed
                             )
-
-                            // 2. The Abort Button
-                            AbortButtonContent(colors, onAbort)
+                            AbortButtonContent(colors) { onIntent(GameIntent.Abort) } // Send Intent!
                         }
                     }
                 }
             } else {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     BombTextContent(
-                        style = style,
-                        timeLeft = timeLeft,
-                        isCritical = isFuseFinished,
-                        isPaused = isPaused,
+                        style = state.bombStyle,
+                        timeLeft = visualTimeLeft,
+                        isCritical = state.isCritical,
+                        isPaused = state.isPaused,
                         colors = colors,
                         henSequenceElapsed = henSequenceElapsed
                     )
                     Spacer(modifier = Modifier.height(32.dp))
                     Box(modifier = Modifier.size(300.dp))
                     Spacer(modifier = Modifier.height(64.dp))
-                    AbortButtonContent(colors, onAbort)
+                    AbortButtonContent(colors) { onIntent(GameIntent.Abort) } // Send Intent!
                 }
             }
         }
@@ -772,95 +696,36 @@ fun BombScreen(
 @Composable
 fun ExplosionScreen(
     colors: AppColors,
-    style: String?,
-    explosionOrigin: Offset? = null,
-    particles: List<Particle>,         // <-- ADD THIS
-    smoke: List<SmokeParticle>,        // <-- ADD THIS
-    onReset: () -> Unit
+    state: GameState, // <-- Uses state now!
+    onIntent: (GameIntent) -> Unit
 ) {
     var hasPlayedExplosion by remember { mutableStateOf(false) }
     val animationProgress = remember { Animatable(if (hasPlayedExplosion) 1f else 0f) }
 
-    var henAnimTime by remember { mutableFloatStateOf(2.5f) }
-    var isHenPaused by remember { mutableStateOf(false) }
+    // --- PASTE THE NEW VSYNC VARIABLES HERE ---
+    val currentIsHenPaused by rememberUpdatedState(state.isHenPaused)
+    var visualHenAnimTime by remember { mutableFloatStateOf(2.5f) }
 
-    var hasPlayedWhistle by remember { mutableStateOf(false) }
-    var hasPlayedThud by remember { mutableStateOf(false) }
-    var hasPlayedSlide by remember { mutableStateOf(false) }
-
-    var isPainedBeakClosed by remember { mutableStateOf(false) }
-    var isPainedBeakOpen by remember { mutableStateOf(false) }
-
-    val scope = rememberCoroutineScope()
-
-    LaunchedEffect(Unit) {
-        if (!hasPlayedExplosion) {
-            AudioService.playExplosion()
-            launch { animationProgress.animateTo(1f, tween(1500, easing = LinearOutSlowInEasing)) }
-            hasPlayedExplosion = true
-        }
-    }
-
-    if (style == "HEN") {
-        LaunchedEffect(isHenPaused) {
-            if (isHenPaused) {
-                AudioService.stopSlide()
-                AudioService.stopWhistle()
-
-                while (true) {
-                    delay(Random.nextLong(1000, 3000))
-                    isPainedBeakClosed = true
-                    delay(150)
-                    isPainedBeakClosed = false
-                    AudioService.playPainedCluck()
-                }
-            } else {
-                if (henAnimTime > 6.0f && henAnimTime < 8.5f) {
-                    AudioService.playHenSlide()
-                }
-                if (henAnimTime > 2.5f && henAnimTime < 4.5f) {
-                    AudioService.playWhistle()
-                }
-            }
-        }
-
-        LaunchedEffect(isHenPaused) {
-            var lastFrameTime = 0L
-            var lastVolumeUpdateTime = 0L // <-- NEW: Throttle timer for the OS
-
-            while (true) {
+    // --- PASTE THE NEW VSYNC LOOP HERE ---
+    LaunchedEffect(state.bombStyle) {
+        if (state.bombStyle == "HEN") {
+            var lastFrameNanos = System.nanoTime()
+            while(true) {
                 withFrameNanos { nanos ->
-                    val dt = if (lastFrameTime == 0L) 0.016f else ((nanos - lastFrameTime) / 1_000_000_000f).coerceAtMost(0.1f)
-                    lastFrameTime = nanos
-
-                    if (!isHenPaused) {
-                        henAnimTime += dt
-
-                        if (henAnimTime > 2.5f && !hasPlayedWhistle) {
-                            AudioService.playWhistle()
-                            hasPlayedWhistle = true
-                        }
-
-                        if (henAnimTime > 4.5f && !hasPlayedThud) {
-                            AudioService.playGlassTap()
-                            hasPlayedThud = true
-                        }
-
-                        if (henAnimTime > 6.0f && !hasPlayedSlide) {
-                            AudioService.playHenSlide()
-                            hasPlayedSlide = true
-                        }
-
-                        val currentMs = nanos / 1_000_000
-                        if (henAnimTime > 6.0f && (currentMs - lastVolumeUpdateTime > 50)) {
-                            lastVolumeUpdateTime = currentMs
-                            val slideProgress = (henAnimTime - 6.0f) / 2.5f
-                            val fadeVol = (1f - slideProgress).coerceIn(0f, 1f)
-                            AudioService.updateSlideVolume(fadeVol)
-                        }
+                    val dt = ((nanos - lastFrameNanos) / 1_000_000_000f).coerceAtMost(0.1f)
+                    lastFrameNanos = nanos
+                    if (!currentIsHenPaused) {
+                        visualHenAnimTime += dt
                     }
                 }
             }
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        if (!hasPlayedExplosion) {
+            launch { animationProgress.animateTo(1f, tween(1500, easing = LinearOutSlowInEasing)) }
+            hasPlayedExplosion = true
         }
     }
 
@@ -868,10 +733,10 @@ fun ExplosionScreen(
         Box(modifier = Modifier.fillMaxSize().background(Color(0x99DC2626)))
         Canvas(modifier = Modifier.fillMaxSize()) {
             val progress = animationProgress.value
-            var center = if (explosionOrigin != null && explosionOrigin != Offset.Zero) explosionOrigin else Offset(size.width / 2, size.height / 2)
+            var center = if (state.explosionOrigin != Offset.Zero) state.explosionOrigin else Offset(size.width / 2f, size.height / 2f)
 
             // Adjust the explosion origin to match the visual vertical center of each bomb's body
-            val yOffset = when (style) {
+            val yOffset = when (state.bombStyle) {
                 "HEN" -> 35.dp.toPx()     // Drops to the center of the egg
                 "FROG" -> 20.dp.toPx()    // Drops slightly to the center of the belly
                 "FUSE" -> 15.dp.toPx()    // Drops below the fuse, into the black sphere
@@ -881,14 +746,14 @@ fun ExplosionScreen(
             }
             center = center.copy(y = center.y + yOffset)
 
-            smoke.forEach { s ->
+            state.smoke.forEach { s ->
                 val currentX = center.x + (s.vx * progress * 3f)
                 val currentY = center.y + (s.vy * progress * 3f)
                 val currentSize = s.size + (progress * 150f)
                 val currentAlpha = (s.alpha * (1f - progress)).coerceIn(0f, 1f)
                 drawCircle(color = colors.smokeColor, alpha = currentAlpha, radius = currentSize, center = Offset(currentX, currentY))
             }
-            particles.forEach { p ->
+            state.particles.forEach { p ->
                 val dist = p.velocity * progress * 2f
                 val x = center.x + (p.dirX * dist)
                 val y = center.y + (p.dirY * dist)
@@ -903,8 +768,8 @@ fun ExplosionScreen(
         val flashAlpha = (1f - (animationProgress.value * 2.0f)).coerceIn(0f, 1f)
         if (flashAlpha > 0f) Box(modifier = Modifier.fillMaxSize().background(Color.White.copy(alpha = flashAlpha)))
 
-        val titleText = if (style == "FROG") stringResource(R.string.croaked) else stringResource(R.string.boom)
-        val titleSize = if (style == "FROG") 72.sp else 96.sp
+        val titleText = if (state.bombStyle == "FROG") stringResource(R.string.croaked) else stringResource(R.string.boom)
+        val titleSize = if (state.bombStyle == "FROG") 72.sp else 96.sp
 
         // --- NEW FIERY BRUSH (Old Brighter Colors) ---
         val boomBrush = Brush.verticalGradient(
@@ -940,30 +805,17 @@ fun ExplosionScreen(
             )
         }
 
-        if (style == "HEN") {
+        if (state.bombStyle == "HEN") {
             Box(modifier = Modifier.fillMaxSize().zIndex(200f), contentAlignment = Alignment.Center) {
                 HenVisual(
                     timeLeft = 0f,
-                    isPaused = isHenPaused,
-                    onTogglePause = {
-                        isHenPaused = !isHenPaused
-                        if (isHenPaused) {
-                            AudioService.playPauseInteraction("HEN", true)
-                            scope.launch {
-                                isPainedBeakClosed = true
-                                delay(150)
-                                isPainedBeakClosed = false
-                                AudioService.playPainedCluck()
-                            }
-                        } else {
-                            AudioService.playPauseInteraction("HEN", false)
-                        }
-                    },
+                    isPaused = state.isHenPaused, // <-- Read from State!
+                    onTogglePause = { onIntent(GameIntent.ToggleHenPause) }, // <-- Send Intent!
                     eggWobbleRotation = 0f,
-                    henSequenceElapsed = henAnimTime,
+                    henSequenceElapsed = visualHenAnimTime,
                     showEgg = false,
-                    isPainedBeakOpen = isPainedBeakOpen,
-                    isPainedBeakClosed = isPainedBeakClosed,
+                    isPainedBeakOpen = false,
+                    isPainedBeakClosed = state.isPainedBeakClosed, // <-- Read from State!
                     isDarkMode = true,
                     modifier = Modifier.fillMaxSize()
                 )
@@ -980,13 +832,11 @@ fun ExplosionScreen(
                 modifier = Modifier
                     .size(200.dp, 60.dp)
                     .clickable(
-                        interactionSource = sharedRestartInteraction, // <-- SENDING
+                        interactionSource = sharedRestartInteraction,
                         indication = null
                     ) {
                         AudioService.playClick()
-                        AudioService.stopSlide()
-                        AudioService.stopWhistle()
-                        onReset()
+                        onIntent(GameIntent.Reset) // <-- Clean Intent!
                     }
             )
         }

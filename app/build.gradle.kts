@@ -41,7 +41,7 @@ android {
 }
 
 dependencies {
-    // FIXED: Now using the Version Catalog alias
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.material.icons.extended)
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.core.ktx)
