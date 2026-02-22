@@ -2,6 +2,8 @@ package com.flamingo.ticktickboom
 
 import android.graphics.BlurMaskFilter
 import android.graphics.BlurMaskFilter.Blur
+import android.graphics.RuntimeShader
+import android.os.Build
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
@@ -44,6 +46,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -68,6 +71,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathOperation
+import androidx.compose.ui.graphics.ShaderBrush
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.TileMode
@@ -81,6 +85,7 @@ import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.changedToDown
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -101,6 +106,73 @@ import kotlin.math.sin
 import kotlin.math.sqrt
 
 // --- VISUALS ---
+
+const val C4_PLASMA_SHADER = """
+    uniform float2 resolution;
+    uniform float time;
+    uniform float intensity;
+    uniform float touchCount;
+    uniform float2 touch1;
+    uniform float2 touch2;
+
+    float hash(vec2 p) {
+        vec3 p3  = fract(vec3(p.xyx) * 0.1031);
+        p3 += dot(p3, p3.yzx + 33.33);
+        return fract((p3.x + p3.y) * p3.z);
+    }
+
+    float noise(vec2 x) {
+        vec2 i = floor(x);
+        vec2 f = fract(x);
+        float a = hash(i);
+        float b = hash(i + vec2(1.0, 0.0));
+        float c = hash(i + vec2(0.0, 1.0));
+        float d = hash(i + vec2(1.0, 1.0));
+        vec2 u = f * f * (3.0 - 2.0 * f);
+        return mix(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
+    }
+
+    // NEW: Reusable lightning generator!
+    float getLightning(vec2 fragCoord, vec2 touchPos, float t) {
+        vec2 uv = (fragCoord - touchPos) / resolution.y; 
+        vec2 warpedUv = uv + vec2(noise(uv * 15.0 - t), noise(uv * 15.0 + t)) * 0.1;
+        float r = length(warpedUv);
+        float angle = atan(warpedUv.y, warpedUv.x);
+        
+        float lightning = 0.0;
+        for(float i = 1.0; i <= 3.0; i++) {
+            float bolt = abs(sin(angle * (8.0 * i) + t * 1.5 * i + noise(uv * 10.0) * 15.0));
+            lightning += (0.003 * i) / abs(r - 0.2 * i + bolt * 0.08);
+        }
+        return lightning + (0.01 / (length(uv) + 0.01)); // Add hot core
+    }
+
+    half4 main(float2 fragCoord) {
+        float t = time * 6.0;
+        float lightning = 0.0;
+        float mask = 0.0;
+        
+        // Accumulate lightning for up to 2 fingers!
+        if (touchCount > 0.5) {
+            lightning += getLightning(fragCoord, touch1, t);
+            mask = max(mask, smoothstep(0.8, 0.0, length((fragCoord - touch1) / resolution.y)));
+        }
+        if (touchCount > 1.5) {
+            lightning += getLightning(fragCoord, touch2, t);
+            mask = max(mask, smoothstep(0.8, 0.0, length((fragCoord - touch2) / resolution.y)));
+        }
+        
+        mask *= intensity;
+        
+        vec3 col = vec3(1.0, 0.8, 0.2) * lightning; 
+        col += vec3(1.0, 1.0, 0.8) * pow(lightning, 2.0) * 0.3; 
+        
+        float finalAlpha = clamp(lightning * mask, 0.0, 1.0);
+        vec3 finalColor = clamp(col * mask, 0.0, finalAlpha);
+        
+        return half4(finalColor, finalAlpha);
+    }
+"""
 
 @Composable
 fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors, isPaused: Boolean, onTogglePause: () -> Unit, isDarkMode: Boolean) {
@@ -425,6 +497,31 @@ fun C4Visual(
     var sparkFrame by remember { mutableLongStateOf(0L) }
     var sparkTrigger by remember { mutableIntStateOf(0) } // <-- NEW STATE
 
+    // --- AGSL SHADER STATE ---
+    var shaderTime by remember { mutableFloatStateOf(0f) }
+    var touchCount by remember { mutableFloatStateOf(0f) }
+    var touch1 by remember { mutableStateOf(Offset(0f, 0f)) }
+    var touch2 by remember { mutableStateOf(Offset(0f, 0f)) }
+
+    // THE FIX 1: CACHE THE SHADER ONCE!
+    // This compiles the script into GPU memory once when the bomb loads, preventing 120fps crashes.
+    val plasmaShader = remember {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            RuntimeShader(C4_PLASMA_SHADER)
+        } else null
+    }
+
+    // Smooth timer specifically for the GPU animation
+    LaunchedEffect(zapAnim.value > 0f) {
+        var lastTimeNanos = System.nanoTime()
+        while (zapAnim.value > 0f) {
+            withFrameNanos { nanos ->
+                shaderTime += (nanos - lastTimeNanos) / 1_000_000_000f
+                lastTimeNanos = nanos
+            }
+        }
+    }
+
     // The engine now wakes up every time the trigger number changes!
     LaunchedEffect(sparkTrigger) {
         var lastSparkTime = 0L
@@ -658,35 +755,50 @@ fun C4Visual(
                 border = BorderStroke(1.dp, warningBorder),
                 shape = RoundedCornerShape(4.dp),
                 modifier = Modifier.pointerInput(Unit) {
-                    detectTapGestures(
-                        onPress = { tapOffset ->
-                            coroutineScope.launch {
-                                AudioService.playZap()
-                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                onShock() // <-- TELL THE SCREEN TO INVERT!
-                                zapAnim.snapTo(1f)
-                                zapAnim.animateTo(0f, tween(1000, easing = FastOutSlowInEasing))
-                            }
+                    awaitPointerEventScope {
+                        while (true) {
+                            val event = awaitPointerEvent()
 
-                            // SPAWN 20 ELECTRIC SPARKS
-                            repeat(20) {
-                                val angle = Math.random() * Math.PI * 2
-                                // --- UPDATED: Much higher initial velocity ---
-                                val speed = (4f + Math.random() * 6f).toFloat()
-                                sparks.add(
-                                    VisualParticle(
-                                        x = tapOffset.x,
-                                        y = tapOffset.y,
-                                        vx = (cos(angle) * speed).toFloat(),
-                                        vy = (sin(angle) * speed).toFloat(),
-                                        life = (0.2f + Math.random() * 0.4f).toFloat(),
-                                        maxLife = 0.6f
-                                    )
-                                )
+                            // 1. Find fingers that JUST touched the screen this exact frame
+                            val newDowns = event.changes.filter { it.changedToDown() }
+
+                            if (newDowns.isNotEmpty()) {
+                                // 2. Get the coordinates of up to 2 currently pressed fingers
+                                val activePointers = event.changes.filter { it.pressed }.map { it.position }.take(2)
+                                touchCount = activePointers.size.toFloat()
+                                if (activePointers.isNotEmpty()) touch1 = activePointers[0]
+                                if (activePointers.size > 1) touch2 = activePointers[1]
+
+                                // 3. Trigger the animation and audio
+                                coroutineScope.launch {
+                                    AudioService.playZap()
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    onShock()
+                                    zapAnim.snapTo(1f)
+                                    zapAnim.animateTo(0f, tween(1000, easing = FastOutSlowInEasing))
+                                }
+
+                                // 4. Spawn 20 sparks for EVERY finger that just touched down!
+                                newDowns.forEach { change ->
+                                    repeat(20) {
+                                        val angle = Math.random() * Math.PI * 2
+                                        val speed = (4f + Math.random() * 6f).toFloat()
+                                        sparks.add(
+                                            VisualParticle(
+                                                x = change.position.x,
+                                                y = change.position.y,
+                                                vx = (cos(angle) * speed).toFloat(),
+                                                vy = (sin(angle) * speed).toFloat(),
+                                                life = (0.2f + Math.random() * 0.4f).toFloat(),
+                                                maxLife = 0.6f
+                                            )
+                                        )
+                                    }
+                                }
+                                sparkTrigger++
                             }
-                            sparkTrigger++
                         }
-                    )
+                    }
                 }
             ) {
                 Row(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -710,8 +822,32 @@ fun C4Visual(
                 )
             }
 
-            // THE OVERLAY CANVAS: Highly Optimized Fiery Sparks
+            // THE OVERLAY CANVAS: GPU Shaders (API 33+) with Canvas Fallback
             Canvas(modifier = Modifier.matchParentSize()) {
+                if (zapAnim.value > 0f) {
+                    if (plasmaShader != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+
+                        // 1. Update dynamic variables on the pre-compiled shader
+                        plasmaShader.setFloatUniform("resolution", size.width, size.height)
+                        plasmaShader.setFloatUniform("time", shaderTime)
+                        plasmaShader.setFloatUniform("intensity", zapAnim.value)
+
+                        // NEW: Pass both touches and the count!
+                        plasmaShader.setFloatUniform("touchCount", touchCount)
+                        plasmaShader.setFloatUniform("touch1", touch1.x, touch1.y)
+                        plasmaShader.setFloatUniform("touch2", touch2.x, touch2.y)
+
+                        // 2. Draw the GPU effect instantly!
+                        drawRect(brush = ShaderBrush(plasmaShader))
+
+                    } else {
+                        // FALLBACK FOR ANDROID 12 AND BELOW (Optional: You can paste your old static circle drawing here)
+                    }
+                }
+
+                // THE FIX 2: FREED THE SPARKS!
+                // This sits entirely outside the shader's if/else block, so the physical sparks
+                // always explode outward, regardless of whether the phone is using the GPU shader or not!
                 if (sparkFrame >= 0) {
                     sparks.forEach { s ->
                         val alpha = (s.life / s.maxLife).coerceIn(0f, 1f)
@@ -719,19 +855,11 @@ fun C4Visual(
                         val glowRadius = coreRadius * 4f
 
                         if (glowRadius > 0f) {
-                            // Slide the canvas to the spark, and scale it to the exact size we need
                             withTransform({
                                 translate(s.x, s.y)
-                                // Tell it to scale perfectly outward from the spark's own center
                                 scale(glowRadius / 100f, glowRadius / 100f, pivot = Offset.Zero)
                             }) {
-                                // Draw using the CACHED brush, applying the fading alpha globally!
-                                drawCircle(
-                                    brush = baseGlowBrush,
-                                    radius = 100f,
-                                    center = Offset.Zero,
-                                    alpha = alpha
-                                )
+                                drawCircle(brush = baseGlowBrush, radius = 100f, center = Offset.Zero, alpha = alpha)
                             }
                         }
                     }

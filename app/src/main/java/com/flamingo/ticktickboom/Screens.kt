@@ -29,9 +29,12 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -245,10 +248,14 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, onToggleTheme: () -> Uni
         modifier = Modifier.fillMaxSize().graphicsLayer { translationY = flyAwayAnim.value; clip = false }
     ) {
         Column(
-            modifier = Modifier.verticalScroll(rememberScrollState()).fillMaxWidth().padding(horizontal = 24.dp),
+            modifier = Modifier
+                .verticalScroll(rememberScrollState())
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Spacer(modifier = Modifier.height(48.dp))
+            Spacer(modifier = Modifier.statusBarsPadding())
+            // Spacer(modifier = Modifier.height(16.dp))
 
             // Capture the rotation value outside the Canvas
             val currentRotation = if (isHoldingBomb) holdingShakeOffset else wobbleAnim.value
@@ -440,7 +447,8 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, onToggleTheme: () -> Uni
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(stringResource(R.string.arm_system), color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp, fontFamily = CustomFont)
             }
-            Spacer(modifier = Modifier.height(48.dp))
+            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.navigationBarsPadding())
         }
     }
 }
@@ -637,7 +645,14 @@ fun BombScreen(
             )
         }
 
-        Box(modifier = Modifier.fillMaxSize().padding(16.dp).zIndex(1f), contentAlignment = Alignment.Center) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .systemBarsPadding() // --- THE FIX: Protects the Bomb Screen UI! ---
+                .padding(16.dp)
+                .zIndex(1f),
+            contentAlignment = Alignment.Center
+        ) {
             if (isLandscape) {
                 val bombHalfWidth = when (state.bombStyle) {
                     "C4" -> 160.dp
