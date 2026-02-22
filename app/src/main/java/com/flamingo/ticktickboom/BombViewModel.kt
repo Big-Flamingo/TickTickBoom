@@ -15,7 +15,7 @@ import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.random.Random
 
-class BombViewModel : ViewModel() {
+class BombViewModel(private val audio: AudioController) : ViewModel() {
 
     // 1. THE STATE: Backing property (mutable) and Public property (read-only)
     private val _state = MutableStateFlow(GameState())
@@ -38,6 +38,7 @@ class BombViewModel : ViewModel() {
     private var hasPlayedThud = false
     private var hasPlayedSlide = false
     private var postGameJob: Job? = null
+    private var logicalHenAnimTime = 0f
 
     // 3. THE INTENT PROCESSOR: The only way the UI can talk to the logic
     fun processIntent(intent: GameIntent) {
@@ -59,11 +60,14 @@ class BombViewModel : ViewModel() {
         _state.update { it.copy(isHenPaused = isNowPaused) }
 
         if (isNowPaused) {
-            AudioService.playPauseInteraction("HEN", true)
-            AudioService.stopSlide()
-            AudioService.stopWhistle()
+            audio.playPauseInteraction("HEN", true)
+            audio.stopSlide()
+            audio.stopWhistle()
         } else {
-            AudioService.playPauseInteraction("HEN", false)
+            audio.playPauseInteraction("HEN", false)
+            // --- THE FIX: RESUME AUDIO IF NEEDED ---
+            if (logicalHenAnimTime > 2.5f && logicalHenAnimTime < 4.5f) audio.playWhistle()
+            if (logicalHenAnimTime > 6.0f && logicalHenAnimTime < 8.5f) audio.playHenSlide()
         }
     }
 
@@ -99,7 +103,7 @@ class BombViewModel : ViewModel() {
 
         // --- NEW: Start the Fuse audio immediately if applicable! ---
         if (settings.style == "FUSE") {
-            AudioService.startFuse(isFuseFinished)
+            audio.startFuse(isFuseFinished)
         }
 
         startGameLoop()
@@ -111,25 +115,25 @@ class BombViewModel : ViewModel() {
         val isNowPaused = !_state.value.isPaused
 
         _state.update { it.copy(isPaused = isNowPaused) }
-        AudioService.playPauseInteraction(_state.value.bombStyle, isNowPaused)
+        audio.playPauseInteraction(_state.value.bombStyle, isNowPaused)
 
         if (isNowPaused) {
-            if (_state.value.bombStyle != "FROG") AudioService.stopAll()
+            if (_state.value.bombStyle != "FROG") audio.stopAll()
         } else {
-            if (_state.value.bombStyle == "FUSE") AudioService.startFuse(state.value.isCritical)
+            if (_state.value.bombStyle == "FUSE") audio.startFuse(state.value.isCritical)
         }
     }
 
     private fun handleAbort() {
         gameLoopJob?.cancel()
         postGameJob?.cancel()
-        AudioService.stopAll()
+        audio.stopAll()
         _state.update { GameState(appState = AppState.SETUP) }
     }
 
     private fun handleReset() {
         postGameJob?.cancel()
-        AudioService.stopAll()
+        audio.stopAll()
         _state.update { GameState(appState = AppState.SETUP) }
     }
 
@@ -160,20 +164,20 @@ class BombViewModel : ViewModel() {
                     // --- Audio & Trigger Logic ---
                     if (newTimeLeft <= 5f && !isFuseFinished) {
                         isFuseFinished = true
-                        if (currentState.bombStyle == "FUSE") AudioService.dimFuse()
+                        if (currentState.bombStyle == "FUSE") audio.dimFuse()
                     }
 
                     // --- NEW: Restored One-Shot Audio Triggers ---
                     if (currentState.bombStyle == "DYNAMITE" && newTimeLeft <= 1.0f && !hasPlayedDing && newTimeLeft > 0f) {
-                        AudioService.playDing()
+                        audio.playDing()
                         hasPlayedDing = true
                     }
                     if (currentState.bombStyle == "FROG" && newTimeLeft <= 1.05f && !hasPlayedAlert && newTimeLeft > 0f) {
-                        AudioService.playAlert()
+                        audio.playAlert()
                         hasPlayedAlert = true
                     }
                     if (currentState.bombStyle == "FROG" && newTimeLeft <= 1.0f && !hasPlayedFlail && newTimeLeft > 0f) {
-                        AudioService.playFlail()
+                        audio.playFlail()
                         hasPlayedFlail = true
                     }
 
@@ -186,7 +190,7 @@ class BombViewModel : ViewModel() {
                             else -> 0
                         }
                         if (currentCrackStage > lastPlayedCrackStage) {
-                            AudioService.playCrack()
+                            audio.playCrack()
                             lastPlayedCrackStage = currentCrackStage
                         }
                     }
@@ -194,13 +198,13 @@ class BombViewModel : ViewModel() {
                     val tickInterval = if (currentState.bombStyle == "HEN") 1000L else if (newTimeLeft < 5) 500L else 1000L
 
                     if (currentRunTimeMs - lastTickRunTimeMs >= tickInterval) {
-                        if (currentState.bombStyle == "C4") { AudioService.playTick(); newIsLedOn = true }
-                        if (currentState.bombStyle == "DYNAMITE" && newTimeLeft > 1.0) AudioService.playClockTick()
-                        if (currentState.bombStyle == "FROG") AudioService.playCroak(newTimeLeft < 5)
+                        if (currentState.bombStyle == "C4") { audio.playTick(); newIsLedOn = true }
+                        if (currentState.bombStyle == "DYNAMITE" && newTimeLeft > 1.0) audio.playClockTick()
+                        if (currentState.bombStyle == "FROG") audio.playCroak(newTimeLeft < 5)
 
                         // --- FIX: Only play standard clucks if she hasn't started panicking (6.0s)! ---
                         if (currentState.bombStyle == "HEN" && newTimeLeft > 6.0f) {
-                            AudioService.playHenCluck()
+                            audio.playHenCluck()
                         }
 
                         lastTickRunTimeMs = currentRunTimeMs
@@ -224,10 +228,10 @@ class BombViewModel : ViewModel() {
     }
 
     private suspend fun triggerExplosion() {
-        AudioService.stopAll()
+        audio.stopAll()
 
         // --- RESTORED: The actual BOOM! ---
-        AudioService.playExplosion()
+        audio.playExplosion()
 
         // --- STEP 3 PREVIEW: Coroutine Optimization ---
         // We calculate particles on the Default (Background) thread so the UI doesn't stutter!
@@ -282,7 +286,7 @@ class BombViewModel : ViewModel() {
             var nextPainedCluckTarget = Random.nextFloat() * 2f + 1f
 
             // --- NEW: Internal tracker just for Audio! ---
-            var logicalHenAnimTime = 2.5f
+            logicalHenAnimTime = 2.5f
 
             _state.update { it.copy(isHenPaused = false, isPainedBeakClosed = false) }
 
@@ -298,7 +302,7 @@ class BombViewModel : ViewModel() {
                     painedCluckTimer += dt
                     if (painedCluckTimer >= nextPainedCluckTarget) {
                         _state.update { it.copy(isPainedBeakClosed = true) }
-                        AudioService.playPainedCluck()
+                        audio.playPainedCluck()
                         delay(150)
                         _state.update { it.copy(isPainedBeakClosed = false) }
                         lastTimeNanos = System.nanoTime()
@@ -309,16 +313,16 @@ class BombViewModel : ViewModel() {
                     // --- THE FIX: Only update internal logic! ---
                     logicalHenAnimTime += dt
 
-                    if (logicalHenAnimTime > 2.5f && !hasPlayedWhistle) { AudioService.playWhistle(); hasPlayedWhistle = true }
-                    if (logicalHenAnimTime > 4.5f && !hasPlayedThud) { AudioService.playGlassTap(); hasPlayedThud = true }
-                    if (logicalHenAnimTime > 6.0f && !hasPlayedSlide) { AudioService.playHenSlide(); hasPlayedSlide = true }
+                    if (logicalHenAnimTime > 2.5f && !hasPlayedWhistle) { audio.playWhistle(); hasPlayedWhistle = true }
+                    if (logicalHenAnimTime > 4.5f && !hasPlayedThud) { audio.playGlassTap(); hasPlayedThud = true }
+                    if (logicalHenAnimTime > 6.0f && !hasPlayedSlide) { audio.playHenSlide(); hasPlayedSlide = true }
 
                     val currentMs = currentNanos / 1_000_000
                     if (logicalHenAnimTime > 6.0f && (currentMs - lastVolumeUpdateTime > 50)) {
                         lastVolumeUpdateTime = currentMs
                         val slideProgress = (logicalHenAnimTime - 6.0f) / 2.5f
                         val fadeVol = (1f - slideProgress).coerceIn(0f, 1f)
-                        AudioService.updateSlideVolume(fadeVol)
+                        audio.updateSlideVolume(fadeVol)
                     }
                     // REMOVED: _state.update { it.copy(henAnimTime = newAnimTime) }
                 }

@@ -90,6 +90,10 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
@@ -750,11 +754,18 @@ fun C4Visual(
         val warningTextIcon = lerp(warningBase, Color.Black, zapAnim.value)
 
         Box(contentAlignment = Alignment.Center) {
+            val shockDesc = stringResource(R.string.desc_trigger_shock)
             Surface(
                 color = warningBg,
                 border = BorderStroke(1.dp, warningBorder),
                 shape = RoundedCornerShape(4.dp),
-                modifier = Modifier.pointerInput(Unit) {
+                modifier = Modifier
+                    // --- NEW: Accessibility Semantics ---
+                    .semantics {
+                        role = Role.Button
+                        contentDescription = shockDesc
+                    }
+                    .pointerInput(Unit) {
                     awaitPointerEventScope {
                         while (true) {
                             val event = awaitPointerEvent()
@@ -771,7 +782,6 @@ fun C4Visual(
 
                                 // 3. Trigger the animation and audio
                                 coroutineScope.launch {
-                                    AudioService.playZap()
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                     onShock()
                                     zapAnim.snapTo(1f)

@@ -3,12 +3,11 @@ package com.flamingo.ticktickboom
 import android.content.Context
 import android.media.AudioAttributes
 import android.media.SoundPool
-import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
-import android.os.VibratorManager
+import androidx.core.content.ContextCompat
 
-object AudioService {
+class AudioController(context: Context) {
     private var soundPool: SoundPool? = null
 
     private var vibrator: Vibrator? = null
@@ -58,12 +57,7 @@ object AudioService {
     var timerVolume: Float = 1.0f
     var explosionVolume: Float = 1.0f
 
-    private var appContext: Context? = null
-
-    fun init(context: Context) {
-        if (soundPool != null) return
-        appContext = context.applicationContext
-
+    init {
         val audioAttributes = AudioAttributes.Builder()
             .setUsage(AudioAttributes.USAGE_GAME)
             .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
@@ -75,46 +69,41 @@ object AudioService {
             .build()
 
         soundPool?.let {
-            tickSoundId = it.load(appContext, R.raw.tick, 1)
-            clockSoundId = it.load(appContext, R.raw.clock, 1)
-            explosionSoundId = it.load(appContext, R.raw.explosion, 1)
-            fuseSoundId = it.load(appContext, R.raw.fuse, 1)
-            croakSoundId = it.load(appContext, R.raw.croak, 1)
-            croakHighSoundId = it.load(appContext, R.raw.croak_high, 1)
-            croakLowSoundId = it.load(appContext, R.raw.croak_low, 1)
-            croakFastSoundId = it.load(appContext, R.raw.croak_fast, 1)
-            croakFastHighSoundId = it.load(appContext, R.raw.croak_fast_high, 1)
-            croakFastLowSoundId = it.load(appContext, R.raw.croak_fast_low, 1)
-            bombCroakSoundId = it.load(appContext, R.raw.bomb_croak, 1)
-            flailSoundId = it.load(appContext, R.raw.flail, 1)
-            dingSoundId = it.load(appContext, R.raw.ding, 1)
-            clickSoundId = it.load(appContext, R.raw.click, 1)
-            alertSoundId = it.load(appContext, R.raw.alert, 1)
-            beepSoundId = it.load(appContext, R.raw.beep, 1)
-            zapSoundId = it.load(appContext, R.raw.zap, 1) // <-- LOAD THE ZAP
-            fizzleSoundId = it.load(appContext, R.raw.fizzle, 1)
-            flintSoundId = it.load(appContext, R.raw.flint, 1)
-            glassSoundId = it.load(appContext, R.raw.glass, 1)
-            boingSoundId = it.load(appContext, R.raw.boing, 1)
+            tickSoundId = it.load(context, R.raw.tick, 1)
+            clockSoundId = it.load(context, R.raw.clock, 1)
+            explosionSoundId = it.load(context, R.raw.explosion, 1)
+            fuseSoundId = it.load(context, R.raw.fuse, 1)
+            croakSoundId = it.load(context, R.raw.croak, 1)
+            croakHighSoundId = it.load(context, R.raw.croak_high, 1)
+            croakLowSoundId = it.load(context, R.raw.croak_low, 1)
+            croakFastSoundId = it.load(context, R.raw.croak_fast, 1)
+            croakFastHighSoundId = it.load(context, R.raw.croak_fast_high, 1)
+            croakFastLowSoundId = it.load(context, R.raw.croak_fast_low, 1)
+            bombCroakSoundId = it.load(context, R.raw.bomb_croak, 1)
+            flailSoundId = it.load(context, R.raw.flail, 1)
+            dingSoundId = it.load(context, R.raw.ding, 1)
+            clickSoundId = it.load(context, R.raw.click, 1)
+            alertSoundId = it.load(context, R.raw.alert, 1)
+            beepSoundId = it.load(context, R.raw.beep, 1)
+            zapSoundId = it.load(context, R.raw.zap, 1) // <-- LOAD THE ZAP
+            fizzleSoundId = it.load(context, R.raw.fizzle, 1)
+            flintSoundId = it.load(context, R.raw.flint, 1)
+            glassSoundId = it.load(context, R.raw.glass, 1)
+            boingSoundId = it.load(context, R.raw.boing, 1)
 
-            henBokSoundId = it.load(appContext, R.raw.hen_bok, 1)
-            henFlySoundId = it.load(appContext, R.raw.hen_fly, 1)
-            eggCrackSoundId = it.load(appContext, R.raw.egg_crack, 1)
-            henHoldingSoundId = it.load(appContext, R.raw.hen_holding, 1)
+            henBokSoundId = it.load(context, R.raw.hen_bok, 1)
+            henFlySoundId = it.load(context, R.raw.hen_fly, 1)
+            eggCrackSoundId = it.load(context, R.raw.egg_crack, 1)
+            henHoldingSoundId = it.load(context, R.raw.hen_holding, 1)
             // NEW: Load the pained cluck
-            painedCluckSoundId = it.load(appContext, R.raw.pained_cluck, 1)
-            slideSoundId = it.load(appContext, R.raw.hen_slide, 1)
-            flapSoundId = it.load(appContext, R.raw.flap, 1)
-            whistleSoundId = it.load(appContext, R.raw.whistle, 1)
+            painedCluckSoundId = it.load(context, R.raw.pained_cluck, 1)
+            slideSoundId = it.load(context, R.raw.hen_slide, 1)
+            flapSoundId = it.load(context, R.raw.flap, 1)
+            whistleSoundId = it.load(context, R.raw.whistle, 1)
         }
 
-        // Grab the vibrator from Android once, and keep it on our desk!
-        vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            (appContext?.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager)?.defaultVibrator
-        } else {
-            @Suppress("DEPRECATION")
-            appContext?.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
-        }
+        // Grab the vibrator using AndroidX (Automatically handles API 31+ deprecations!)
+        vibrator = ContextCompat.getSystemService(context, Vibrator::class.java)
     }
 
     // --- PLAYER CONTROLS ---
@@ -271,15 +260,11 @@ object AudioService {
         stopAll()
         soundPool?.play(explosionSoundId, explosionVolume, explosionVolume, 2, 0, 1f)
 
-        // Just hit the ON button for the machine we already grabbed!
+        // Modern Vibration (Guaranteed to be API 26+ by our build.gradle!)
         vibrator?.let { vib ->
+            // --- THE FIX: Removed the Build.VERSION check entirely! ---
             if (vib.hasVibrator()) {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    vib.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 100, 50, 400, 100, 200), -1))
-                } else {
-                    @Suppress("DEPRECATION")
-                    vib.vibrate(800)
-                }
+                vib.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 100, 50, 400, 100, 200), -1))
             }
         }
     }

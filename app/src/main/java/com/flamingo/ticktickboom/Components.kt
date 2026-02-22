@@ -66,6 +66,10 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -234,12 +238,19 @@ fun RowScope.StyleButton(
     val borderColor = if (isSelected) color else colors.border
     val contentColor = if (isSelected) color else colors.textSecondary
 
+    val selectDesc = stringResource(R.string.desc_select_style, label)
+
     Column(modifier = Modifier
         .weight(1f)
         .height(100.dp)
         .clip(RoundedCornerShape(16.dp))
         .background(animatedBgColor)
         .border(1.dp, borderColor, RoundedCornerShape(16.dp))
+        // --- NEW: Accessibility Semantics ---
+        .semantics {
+            role = Role.Button
+            contentDescription = selectDesc
+        }
         // 3. Swap .clickable for .pointerInput to catch the exact moment of touch
         .pointerInput(Unit) {
             detectTapGestures(
@@ -504,7 +515,7 @@ fun AbortButtonContent(colors: AppColors, onAbort: () -> Unit) {
         textColor = colors.textSecondary,
         borderColor = colors.textSecondary,
         borderWidth = 1.dp,
-        onClick = { AudioService.playClick(); onAbort() }
+        onClick = { onAbort() }
     )
 }
 
@@ -622,7 +633,6 @@ fun LanguageSwitch(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null
             ) {
-                AudioService.playClick()
                 onClick()
             }
     ) {

@@ -15,11 +15,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -31,65 +33,90 @@ import androidx.core.os.ConfigurationCompat
 import androidx.core.os.LocaleListCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.core.view.WindowCompat
-import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import androidx.compose.runtime.DisposableEffect
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
 
 class MainActivity : AppCompatActivity() {
+
+    // 1. Hold our new controller at the Activity level
+    private lateinit var audioController: AudioController
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         installSplashScreen()
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        AudioService.init(this)
-
-        // --- NEW: Tell the app to draw behind the system bars! ---
         WindowCompat.setDecorFitsSystemWindows(window, false)
 
+        // 2. Initialize it using applicationContext (which never leaks!)
+        audioController = AudioController(applicationContext)
+
         val prefs = getSharedPreferences("bomb_timer_prefs", MODE_PRIVATE)
-        AudioService.timerVolume = prefs.getFloat("vol_timer", 0.8f)
-        AudioService.explosionVolume = prefs.getFloat("vol_explode", 1.0f)
+        audioController.timerVolume = prefs.getFloat("vol_timer", 0.8f)
+        audioController.explosionVolume = prefs.getFloat("vol_explode", 1.0f)
 
         setContent {
             MaterialTheme {
-                // Instantiates our ViewModel and keeps it alive across screen rotations!
-                val viewModel: BombViewModel = viewModel()
-                BombApp(viewModel)
+                // --- THE FIX: Modern ViewModel DSL! ---
+                // No custom factory class required, completely type-safe, and zero warnings!
+                val viewModel: BombViewModel = viewModel(
+                    factory = viewModelFactory {
+                        initializer {
+                            BombViewModel(audioController)
+                        }
+                    }
+                )
+                BombApp(viewModel, audioController) // <-- PASSED IN
             }
         }
     }
 
     override fun onPause() {
         super.onPause()
-        if (!isChangingConfigurations) AudioService.stopAll()
+        if (!isChangingConfigurations) audioController.stopAll()
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        if (!isChangingConfigurations) AudioService.release()
+        if (!isChangingConfigurations) audioController.release()
     }
 }
 
 @Composable
-fun BombApp(viewModel: BombViewModel) {
+fun BombApp(viewModel: BombViewModel, audioController: AudioController) {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("bomb_timer_prefs", Context.MODE_PRIVATE) }
     var isDarkMode by remember { mutableStateOf(prefs.getBoolean("dark_mode", true)) }
 
-    // 1. COLLECT THE STATE: The UI will automatically redraw whenever the ViewModel updates this!
+    // 1. COLLECT THE STATE
     val state by viewModel.state.collectAsState()
+
+    // --- NEW: Safely read the latest state without triggering a recomposition! ---
+    val currentState by rememberUpdatedState(state)
 
     // --- NEW: LIFECYCLE INTERRUPT HANDLER ---
     val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner, state.appState, state.isPaused) {
+
+    // Notice we ONLY pass lifecycleOwner now. This means the observer attaches ONCE and stays there!
+    DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            // If the user minimizes the app, gets a phone call, or turns off their screen...
             if (event == Lifecycle.Event.ON_PAUSE) {
-                // Check if the bomb is actively ticking!
-                if (state.appState == AppState.RUNNING && !state.isPaused) {
-                    // Send your existing pause intent to the ViewModel!
+                // 1. Pause the ticking bomb
+                if (currentState.appState == AppState.RUNNING && !currentState.isPaused) {
                     viewModel.processIntent(GameIntent.TogglePause)
+                }
+                // 2. Pause the Hen Explosion animation!
+                else if (currentState.appState == AppState.EXPLODED && currentState.bombStyle == "HEN" && !currentState.isHenPaused) {
+                    viewModel.processIntent(GameIntent.ToggleHenPause)
+                }
+            }
+            else if (event == Lifecycle.Event.ON_RESUME) {
+                // 3. Auto-resume the Hen Explosion when returning to the app!
+                if (currentState.appState == AppState.EXPLODED && currentState.bombStyle == "HEN" && currentState.isHenPaused) {
+                    viewModel.processIntent(GameIntent.ToggleHenPause)
                 }
             }
         }
@@ -124,12 +151,13 @@ fun BombApp(viewModel: BombViewModel) {
     fun toggleTheme() {
         isDarkMode = !isDarkMode
         prefs.edit { putBoolean("dark_mode", isDarkMode) }
-        AudioService.playClick()
+        audioController.playClick()
     }
 
     val configuration = LocalConfiguration.current
 
     fun toggleLanguage() {
+        audioController.playClick()
         val currentLang = java.util.Locale.getDefault().language
         val targetLang = if (currentLang == "en") "zh-TW" else "en"
         AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(targetLang))
@@ -159,6 +187,7 @@ fun BombApp(viewModel: BombViewModel) {
                     AppState.SETUP -> SetupScreen(
                         colors = colors,
                         isDarkMode = isDarkMode,
+                        audio = audioController,
                         onToggleTheme = { toggleTheme() },
                         onStart = { settings -> viewModel.processIntent(GameIntent.StartTimer(settings)) },
                         onToggleLanguage = { toggleLanguage() }
@@ -168,12 +197,14 @@ fun BombApp(viewModel: BombViewModel) {
                         state = state,
                         colors = colors,
                         isDarkMode = isDarkMode,
+                        audio = audioController,
                         onIntent = { intent -> viewModel.processIntent(intent) }
                     )
 
                     AppState.EXPLODED -> ExplosionScreen(
                         colors = colors,
                         state = state,
+                        audio = audioController,
                         onIntent = { intent -> viewModel.processIntent(intent) }
                     )
                 }

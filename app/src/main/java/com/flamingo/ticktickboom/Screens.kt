@@ -90,6 +90,10 @@ import androidx.compose.ui.zIndex
 import androidx.core.content.edit
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 
 // NOTE: Uses VisualParticle from AppModels.kt
 // NOTE: Uses drawReflection and StrokeGlowText from Components.kt
@@ -98,7 +102,7 @@ import kotlinx.coroutines.launch
 // --- SCREENS ---
 
 @Composable
-fun SetupScreen(colors: AppColors, isDarkMode: Boolean, onToggleTheme: () -> Unit, onStart: (TimerSettings) -> Unit, onToggleLanguage: () -> Unit) {
+fun SetupScreen(colors: AppColors, isDarkMode: Boolean, audio: AudioController, onToggleTheme: () -> Unit, onStart: (TimerSettings) -> Unit, onToggleLanguage: () -> Unit) {
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
     val prefs = remember { context.getSharedPreferences("bomb_timer_prefs", Context.MODE_PRIVATE) }
@@ -140,9 +144,9 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, onToggleTheme: () -> Uni
 
     fun saveMin(text: String) { minText = text; text.toIntOrNull()?.let { prefs.edit { putInt("min", it) } } }
     fun saveMax(text: String) { maxText = text; text.toIntOrNull()?.let { prefs.edit { putInt("max", it) } } }
-    fun saveStyle(newStyle: String) { style = newStyle; prefs.edit { putString("style", newStyle) }; AudioService.playClick() }
-    fun saveTimerVol(vol: Float) { timerVol = vol; AudioService.timerVolume = vol; prefs.edit { putFloat("vol_timer", vol) } }
-    fun saveExplodeVol(vol: Float) { explodeVol = vol; AudioService.explosionVolume = vol; prefs.edit { putFloat("vol_explode", vol) } }
+    fun saveStyle(newStyle: String) { style = newStyle; prefs.edit { putString("style", newStyle) }; audio.playClick() }
+    fun saveTimerVol(vol: Float) { timerVol = vol; audio.timerVolume = vol; prefs.edit { putFloat("vol_timer", vol) } }
+    fun saveExplodeVol(vol: Float) { explodeVol = vol; audio.explosionVolume = vol; prefs.edit { putFloat("vol_explode", vol) } }
 
     fun validateMin() {
         val rawMin = minText.toIntOrNull() ?: 1
@@ -191,7 +195,7 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, onToggleTheme: () -> Uni
     }
 
     fun tryStart() {
-        AudioService.playClick()
+        audio.playClick()
 
         // Final Safety Check before starting
         var min = minText.toIntOrNull() ?: 1
@@ -210,7 +214,7 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, onToggleTheme: () -> Uni
         if (easterEggTaps >= 3) return
         scope.launch {
             easterEggTaps++
-            AudioService.playBombCroak()
+            audio.playBombCroak()
             wobbleAnim.snapTo(0f); wobbleAnim.animateTo(-15f, tween(50)); wobbleAnim.animateTo(15f, tween(50)); wobbleAnim.animateTo(0f, spring(stiffness = Spring.StiffnessMediumLow))
             if (easterEggTaps >= 3) {
                 // Shorter distance, faster time, accelerates out!
@@ -221,7 +225,7 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, onToggleTheme: () -> Uni
                 if (max < min) max = min
 
                 prefs.edit { putInt("min", min); putInt("max", max); putFloat("vol_timer", timerVol); putFloat("vol_explode", explodeVol) }
-                AudioService.timerVolume = timerVol; AudioService.explosionVolume = explodeVol
+                audio.timerVolume = timerVol; audio.explosionVolume = explodeVol
                 onStart(TimerSettings(min, max, "FROG"))
             }
         }
@@ -230,8 +234,8 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, onToggleTheme: () -> Uni
     fun launchHen() {
         scope.launch {
             isHoldingBomb = false
-            AudioService.stopHoldingCluck()
-            AudioService.playLoudCluck()
+            audio.stopHoldingCluck()
+            audio.playLoudCluck()
 
             // Shorter distance, faster time, accelerates out!
             flyAwayAnim.animateTo(-screenHeightPx - 100f, tween(400, easing = FastOutLinearInEasing))
@@ -273,13 +277,13 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, onToggleTheme: () -> Uni
                                     val job = scope.launch {
                                         delay(200)
                                         isHoldingBomb = true
-                                        AudioService.startHoldingCluck()
+                                        audio.startHoldingCluck()
                                     }
                                     tryAwaitRelease()
                                     job.cancel()
                                     if (isHoldingBomb) {
                                         isHoldingBomb = false
-                                        AudioService.stopHoldingCluck()
+                                        audio.stopHoldingCluck()
                                     }
                                 },
                                 onTap = { handleBombTap() },
@@ -423,12 +427,19 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, onToggleTheme: () -> Uni
                 label = "armButtonHighlight"
             )
 
+            val armDesc = stringResource(R.string.desc_arm_system)
+
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(60.dp)
                     .clip(RoundedCornerShape(12.dp))
                     .background(armAnimatedColor)
+                    // --- NEW: Accessibility Semantics ---
+                    .semantics {
+                        role = Role.Button
+                        contentDescription = armDesc
+                    }
                     // 3. Swap clickable for pointerInput to catch the exact touch millisecond
                     .pointerInput(Unit) {
                         detectTapGestures(
@@ -455,10 +466,11 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, onToggleTheme: () -> Uni
 
 @Composable
 fun BombScreen(
-    state: GameState, // <-- Now takes the Master State!
+    state: GameState,
     colors: AppColors,
     isDarkMode: Boolean,
-    onIntent: (GameIntent) -> Unit // <-- Now sends Intents instead of callbacks!
+    audio: AudioController, // <-- ADDED
+    onIntent: (GameIntent) -> Unit
 ) {
     val coroutineScope = rememberCoroutineScope()
 
@@ -533,8 +545,8 @@ fun BombScreen(
                     resumeVol = (2.5f - henSequenceElapsed) / 1.5f
                 }
 
-                val finalVol = resumeVol.coerceIn(0f, 1f) * AudioService.timerVolume
-                AudioService.playWingFlap(startVol = finalVol)
+                val finalVol = resumeVol.coerceIn(0f, 1f) * audio.timerVolume
+                audio.playWingFlap(startVol = finalVol)
             }
         }
     }
@@ -581,15 +593,15 @@ fun BombScreen(
                         henSequenceElapsed += dt
 
                         if (henSequenceElapsed > 0.5f && !hasPlayedFly) {
-                            AudioService.playLoudCluck()
-                            AudioService.playWingFlap(AudioService.timerVolume)
+                            audio.playLoudCluck()
+                            audio.playWingFlap(audio.timerVolume)
                             hasPlayedFly = true
                         }
                         if (henSequenceElapsed > 1.0f && henSequenceElapsed < 2.5f) {
                             val currentVol = (2.5f - henSequenceElapsed) / 1.5f
-                            AudioService.updateWingFlapVolume(currentVol.coerceIn(0f, 1f))
+                            audio.updateWingFlapVolume(currentVol.coerceIn(0f, 1f))
                         }
-                        if (henSequenceElapsed > 2.5f) AudioService.stopWingFlap()
+                        if (henSequenceElapsed > 2.5f) audio.stopWingFlap()
                     }
                 }
             }
@@ -632,6 +644,7 @@ fun BombScreen(
                 isPaused = state.isPaused,
                 onTogglePause = { onIntent(GameIntent.TogglePause) }, // Send Intent!
                 onShock = {
+                    audio.playZap()
                     coroutineScope.launch {
                         flashAnim.snapTo(1f)
                         flashAnim.animateTo(0f, tween(1000, easing = FastOutSlowInEasing))
@@ -684,7 +697,10 @@ fun BombScreen(
                                 colors = colors,
                                 henSequenceElapsed = henSequenceElapsed
                             )
-                            AbortButtonContent(colors) { onIntent(GameIntent.Abort) } // Send Intent!
+                            AbortButtonContent(colors) {
+                                audio.playClick()
+                                onIntent(GameIntent.Abort)
+                            }
                         }
                     }
                 }
@@ -701,7 +717,10 @@ fun BombScreen(
                     Spacer(modifier = Modifier.height(32.dp))
                     Box(modifier = Modifier.size(300.dp))
                     Spacer(modifier = Modifier.height(64.dp))
-                    AbortButtonContent(colors) { onIntent(GameIntent.Abort) } // Send Intent!
+                    AbortButtonContent(colors) {
+                        audio.playClick()
+                        onIntent(GameIntent.Abort)
+                    }
                 }
             }
         }
@@ -709,11 +728,7 @@ fun BombScreen(
 }
 
 @Composable
-fun ExplosionScreen(
-    colors: AppColors,
-    state: GameState, // <-- Uses state now!
-    onIntent: (GameIntent) -> Unit
-) {
+fun ExplosionScreen(colors: AppColors, state: GameState, audio: AudioController, onIntent: (GameIntent) -> Unit) {
     var hasPlayedExplosion by remember { mutableStateOf(false) }
     val animationProgress = remember { Animatable(if (hasPlayedExplosion) 1f else 0f) }
 
@@ -850,7 +865,7 @@ fun ExplosionScreen(
                         interactionSource = sharedRestartInteraction,
                         indication = null
                     ) {
-                        AudioService.playClick()
+                        audio.playClick()
                         onIntent(GameIntent.Reset) // <-- Clean Intent!
                     }
             )

@@ -45,4 +45,8 @@
     <string name="boom">轟</string>
     <string name="croaked">呱了</string>
     <string name="restart">重新開始</string>
+
+    <string name="desc_select_style">選擇炸彈款式：%1$s</string>
+    <string name="desc_arm_system">啟動系統並開始倒數</string>
+    <string name="desc_trigger_shock">觸發高壓電擊</string>
 </resources>

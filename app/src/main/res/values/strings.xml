@@ -44,4 +44,8 @@
     <string name="boom">BOOM</string>
     <string name="croaked">CROAKED</string>
     <string name="restart">RESTART</string>
+
+    <string name="desc_select_style">Select bomb style: %1$s</string>
+    <string name="desc_arm_system">Arm System and Start Timer</string>
+    <string name="desc_trigger_shock">Trigger High Voltage Shock</string>
 </resources>
