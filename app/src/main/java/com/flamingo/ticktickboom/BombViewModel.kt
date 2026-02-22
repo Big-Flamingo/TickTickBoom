@@ -63,6 +63,23 @@ class BombViewModel(private val audio: AudioController) : ViewModel() {
             audio.playPauseInteraction("HEN", true)
             audio.stopSlide()
             audio.stopWhistle()
+
+            // --- THE FIX: A quick coroutine to animate the beak on impact! ---
+            viewModelScope.launch {
+                // 1. Clamp the beak shut instantly
+                _state.update { it.copy(isPainedBeakClosed = true) }
+
+                // 2. Wait for the impact to settle
+                delay(150)
+
+                // 3. Open the beak
+                _state.update { it.copy(isPainedBeakClosed = false) }
+
+                // 4. Play the sound (with our trusty safety check!)
+                if (_state.value.isHenPaused) {
+                    audio.playPainedCluck()
+                }
+            }
         } else {
             audio.playPauseInteraction("HEN", false)
             // --- THE FIX: RESUME AUDIO IF NEEDED ---
@@ -301,10 +318,19 @@ class BombViewModel(private val audio: AudioController) : ViewModel() {
                 if (currentState.isHenPaused) {
                     painedCluckTimer += dt
                     if (painedCluckTimer >= nextPainedCluckTarget) {
+                        // 1. Close the beak
                         _state.update { it.copy(isPainedBeakClosed = true) }
-                        audio.playPainedCluck()
+
+                        // 2. Wait for 150ms
                         delay(150)
+
+                        // 3. Open the beak
                         _state.update { it.copy(isPainedBeakClosed = false) }
+
+                        // --- THE FIX: Only play the cluck if we are STILL paused after waking up! ---
+                        if (_state.value.isHenPaused) {
+                            audio.playPainedCluck()
+                        }
                         lastTimeNanos = System.nanoTime()
                         painedCluckTimer = 0f
                         nextPainedCluckTarget = Random.nextFloat() * 2f + 1f

@@ -52,6 +52,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
@@ -103,7 +104,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import kotlin.math.atan2
-import kotlin.math.ceil
 import kotlin.math.cos
 import kotlin.math.pow
 import kotlin.math.sin
@@ -1020,9 +1020,7 @@ fun DynamiteVisual(
         )
     }
 
-    // Standard mutable list. Zero Compose overhead!
     val textEffects = remember { mutableListOf<VisualText>() }
-    var lastTriggerStep by remember { mutableIntStateOf(-1) }
     var hasShownDing by remember { mutableStateOf(false) }
 
     // --- NEW: Bell Decay Animation ---
@@ -1034,27 +1032,44 @@ fun DynamiteVisual(
         }
     }
 
-    LaunchedEffect(timeLeft) {
-        val currentStep = ceil(timeLeft * 2).toInt()
-        val isFast = timeLeft <= 5f
-        if (currentStep != lastTriggerStep) {
-            if ((isFast || currentStep % 2 == 0) && timeLeft > 1.1f && !isPaused) {
-                textEffects.add(VisualText(tickText, (Math.random() * 100 - 50).toFloat(), tickOffsetY, if (isFast) NeonRed else TextGray, fontSize = 20f))
-            }
-            lastTriggerStep = currentStep
-        }
-        if (timeLeft <= 1.0f && !hasShownDing && timeLeft > 0 && !isPaused) {
-            textEffects.add(VisualText(dingText, 0f, dingOffsetY, Color(0xFFFFD700), listOf(Color(0xFFFFFACD), Color(0xFFFFD700)), life = 2.0f, fontSize = 48f))
-            hasShownDing = true
-        }
-    }
+    val currentTimeLeft by rememberUpdatedState(timeLeft)
+    val currentIsPaused by rememberUpdatedState(isPaused)
 
+    // THE FIX: Unified Physics & Bulletproof Trigger Loop
     LaunchedEffect(Unit) {
         var lastTime = 0L
+        var localLastTickTime = Float.MAX_VALUE // Guarantees an immediate tick on frame 1
+        var localHasShownDing = false
+
         while(true) {
             withFrameNanos { nanos ->
                 val dt = if (lastTime == 0L) 0.016f else ((nanos - lastTime) / 1_000_000_000f).coerceAtMost(0.1f)
                 lastTime = nanos
+
+                val tLeft = currentTimeLeft
+                val paused = currentIsPaused
+
+                // 1. Check for Ticks
+                val isFast = tLeft <= 5f
+                val tickInterval = if (isFast) 0.5f else 1.0f
+
+                // --- THE FIX: Removed the manual pause reset! ---
+                // By just checking !paused, it remembers the last TRUE tick (e.g., 10.0)
+                // and perfectly waits for the next integer boundary (e.g., 9.0) even if paused in between!
+                if (!paused && (localLastTickTime - tLeft >= tickInterval) && tLeft > 1.1f) {
+                    textEffects.add(VisualText(tickText, (Math.random() * 100 - 50).toFloat(), tickOffsetY, if (isFast) NeonRed else TextGray, fontSize = 20f))
+                    // Snap the tracker to the perfect mathematical interval to prevent drifting
+                    localLastTickTime = kotlin.math.ceil(tLeft / tickInterval) * tickInterval
+                }
+
+                // 2. Check for the Ding
+                if (tLeft <= 1.0f && !localHasShownDing && tLeft > 0 && !paused) {
+                    textEffects.add(VisualText(dingText, 0f, dingOffsetY, Color(0xFFFFD700), listOf(Color(0xFFFFFACD), Color(0xFFFFD700)), life = 2.0f, fontSize = 48f))
+                    localHasShownDing = true
+                    hasShownDing = true
+                }
+
+                // 3. Update Physics
                 for (i in textEffects.indices.reversed()) {
                     val effect = textEffects[i]
                     effect.life -= dt

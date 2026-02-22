@@ -1,8 +1,12 @@
 package com.flamingo.ticktickboom
 
+import android.animation.AnimatorSet
+import android.animation.ObjectAnimator
 import android.content.Context
 import android.os.Bundle
+import android.view.View
 import android.view.WindowManager
+import android.view.animation.AnticipateInterpolator
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.BackHandler
@@ -28,6 +32,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.core.animation.doOnEnd
 import androidx.core.content.edit
 import androidx.core.os.ConfigurationCompat
 import androidx.core.os.LocaleListCompat
@@ -47,7 +52,28 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        installSplashScreen()
+        val splashScreen = installSplashScreen()
+
+        // --- NEW: Custom Splash Screen Exit Animation ---
+        splashScreen.setOnExitAnimationListener { splashScreenViewProvider ->
+            val splashScreenView = splashScreenViewProvider.view
+
+            // 1. Fade out the splash screen
+            val alphaAnim = ObjectAnimator.ofFloat(splashScreenView, View.ALPHA, 1f, 0f)
+            alphaAnim.duration = 500L
+
+            // 2. Slide it down slightly
+            val slideAnim = ObjectAnimator.ofFloat(splashScreenView, View.TRANSLATION_Y, 0f, 150f)
+            slideAnim.duration = 500L
+            slideAnim.interpolator = AnticipateInterpolator()
+
+            // 3. Play them together and remove the view when finished!
+            val animatorSet = AnimatorSet()
+            animatorSet.playTogether(alphaAnim, slideAnim)
+            animatorSet.doOnEnd { splashScreenViewProvider.remove() }
+            animatorSet.start()
+        }
+
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         WindowCompat.setDecorFitsSystemWindows(window, false)
 

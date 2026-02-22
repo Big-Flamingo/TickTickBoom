@@ -714,7 +714,7 @@ fun BombScreen(
                         colors = colors,
                         henSequenceElapsed = henSequenceElapsed
                     )
-                    Spacer(modifier = Modifier.height(32.dp))
+                    Spacer(modifier = Modifier.height(64.dp))
                     Box(modifier = Modifier.size(300.dp))
                     Spacer(modifier = Modifier.height(64.dp))
                     AbortButtonContent(colors) {
@@ -840,7 +840,10 @@ fun ExplosionScreen(colors: AppColors, state: GameState, audio: AudioController,
                 HenVisual(
                     timeLeft = 0f,
                     isPaused = state.isHenPaused, // <-- Read from State!
-                    onTogglePause = { onIntent(GameIntent.ToggleHenPause) }, // <-- Send Intent!
+                    onTogglePause = {
+                        // --- THE FIX: Back to pure MVI. Just send the Intent! ---
+                        onIntent(GameIntent.ToggleHenPause)
+                    },
                     eggWobbleRotation = 0f,
                     henSequenceElapsed = visualHenAnimTime,
                     showEgg = false,
