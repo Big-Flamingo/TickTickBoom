@@ -44,6 +44,8 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import android.view.ViewAnimationUtils
+import kotlin.math.hypot
 
 class MainActivity : AppCompatActivity() {
 
@@ -57,21 +59,59 @@ class MainActivity : AppCompatActivity() {
         // --- NEW: Custom Splash Screen Exit Animation ---
         splashScreen.setOnExitAnimationListener { splashScreenViewProvider ->
             val splashScreenView = splashScreenViewProvider.view
+            val iconView = splashScreenViewProvider.iconView
 
-            // 1. Fade out the splash screen
-            val alphaAnim = ObjectAnimator.ofFloat(splashScreenView, View.ALPHA, 1f, 0f)
-            alphaAnim.duration = 500L
+            // --- ACT 1: MOVEMENT & SCALING ---
+            // 1. Get the screen's pixel density
+            val density = resources.displayMetrics.density
 
-            // 2. Slide it down slightly
-            val slideAnim = ObjectAnimator.ofFloat(splashScreenView, View.TRANSLATION_Y, 0f, 150f)
-            slideAnim.duration = 500L
-            slideAnim.interpolator = AnticipateInterpolator()
+            // 2. Define your movement in 'dp' instead of raw pixels
+            // (Tweak this number until it matches your Compose UI)
+            val moveUpInDp = -384f
 
-            // 3. Play them together and remove the view when finished!
-            val animatorSet = AnimatorSet()
-            animatorSet.playTogether(alphaAnim, slideAnim)
-            animatorSet.doOnEnd { splashScreenViewProvider.remove() }
-            animatorSet.start()
+            // 3. Multiply them to get the perfect pixel count for THIS specific phone!
+            val translationYValue = moveUpInDp * density
+
+            val moveUpAnim = ObjectAnimator.ofFloat(iconView, View.TRANSLATION_Y, 0f, translationYValue)
+            val shrinkXAnim = ObjectAnimator.ofFloat(iconView, View.SCALE_X, 1f, 0.22f)
+            val shrinkYAnim = ObjectAnimator.ofFloat(iconView, View.SCALE_Y, 1f, 0.22f)
+
+            val movementSet = AnimatorSet()
+            movementSet.duration = 400L
+            movementSet.interpolator = AnticipateInterpolator()
+            movementSet.playTogether(moveUpAnim, shrinkXAnim, shrinkYAnim)
+
+            // --- ACT 2: CIRCULAR COLLAPSE (Fade Removed!) ---
+
+            // Calculate the screen center
+            val centerX = splashScreenView.width / 2
+
+            // Shift the collapse center UP to match the bomb's new location
+            val centerY = (splashScreenView.height / 2) + translationYValue.toInt()
+
+            val startRadius = hypot(splashScreenView.width.toDouble(), splashScreenView.height.toDouble()).toFloat()
+            val endRadius = 0f
+
+            val circularCollapse = ViewAnimationUtils.createCircularReveal(
+                splashScreenView,
+                centerX,
+                centerY,
+                startRadius,
+                endRadius
+            )
+
+            val collapseSet = AnimatorSet()
+            collapseSet.duration = 400L
+
+            // --- THE FIX: We removed fadeIconAnim, so we just play() the collapse by itself! ---
+            collapseSet.play(circularCollapse)
+
+            // --- THE MASTER DIRECTOR ---
+            // Play Act 1, wait for it to finish, then play Act 2
+            val masterSet = AnimatorSet()
+            masterSet.playSequentially(movementSet, collapseSet)
+            masterSet.doOnEnd { splashScreenViewProvider.remove() }
+            masterSet.start()
         }
 
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)

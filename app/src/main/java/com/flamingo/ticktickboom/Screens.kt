@@ -107,8 +107,8 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, audio: AudioController, 
     val focusManager = LocalFocusManager.current
     val prefs = remember { context.getSharedPreferences("bomb_timer_prefs", Context.MODE_PRIVATE) }
 
-    var minText by remember { mutableStateOf(prefs.getInt("min", 3).toString()) }
-    var maxText by remember { mutableStateOf(prefs.getInt("max", 12).toString()) }
+    var minText by remember { mutableStateOf(prefs.getInt("min", 10).toString()) }
+    var maxText by remember { mutableStateOf(prefs.getInt("max", 20).toString()) }
     var style by remember { mutableStateOf(prefs.getString("style", "C4") ?: "C4") }
     var timerVol by remember { mutableFloatStateOf(prefs.getFloat("vol_timer", 0.8f)) }
     var explodeVol by remember { mutableFloatStateOf(prefs.getFloat("vol_explode", 1.0f)) }

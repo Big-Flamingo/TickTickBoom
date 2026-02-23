@@ -11,9 +11,52 @@
         android:translateX="89.6"
         android:translateY="89.6">
 
-        <path
-            android:pathData="M136,430 a120,24 0, 1, 0, 240, 0 a120,24 0, 1, 0, -240, 0 z"
-            android:fillColor="#40000000" />
+        <group
+            android:name="reflection"
+            android:pivotY="430"
+            android:scaleY="-1">
+
+            <path
+                android:pathData="M256,127 L256,104 C256,45 338,45 349,139"
+                android:strokeWidth="24"
+                android:fillColor="#00000000"
+                android:strokeLineCap="round">
+                <aapt:attr name="android:strokeColor">
+                    <gradient
+                        android:startX="256" android:startY="127" android:endX="349" android:endY="139"
+                        android:type="linear">
+                        <item android:offset="0.0" android:color="#40B91C1C"/>
+                        <item android:offset="0.5" android:color="#40EF4444"/>
+                        <item android:offset="1.0" android:color="#40B91C1C"/>
+                    </gradient>
+                </aapt:attr>
+            </path>
+
+            <path
+                android:pathData="M221,127 L291,127 A4,4 0,0 1,295 131 L295,163 A4,4 0,0 1,291 167 L221,167 A4,4 0,0 1,217 163 L217,131 A4,4 0,0 1,221 127 z">
+                <aapt:attr name="android:fillColor">
+                    <gradient
+                        android:startX="221" android:startY="0" android:endX="291" android:endY="0"
+                        android:type="linear">
+                        <item android:offset="0.0" android:color="#40EF4444"/>
+                        <item android:offset="1.0" android:color="#40D32F2F"/>
+                    </gradient>
+                </aapt:attr>
+            </path>
+
+            <path
+                android:pathData="M256,290m-140,0a140,140 0,1 1,280 0a140,140 0,1 1,-280 0">
+                <aapt:attr name="android:fillColor">
+                    <gradient
+                        android:centerX="209" android:centerY="243"
+                        android:gradientRadius="186" android:type="radial">
+                        <item android:offset="0" android:color="#40FFFF6B"/>
+                        <item android:offset="0.5" android:color="#40EF4444"/>
+                        <item android:offset="1" android:color="#40991B1B"/>
+                    </gradient>
+                </aapt:attr>
+            </path>
+        </group>
 
         <path
             android:name="fuse_path"
@@ -73,5 +116,6 @@
                 </aapt:attr>
             </path>
         </group>
+
     </group>
 </vector>

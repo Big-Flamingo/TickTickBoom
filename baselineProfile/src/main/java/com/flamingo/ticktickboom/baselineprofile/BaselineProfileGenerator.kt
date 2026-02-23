@@ -26,8 +26,9 @@ class BaselineProfileGenerator {
                 val armButton = device.findObject(By.text("ARM SYSTEM"))
                 if (armButton != null) {
                     armButton.click()
-                    // Wait for the bomb screen to fully render
-                    device.waitForIdle()
+                    // Replaced waitForIdle() with a hard 5-second wait
+                    // to guarantee we record the entire explosion!
+                    Thread.sleep(5000)
                 }
             }
         )
