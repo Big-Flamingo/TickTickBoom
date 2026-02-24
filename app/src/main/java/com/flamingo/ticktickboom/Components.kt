@@ -326,7 +326,7 @@ fun VolumeSlider(
 fun BombVisualContent(
     style: String,
     duration: Int,
-    timeLeft: Float,
+    timeLeftProvider: () -> Float,
     isCritical: Boolean,
     isLedOn: Boolean,
     isDarkMode: Boolean,
@@ -344,7 +344,7 @@ fun BombVisualContent(
 ) {
     if (style == "HEN") {
         HenVisual(
-            timeLeft = timeLeft,
+            timeLeft = timeLeftProvider(),
             isPaused = isPaused,
             onTogglePause = onTogglePause,
             eggWobbleRotation = eggWobbleRotation,
@@ -364,28 +364,23 @@ fun BombVisualContent(
             when (style) {
                 "FUSE" -> {
                     val fuseBurnDuration = (duration - 5).coerceAtLeast(0)
-                    val currentBurnTime = (duration - timeLeft).coerceAtLeast(0f)
+                    val currentBurnTime = (duration - timeLeftProvider()).coerceAtLeast(0f)
                     val progress = if (fuseBurnDuration > 0) (currentBurnTime / fuseBurnDuration).coerceIn(0f, 1f) else 1f
                     FuseVisual(progress, isCritical, colors, isPaused, onTogglePause, isDarkMode = isDarkMode)
                 }
                 "C4" -> C4Visual(isLedOn, isDarkMode, isPaused, onTogglePause, onShock)
-                "DYNAMITE" -> DynamiteVisual(timeLeft, isPaused, onTogglePause, isDarkMode)
-                "FROG" -> FrogVisual(timeLeft, isCritical, isPaused, onTogglePause, isDarkMode = isDarkMode)
+                "DYNAMITE" -> DynamiteVisual(timeLeftProvider(), isPaused, onTogglePause, isDarkMode)
+                "FROG" -> FrogVisual(timeLeftProvider(), isCritical, isPaused, onTogglePause, isDarkMode = isDarkMode)
             }
         }
     }
 }
 
 @Composable
-fun BombTextContent(
-    style: String,
-    timeLeft: Float,
-    isCritical: Boolean,
-    isPaused: Boolean,
-    colors: AppColors,
-    modifier: Modifier = Modifier,
-    henSequenceElapsed: Float = 0f
-) {
+fun BombTextContent(style: String, timeLeftProvider: () -> Float, isCritical: Boolean, isPaused: Boolean, colors: AppColors, henSequenceElapsed: Float = 0f) {
+
+    // THE FIX: "Press the button" to get the latest time!
+    val timeLeft = timeLeftProvider()
     // NOTE: Removed local StrokeGlowText. Using top-level version now.
 
     if (isPaused) {
@@ -415,7 +410,7 @@ fun BombTextContent(
             }
             "FROG", "HEN" -> StrokeGlowText(stringResource(R.string.paused), NeonCyan, 48.sp)
             else -> {
-                Surface(color = Color.Transparent, border = BorderStroke(1.dp, NeonCyan), shape = RoundedCornerShape(50), modifier = modifier) {
+                Surface(color = Color.Transparent, border = BorderStroke(1.dp, NeonCyan), shape = RoundedCornerShape(50), modifier = Modifier) {
                     Text(stringResource(R.string.system_paused), color = NeonCyan, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp), fontFamily = CustomFont)
                 }
             }
@@ -499,7 +494,7 @@ fun BombTextContent(
             StrokeGlowText(text, color, 48.sp)
         }
         else -> {
-            Surface(color = Color.Transparent, border = BorderStroke(1.dp, NeonRed), shape = RoundedCornerShape(50), modifier = modifier) {
+            Surface(color = Color.Transparent, border = BorderStroke(1.dp, NeonRed), shape = RoundedCornerShape(50), modifier = Modifier) {
                 Text(stringResource(R.string.detonation_sequence), color = NeonRed, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp), fontFamily = CustomFont)
             }
         }

@@ -606,11 +606,18 @@ fun C4Visual(
     var touch1 by remember { mutableStateOf(Offset(0f, 0f)) }
     var touch2 by remember { mutableStateOf(Offset(0f, 0f)) }
 
-    // THE FIX 1: CACHE THE SHADER ONCE!
+    // CACHE THE SHADER ONCE!
     // This compiles the script into GPU memory once when the bomb loads, preventing 120fps crashes.
     val plasmaShader = remember {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             RuntimeShader(C4_PLASMA_SHADER)
+        } else null
+    }
+
+    // Cache the C4 brush so we don't allocate memory 120x a second!
+    val plasmaBrush = remember(plasmaShader) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && plasmaShader != null) {
+            ShaderBrush(plasmaShader as android.graphics.Shader)
         } else null
     }
 
@@ -934,27 +941,25 @@ fun C4Visual(
             // THE OVERLAY CANVAS: GPU Shaders (API 33+) with Canvas Fallback
             Canvas(modifier = Modifier.matchParentSize()) {
                 if (zapAnim.value > 0f) {
-                    if (plasmaShader != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    if (plasmaShader != null && plasmaBrush != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
 
                         // 1. Update dynamic variables on the pre-compiled shader
                         plasmaShader.setFloatUniform("resolution", size.width, size.height)
                         plasmaShader.setFloatUniform("time", shaderTime)
                         plasmaShader.setFloatUniform("intensity", zapAnim.value)
-
-                        // NEW: Pass both touches and the count!
                         plasmaShader.setFloatUniform("touchCount", touchCount)
                         plasmaShader.setFloatUniform("touch1", touch1.x, touch1.y)
                         plasmaShader.setFloatUniform("touch2", touch2.x, touch2.y)
 
-                        // 2. Draw the GPU effect instantly!
-                        drawRect(brush = ShaderBrush(plasmaShader))
+                        // 2. Use the cached brush! 100% Zero-Allocation!
+                        drawRect(brush = plasmaBrush)
 
                     } else {
                         // FALLBACK FOR ANDROID 12 AND BELOW (Optional: You can paste your old static circle drawing here)
                     }
                 }
 
-                // THE FIX 2: FREED THE SPARKS!
+                // THE SPARKS!
                 // This sits entirely outside the shader's if/else block, so the physical sparks
                 // always explode outward, regardless of whether the phone is using the GPU shader or not!
                 if (sparkFrame >= 0) {

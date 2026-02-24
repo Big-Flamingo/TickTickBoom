@@ -118,7 +118,7 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, audio: AudioController, 
     var minText by remember { mutableStateOf(prefs.getInt("min", 10).toString()) }
     var maxText by remember { mutableStateOf(prefs.getInt("max", 20).toString()) }
     var style by remember { mutableStateOf(prefs.getString("style", "C4") ?: "C4") }
-    var timerVol by remember { mutableFloatStateOf(prefs.getFloat("vol_timer", 0.8f)) }
+    var timerVol by remember { mutableFloatStateOf(prefs.getFloat("vol_timer", 1.0f)) }
     var explodeVol by remember { mutableFloatStateOf(prefs.getFloat("vol_explode", 1.0f)) }
     // Holds the Resource ID of the error, or null if there is no error
     var errorResId by remember { mutableStateOf<Int?>(null) }
@@ -563,8 +563,11 @@ fun BombScreen(
     val currentIsPaused by rememberUpdatedState(state.isPaused)
     val masterTimeLeft by rememberUpdatedState(state.timeLeft)
 
-    // The smooth timer that the UI will actually use to draw
-    var visualTimeLeft by remember(state.duration) { mutableFloatStateOf(state.duration.toFloat()) }
+    // THE FIX: Hold the raw state object, not the delegated value
+    val visualTimeLeftState = remember(state.duration) { mutableFloatStateOf(state.duration.toFloat()) }
+
+    // Create the Lambda Provider that we will pass around!
+    val timeProvider = { visualTimeLeftState.floatValue }
 
     LaunchedEffect(state.duration) {
         var lastFrameNanos = System.nanoTime()
@@ -573,16 +576,16 @@ fun BombScreen(
                 val dt = ((nanos - lastFrameNanos) / 1_000_000_000f).coerceAtMost(0.1f)
                 lastFrameNanos = nanos
 
-                if (!currentIsPaused && visualTimeLeft > 0f) {
-                    visualTimeLeft -= dt
+                if (!currentIsPaused && visualTimeLeftState.floatValue > 0f) {
+                    visualTimeLeftState.floatValue -= dt
 
                     // Soft-Sync: If the visual timer drifts from the ViewModel's master timer
                     // by more than 50ms, we gently snap it back into place to prevent desync.
-                    if (kotlin.math.abs(visualTimeLeft - masterTimeLeft) > 0.05f) {
-                        visualTimeLeft = masterTimeLeft
+                    if (kotlin.math.abs(visualTimeLeftState.floatValue - masterTimeLeft) > 0.05f) {
+                        visualTimeLeftState.floatValue = masterTimeLeft
                     }
                 } else if (currentIsPaused) {
-                    visualTimeLeft = masterTimeLeft // Keep perfectly synced when paused
+                    visualTimeLeftState.floatValue = masterTimeLeft // Keep perfectly synced when paused
                 }
             }
         }
@@ -597,7 +600,7 @@ fun BombScreen(
                     val dt = ((nanos - lastFrameNanos) / 1_000_000_000f).coerceAtMost(0.1f)
                     lastFrameNanos = nanos
 
-                    if (!currentIsPaused && visualTimeLeft <= 6.0f) {
+                    if (!currentIsPaused && visualTimeLeftState.floatValue <= 6.0f) {
                         henSequenceElapsed += dt
 
                         if (henSequenceElapsed > 0.5f && !hasPlayedFly) {
@@ -644,7 +647,7 @@ fun BombScreen(
             BombVisualContent(
                 style = state.bombStyle,
                 duration = state.duration,
-                timeLeft = visualTimeLeft,
+                timeLeftProvider = timeProvider,
                 isCritical = state.isCritical,
                 isLedOn = state.isLedOn,
                 isDarkMode = isDarkMode,
@@ -699,7 +702,7 @@ fun BombScreen(
                         ) {
                             BombTextContent(
                                 style = state.bombStyle,
-                                visualTimeLeft,
+                                timeLeftProvider = timeProvider,
                                 isCritical = state.isCritical,
                                 isPaused = state.isPaused,
                                 colors = colors,
@@ -716,7 +719,7 @@ fun BombScreen(
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     BombTextContent(
                         style = state.bombStyle,
-                        timeLeft = visualTimeLeft,
+                        timeLeftProvider = timeProvider,
                         isCritical = state.isCritical,
                         isPaused = state.isPaused,
                         colors = colors,

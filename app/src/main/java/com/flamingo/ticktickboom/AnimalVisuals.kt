@@ -561,7 +561,9 @@ fun HenVisual(modifier: Modifier = Modifier, timeLeft: Float, isPaused: Boolean,
     else { val t = (henSequenceElapsed - 6.0f) / 3.0f; animOffsetY = 4000f * t; isSliding = true; isSmushed = true; glassScale = 1.5f; glassRotation = 10f; drawHenShadow = false; eggShadowAlpha = 1.0f }
 
     val effectiveBeakOpen = (baseBeakOpen || isSliding) && !isPainedBeakClosed
-    val currentAnimOffsetY = remember { mutableFloatStateOf(0f) }; currentAnimOffsetY.floatValue = animOffsetY
+
+    // THE FIX: Safely capture the changing float without triggering a state-write loop!
+    val updatedAnimOffsetY by rememberUpdatedState(animOffsetY)
 
     // --- NEW: Smart Cluck Detection ---
     // If smushed on glass, she clucks by closing her mouth. Otherwise, she clucks by opening it!
@@ -581,7 +583,7 @@ fun HenVisual(modifier: Modifier = Modifier, timeLeft: Float, isPaused: Boolean,
     Box(contentAlignment = Alignment.Center, modifier = modifier.fillMaxSize()) {
         Canvas(modifier = Modifier.fillMaxSize().pointerInput(Unit) {
             detectTapGestures { tapOffset ->
-                val cx = size.width / 2; val cy = size.height / 2; val henCenterY = cy + currentAnimOffsetY.floatValue
+                val cx = size.width / 2; val cy = size.height / 2; val henCenterY = cy + updatedAnimOffsetY
                 val hitHen = sqrt((tapOffset.x - cx).pow(2) + (tapOffset.y - henCenterY).pow(2)) <= henRadiusPx * 1.2f
                 val hitEgg = showEgg && sqrt((tapOffset.x - cx).pow(2) + (tapOffset.y - (cy + eggHitOffsetY)).pow(2)) <= eggRadiusPx
 
