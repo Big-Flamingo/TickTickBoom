@@ -185,7 +185,7 @@ const val C4_PLASMA_SHADER = """
 
 const val EXPLOSION_SHADER = """
     uniform float2 resolution;
-    uniform float2 center; // <-- NEW: Receives your dynamic origin!
+    uniform float2 center;
     uniform float time;
     uniform float progress; 
 
@@ -209,8 +209,8 @@ const val EXPLOSION_SHADER = """
     float fbm(vec2 uv) {
         float f = 0.0;
         float amp = 0.5;
-        // THE FIX: Changed from 4 to 3! Cuts GPU load by 25% with zero visual difference.
-        for(int i = 0; i < 3; i++) { 
+        // Restored to 4 octaves for maximum detail!
+        for(int i = 0; i < 4; i++) {
             f += amp * noise(uv);
             uv *= 2.0;
             amp *= 0.5;
@@ -219,7 +219,6 @@ const val EXPLOSION_SHADER = """
     }
 
     half4 main(float2 fragCoord) {
-        // <-- UPDATED: Now centers the effect exactly on your dynamic offset!
         vec2 uv = (fragCoord - center) / min(resolution.x, resolution.y); 
         float d = length(uv);
 
@@ -227,6 +226,7 @@ const val EXPLOSION_SHADER = """
         float shockRadius = 1.2 * (1.0 - exp(-progress * 5.0)); 
         float shockThickness = 0.05 * (1.0 - progress);
         
+        // RESTORED: The clean, realistic atmospheric shockwave
         float ring = smoothstep(shockRadius + shockThickness, shockRadius, d) * smoothstep(shockRadius - shockThickness * 3.0, shockRadius, d);
         float ringGlow = ring * (1.0 - progress) * 2.0;
 
@@ -238,7 +238,7 @@ const val EXPLOSION_SHADER = """
 
         vec3 col = vec3(0.0);
         col += vec3(1.0) * flash;
-        col += vec3(0.8, 0.95, 1.0) * ringGlow;
+        col += vec3(0.8, 0.95, 1.0) * ringGlow; // Atmospheric cyan/white distortion
         
         vec3 smoke = vec3(0.1, 0.1, 0.12);
         vec3 orange = vec3(1.0, 0.4, 0.0);

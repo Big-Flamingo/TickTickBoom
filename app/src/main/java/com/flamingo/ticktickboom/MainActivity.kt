@@ -268,7 +268,6 @@ fun BombApp(viewModel: BombViewModel, audioController: AudioController) {
                     )
 
                     AppState.EXPLODED -> ExplosionScreen(
-                        colors = colors,
                         state = state,
                         audio = audioController,
                         onIntent = { intent -> viewModel.processIntent(intent) }

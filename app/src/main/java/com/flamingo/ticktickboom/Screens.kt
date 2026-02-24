@@ -736,7 +736,7 @@ fun BombScreen(
 }
 
 @Composable
-fun ExplosionScreen(colors: AppColors, state: GameState, audio: AudioController, onIntent: (GameIntent) -> Unit) {
+fun ExplosionScreen(state: GameState, audio: AudioController, onIntent: (GameIntent) -> Unit) {
     var hasPlayedExplosion by remember { mutableStateOf(false) }
     val animationProgress = remember { Animatable(if (hasPlayedExplosion) 1f else 0f) }
 
@@ -792,34 +792,24 @@ fun ExplosionScreen(colors: AppColors, state: GameState, audio: AudioController,
             }
             center = center.copy(y = center.y + yOffset)
 
-            // 1. DRAW THE BACKGROUND EXPLOSION (ONLY IF IT'S STILL HAPPENING!)
-            if (progress < 1f) {
-                if (explosionShader != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    explosionShader.setFloatUniform("resolution", size.width, size.height)
-                    explosionShader.setFloatUniform("center", center.x, center.y)
-                    explosionShader.setFloatUniform("time", shaderTime)
-                    explosionShader.setFloatUniform("progress", progress)
-
-                    // THE FIX 2: Add !! to force-unwrap the safely checked variable
-                    drawRect(brush = explosionBrush!!)
-                } else {
-                    val shockwaveRadius = progress * size.width * 0.8f
-                    val shockwaveAlpha = (1f - progress).coerceIn(0f, 1f)
-                    if (shockwaveAlpha > 0) drawCircle(color = Color.White, alpha = shockwaveAlpha * 0.5f, radius = shockwaveRadius, center = center, style = Stroke(width = 50f * (1f - progress)))
-
-                    val flashAlpha = (1f - (progress * 2.0f)).coerceIn(0f, 1f)
-                    if (flashAlpha > 0f) drawRect(Color.White.copy(alpha = flashAlpha))
-                }
+            // 1. THE SHRAPNEL PARTICLES (Bottom Layer)
+            state.particles.forEach { p ->
+                val dist = p.velocity * progress * 2.5f // Fly slightly further
+                val x = center.x + (p.dirX * dist)
+                val y = center.y + (p.dirY * dist)
+                val alpha = (1f - progress).coerceIn(0f, 1f)
+                // Bigger physical particles
+                if (alpha > 0) drawCircle(color = p.color, alpha = alpha, radius = p.size * 1.5f, center = Offset(x, y))
             }
 
-            // 2. THE UPGRADED WEBP SMOKE
+            // 2. THE WEBP SMOKE (Middle Layer - Underneath the Fire)
             state.smoke.forEachIndexed { i, s ->
                 val currentX = center.x + (s.vx * progress * 3f)
                 val currentY = center.y + (s.vy * progress * 3f)
-                val currentSize = s.size + (progress * 150f)
+                val currentSize = s.size + (progress * 250f) // BIGGER SMOKE
 
-                // THE MATH FIX: Force the alpha to hit 0 before the animation finishes!
-                val fadeProgress = (progress * 1.5f).coerceIn(0f, 1f)
+                // LONGER FADE: Changed 1.5f to 1.1f
+                val fadeProgress = (progress * 1.1f).coerceIn(0f, 1f)
                 val currentAlpha = (s.alpha * (1f - fadeProgress)).coerceIn(0f, 1f)
 
                 if (currentAlpha > 0f) {
@@ -837,19 +827,30 @@ fun ExplosionScreen(colors: AppColors, state: GameState, audio: AudioController,
                             dstOffset = IntOffset.Zero,
                             dstSize = IntSize(currentSize.toInt(), currentSize.toInt()),
                             alpha = currentAlpha,
-                            colorFilter = ColorFilter.tint(colors.smokeColor)
+                            // ALWAYS GRAY (Unaffected by themes)
+                            colorFilter = ColorFilter.tint(Color.Gray)
                         )
                     }
                 }
             }
 
-            // 3. THE SHRAPNEL PARTICLES
-            state.particles.forEach { p ->
-                val dist = p.velocity * progress * 2f
-                val x = center.x + (p.dirX * dist)
-                val y = center.y + (p.dirY * dist)
-                val alpha = (1f - progress).coerceIn(0f, 1f)
-                if (alpha > 0) drawCircle(color = p.color, alpha = alpha, radius = p.size, center = Offset(x, y))
+            // 3. THE GPU EXPLOSION (Top Layer - Premultiplied alpha blends perfectly over the smoke)
+            if (progress < 1f) {
+                if (explosionShader != null && explosionBrush != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    explosionShader.setFloatUniform("resolution", size.width, size.height)
+                    explosionShader.setFloatUniform("center", center.x, center.y)
+                    explosionShader.setFloatUniform("time", shaderTime)
+                    explosionShader.setFloatUniform("progress", progress)
+
+                    drawRect(brush = explosionBrush)
+                } else {
+                    val shockwaveRadius = progress * size.width * 0.8f
+                    val shockwaveAlpha = (1f - progress).coerceIn(0f, 1f)
+                    if (shockwaveAlpha > 0) drawCircle(color = Color.White, alpha = shockwaveAlpha * 0.5f, radius = shockwaveRadius, center = center, style = Stroke(width = 50f * (1f - progress)))
+
+                    val flashAlpha = (1f - (progress * 2.0f)).coerceIn(0f, 1f)
+                    if (flashAlpha > 0f) drawRect(Color.White.copy(alpha = flashAlpha))
+                }
             }
         }
 
