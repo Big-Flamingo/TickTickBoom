@@ -18,11 +18,7 @@ class AudioController(context: Context) {
     private var explosionSoundId: Int = 0
     private var fuseSoundId: Int = 0
     private var croakSoundId: Int = 0
-    private var croakHighSoundId: Int = 0
-    private var croakLowSoundId: Int = 0
     private var croakFastSoundId: Int = 0
-    private var croakFastHighSoundId: Int = 0
-    private var croakFastLowSoundId: Int = 0
     private var bombCroakSoundId: Int = 0
     private var flailSoundId: Int = 0
     private var dingSoundId: Int = 0
@@ -74,11 +70,7 @@ class AudioController(context: Context) {
             explosionSoundId = it.load(context, R.raw.explosion, 1)
             fuseSoundId = it.load(context, R.raw.fuse, 1)
             croakSoundId = it.load(context, R.raw.croak, 1)
-            croakHighSoundId = it.load(context, R.raw.croak_high, 1)
-            croakLowSoundId = it.load(context, R.raw.croak_low, 1)
             croakFastSoundId = it.load(context, R.raw.croak_fast, 1)
-            croakFastHighSoundId = it.load(context, R.raw.croak_fast_high, 1)
-            croakFastLowSoundId = it.load(context, R.raw.croak_fast_low, 1)
             bombCroakSoundId = it.load(context, R.raw.bomb_croak, 1)
             flailSoundId = it.load(context, R.raw.flail, 1)
             dingSoundId = it.load(context, R.raw.ding, 1)
@@ -189,25 +181,9 @@ class AudioController(context: Context) {
         }
     }
 
+    // --- THE NEW, CLEAN CROAK FUNCTION ---
     fun playCroak(isFast: Boolean = false) {
-        // Generate a random number between 0 and 2 (Zero Allocation!)
-        val randomPick = kotlin.random.Random.nextInt(3)
-
-        val soundId = if (isFast) {
-            when (randomPick) {
-                0 -> croakFastHighSoundId
-                1 -> croakFastLowSoundId
-                else -> croakFastSoundId // The original
-            }
-        } else {
-            when (randomPick) {
-                0 -> croakHighSoundId
-                1 -> croakLowSoundId
-                else -> croakSoundId // The original
-            }
-        }
-
-        // Play the chosen sound with a mathematically locked 1.0f pitch!
+        val soundId = if (isFast) croakFastSoundId else croakSoundId
         soundPool?.play(soundId, timerVolume, timerVolume, 2, 0, 1.0f)
     }
 

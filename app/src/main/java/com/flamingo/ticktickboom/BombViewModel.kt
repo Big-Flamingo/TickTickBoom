@@ -160,24 +160,23 @@ class BombViewModel(private val audio: AudioController) : ViewModel() {
         gameLoopJob = viewModelScope.launch(Dispatchers.Default) {
             var lastTimeNanos = System.nanoTime()
 
+            // --- FIX 1: Add a tracker for UI throttling ---
+            var lastUiUpdateMs = 0L
+
             // The True Game Loop
             while (_state.value.timeLeft > 0.01f) {
-                // TIP: Lowering this from 10 to 5 makes the thread check twice as often,
-                // cutting audio jitter in half with virtually zero CPU cost!
                 delay(5)
 
                 val currentNanos = System.nanoTime()
 
-                // --- UPGRADE: Use Double for flawless mathematical precision ---
-                val dt = ((currentNanos - lastTimeNanos) / 1_000_000_000.0).coerceAtMost(0.1)
+                // --- FIX 2: Increase clamp to 0.5 to prevent Time Deletion! ---
+                val dt = ((currentNanos - lastTimeNanos) / 1_000_000_000.0).coerceAtMost(0.5)
                 lastTimeNanos = currentNanos
 
                 val currentState = _state.value
 
                 if (!currentState.isPaused) {
-                    // Accumulate using Double to prevent floating-point drift over time
                     exactElapsedSeconds += dt
-
                     val newTimeLeft = (currentState.duration - exactElapsedSeconds).coerceAtLeast(0.0).toFloat()
                     val currentRunTimeMs = (exactElapsedSeconds * 1000).toLong()
 
@@ -221,35 +220,44 @@ class BombViewModel(private val audio: AudioController) : ViewModel() {
                     val tickInterval = if (currentState.bombStyle == "HEN") 1000L else if (newTimeLeft <= 5f) 500L else 1000L
 
                     if (currentRunTimeMs - lastTickRunTimeMs >= tickInterval) {
-
-                        // --- THE FIX (ISSUE 1): Prevent the final tick from playing simultaneously with the explosion! ---
                         if (newTimeLeft > 0.05f) {
                             if (currentState.bombStyle == "C4") { audio.playTick(); newIsLedOn = true }
                             if (currentState.bombStyle == "DYNAMITE" && newTimeLeft > 1.0) audio.playClockTick()
                             if (currentState.bombStyle == "FROG") audio.playCroak(newTimeLeft <= 5f)
-
-                            if (currentState.bombStyle == "HEN" && newTimeLeft > 6.0f) {
-                                audio.playHenCluck()
-                            }
+                            if (currentState.bombStyle == "HEN" && newTimeLeft > 6.0f) audio.playHenCluck()
                         }
 
-                        // Snap to the mathematical grid!
-                        lastTickRunTimeMs = (currentRunTimeMs / tickInterval) * tickInterval
+                        // --- PROPORTIONAL SOFT SYNC ---
+                        // 1. Calculate the ideal mathematical grid
+                        val idealGridTime = (currentRunTimeMs / tickInterval) * tickInterval
+
+                        // 2. Calculate the exact Time Debt
+                        val driftError = currentRunTimeMs - idealGridTime
+
+                        // 3. Proportional Correction: Pay off 25% of the debt!
+                        // (We cap the maximum possible jump at 25ms just in case of a 500ms mega-freeze)
+                        val proportionalCorrection = (driftError * 0.25).toLong().coerceAtMost(25L)
+
+                        // 4. Apply the smooth, scaling correction
+                        lastTickRunTimeMs = currentRunTimeMs - proportionalCorrection
                     }
 
                     if (newIsLedOn && (currentRunTimeMs - lastTickRunTimeMs > 50)) newIsLedOn = false
 
-                    // Push the new math to the UI!
-                    _state.update {
-                        it.copy(
-                            timeLeft = newTimeLeft,
-                            isLedOn = newIsLedOn
-                        )
+                    // --- FIX 3: Throttle UI updates to ~60fps (16ms) ---
+                    // We also force an immediate update if the LED state flips so the flash never gets missed!
+                    if (currentRunTimeMs - lastUiUpdateMs >= 16L || newIsLedOn != currentState.isLedOn) {
+                        _state.update {
+                            it.copy(
+                                timeLeft = newTimeLeft,
+                                isLedOn = newIsLedOn
+                            )
+                        }
+                        lastUiUpdateMs = currentRunTimeMs
                     }
                 }
             }
 
-            // Loop finished! Time to explode!
             if (!_state.value.isPaused) triggerExplosion()
         }
     }
