@@ -2,6 +2,8 @@ package com.flamingo.ticktickboom
 
 import android.content.Context
 import android.content.res.Configuration
+import android.graphics.RuntimeShader
+import android.os.Build
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutLinearInEasing
@@ -70,7 +72,10 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.ShaderBrush
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.withTransform
@@ -82,18 +87,21 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.res.imageResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.core.content.edit
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.role
-import androidx.compose.ui.semantics.semantics
 
 // NOTE: Uses VisualParticle from AppModels.kt
 // NOTE: Uses drawReflection and StrokeGlowText from Components.kt
@@ -732,57 +740,110 @@ fun ExplosionScreen(colors: AppColors, state: GameState, audio: AudioController,
     var hasPlayedExplosion by remember { mutableStateOf(false) }
     val animationProgress = remember { Animatable(if (hasPlayedExplosion) 1f else 0f) }
 
-    // --- PASTE THE NEW VSYNC VARIABLES HERE ---
-    val currentIsHenPaused by rememberUpdatedState(state.isHenPaused)
-    var visualHenAnimTime by remember { mutableFloatStateOf(2.5f) }
-
-    // --- PASTE THE NEW VSYNC LOOP HERE ---
-    LaunchedEffect(state.bombStyle) {
-        if (state.bombStyle == "HEN") {
-            var lastFrameNanos = System.nanoTime()
-            while(true) {
-                withFrameNanos { nanos ->
-                    val dt = ((nanos - lastFrameNanos) / 1_000_000_000f).coerceAtMost(0.1f)
-                    lastFrameNanos = nanos
-                    if (!currentIsHenPaused) {
-                        visualHenAnimTime += dt
-                    }
-                }
-            }
-        }
+    // --- AGSL SHADER STATE ---
+    var shaderTime by remember { mutableFloatStateOf(0f) }
+    val explosionShader = remember {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            RuntimeShader(EXPLOSION_SHADER)
+        } else null
     }
+
+    // THE FIX 1: Wrap the Brush creation in a strict API check!
+    val explosionBrush = remember(explosionShader) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && explosionShader != null) {
+            ShaderBrush(explosionShader as android.graphics.Shader)
+        } else null
+    }
+
+    // --- LOAD THE WEBP SPRITE ---
+    val smokeSprite = ImageBitmap.imageResource(id = R.drawable.smoke_wisp)
 
     LaunchedEffect(Unit) {
         if (!hasPlayedExplosion) {
-            launch { animationProgress.animateTo(1f, tween(1500, easing = LinearOutSlowInEasing)) }
+            launch { animationProgress.animateTo(1f, tween(2000, easing = LinearOutSlowInEasing)) }
             hasPlayedExplosion = true
+        }
+
+        var lastTimeNanos = 0L
+        // THE FIX: Kill the loop the millisecond the explosion is finished!
+        while (animationProgress.value < 1f) {
+            withFrameNanos { nanos ->
+                val dt = if (lastTimeNanos == 0L) 0.016f else ((nanos - lastTimeNanos) / 1_000_000_000f).coerceAtMost(0.1f)
+                shaderTime += dt
+                lastTimeNanos = nanos
+            }
         }
     }
 
     Box(modifier = Modifier.fillMaxSize().background(Color(0xFF431407)), contentAlignment = Alignment.Center) {
         Box(modifier = Modifier.fillMaxSize().background(Color(0x99DC2626)))
+
         Canvas(modifier = Modifier.fillMaxSize()) {
             val progress = animationProgress.value
             var center = if (state.explosionOrigin != Offset.Zero) state.explosionOrigin else Offset(size.width / 2f, size.height / 2f)
 
-            // Adjust the explosion origin to match the visual vertical center of each bomb's body
             val yOffset = when (state.bombStyle) {
-                "HEN" -> 35.dp.toPx()     // Drops to the center of the egg
-                "FROG" -> 20.dp.toPx()    // Drops slightly to the center of the belly
-                "FUSE" -> 15.dp.toPx()    // Drops below the fuse, into the black sphere
-                "DYNAMITE" -> 0.dp.toPx() // Explodes perfectly from the center clock
-                "C4" -> (-30).dp.toPx()       // Explodes perfectly from the center LED display
+                "HEN" -> 35.dp.toPx()
+                "FROG" -> 20.dp.toPx()
+                "FUSE" -> 15.dp.toPx()
+                "DYNAMITE" -> 0.dp.toPx()
+                "C4" -> (-30).dp.toPx()
                 else -> 0f
             }
             center = center.copy(y = center.y + yOffset)
 
-            state.smoke.forEach { s ->
+            // 1. DRAW THE BACKGROUND EXPLOSION (ONLY IF IT'S STILL HAPPENING!)
+            if (progress < 1f) {
+                if (explosionShader != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    explosionShader.setFloatUniform("resolution", size.width, size.height)
+                    explosionShader.setFloatUniform("center", center.x, center.y)
+                    explosionShader.setFloatUniform("time", shaderTime)
+                    explosionShader.setFloatUniform("progress", progress)
+
+                    // THE FIX 2: Add !! to force-unwrap the safely checked variable
+                    drawRect(brush = explosionBrush!!)
+                } else {
+                    val shockwaveRadius = progress * size.width * 0.8f
+                    val shockwaveAlpha = (1f - progress).coerceIn(0f, 1f)
+                    if (shockwaveAlpha > 0) drawCircle(color = Color.White, alpha = shockwaveAlpha * 0.5f, radius = shockwaveRadius, center = center, style = Stroke(width = 50f * (1f - progress)))
+
+                    val flashAlpha = (1f - (progress * 2.0f)).coerceIn(0f, 1f)
+                    if (flashAlpha > 0f) drawRect(Color.White.copy(alpha = flashAlpha))
+                }
+            }
+
+            // 2. THE UPGRADED WEBP SMOKE
+            state.smoke.forEachIndexed { i, s ->
                 val currentX = center.x + (s.vx * progress * 3f)
                 val currentY = center.y + (s.vy * progress * 3f)
                 val currentSize = s.size + (progress * 150f)
-                val currentAlpha = (s.alpha * (1f - progress)).coerceIn(0f, 1f)
-                drawCircle(color = colors.smokeColor, alpha = currentAlpha, radius = currentSize, center = Offset(currentX, currentY))
+
+                // THE MATH FIX: Force the alpha to hit 0 before the animation finishes!
+                val fadeProgress = (progress * 1.5f).coerceIn(0f, 1f)
+                val currentAlpha = (s.alpha * (1f - fadeProgress)).coerceIn(0f, 1f)
+
+                if (currentAlpha > 0f) {
+                    val halfSize = currentSize / 2f
+                    val rotationSpeed = if (i % 2 == 0) 50f else -50f
+                    val currentRotation = progress * rotationSpeed
+
+                    withTransform({
+                        translate(currentX, currentY)
+                        rotate(currentRotation, pivot = Offset.Zero)
+                        translate(-halfSize, -halfSize)
+                    }) {
+                        drawImage(
+                            image = smokeSprite,
+                            dstOffset = IntOffset.Zero,
+                            dstSize = IntSize(currentSize.toInt(), currentSize.toInt()),
+                            alpha = currentAlpha,
+                            colorFilter = ColorFilter.tint(colors.smokeColor)
+                        )
+                    }
+                }
             }
+
+            // 3. THE SHRAPNEL PARTICLES
             state.particles.forEach { p ->
                 val dist = p.velocity * progress * 2f
                 val x = center.x + (p.dirX * dist)
@@ -790,23 +851,15 @@ fun ExplosionScreen(colors: AppColors, state: GameState, audio: AudioController,
                 val alpha = (1f - progress).coerceIn(0f, 1f)
                 if (alpha > 0) drawCircle(color = p.color, alpha = alpha, radius = p.size, center = Offset(x, y))
             }
-            val shockwaveRadius = progress * size.width * 0.8f
-            val shockwaveAlpha = (1f - progress).coerceIn(0f, 1f)
-            if (shockwaveAlpha > 0) drawCircle(color = Color.White, alpha = shockwaveAlpha * 0.5f, radius = shockwaveRadius, center = center, style = Stroke(width = 50f * (1f - progress)))
         }
-
-        val flashAlpha = (1f - (animationProgress.value * 2.0f)).coerceIn(0f, 1f)
-        if (flashAlpha > 0f) Box(modifier = Modifier.fillMaxSize().background(Color.White.copy(alpha = flashAlpha)))
 
         val titleText = if (state.bombStyle == "FROG") stringResource(R.string.croaked) else stringResource(R.string.boom)
         val titleSize = if (state.bombStyle == "FROG") 72.sp else 96.sp
 
-        // --- NEW FIERY BRUSH (Old Brighter Colors) ---
         val boomBrush = Brush.verticalGradient(
             colors = listOf(Color.Yellow, NeonRed)
         )
 
-        // --- NEW: THE SHARED WALKIE-TALKIE ---
         val sharedRestartInteraction = remember { MutableInteractionSource() }
 
         // Bottom Layer (Visuals)
@@ -822,7 +875,6 @@ fun ExplosionScreen(colors: AppColors, state: GameState, audio: AudioController,
             )
             Spacer(modifier = Modifier.height(80.dp))
 
-            // The visual button listens to the shared source to animate, but doesn't need click logic
             ActionButton(
                 text = stringResource(R.string.restart),
                 icon = Icons.Filled.Refresh,
@@ -830,29 +882,14 @@ fun ExplosionScreen(colors: AppColors, state: GameState, audio: AudioController,
                 textColor = NeonOrange,
                 borderColor = NeonOrange,
                 borderWidth = 2.dp,
-                interactionSource = sharedRestartInteraction, // <-- LISTENING
+                interactionSource = sharedRestartInteraction,
                 onClick = { /* Handled by top layer */ }
             )
         }
 
+        // THE LAG FIX: Call the isolated wrapper instead of doing the math here!
         if (state.bombStyle == "HEN") {
-            Box(modifier = Modifier.fillMaxSize().zIndex(200f), contentAlignment = Alignment.Center) {
-                HenVisual(
-                    timeLeft = 0f,
-                    isPaused = state.isHenPaused, // <-- Read from State!
-                    onTogglePause = {
-                        // --- THE FIX: Back to pure MVI. Just send the Intent! ---
-                        onIntent(GameIntent.ToggleHenPause)
-                    },
-                    eggWobbleRotation = 0f,
-                    henSequenceElapsed = visualHenAnimTime,
-                    showEgg = false,
-                    isPainedBeakOpen = false,
-                    isPainedBeakClosed = state.isPainedBeakClosed, // <-- Read from State!
-                    isDarkMode = true,
-                    modifier = Modifier.fillMaxSize()
-                )
-            }
+            AnimatedHenOverlay(state = state, onIntent = onIntent)
         }
 
         // Top Layer (Ghost Clicks)
@@ -860,7 +897,6 @@ fun ExplosionScreen(colors: AppColors, state: GameState, audio: AudioController,
             Text(titleText, fontSize = titleSize, fontWeight = FontWeight.Black, fontFamily = CustomFont, color = Color.Transparent)
             Spacer(modifier = Modifier.height(80.dp))
 
-            // The Ghost Box catches the click above the Hen and triggers the animation below!
             Box(
                 modifier = Modifier
                     .size(200.dp, 60.dp)
@@ -869,9 +905,45 @@ fun ExplosionScreen(colors: AppColors, state: GameState, audio: AudioController,
                         indication = null
                     ) {
                         audio.playClick()
-                        onIntent(GameIntent.Reset) // <-- Clean Intent!
+                        onIntent(GameIntent.Reset)
                     }
             )
         }
+    }
+}
+
+@Composable
+fun AnimatedHenOverlay(state: GameState, onIntent: (GameIntent) -> Unit) {
+    val currentIsHenPaused by rememberUpdatedState(state.isHenPaused)
+    var visualHenAnimTime by remember { mutableFloatStateOf(2.5f) }
+
+    // THE FIX: The loop is restored! The timer will now advance past 2.5s,
+    // triggering the Hen's slide animation perfectly.
+    LaunchedEffect(Unit) {
+        var lastFrameNanos = 0L
+        while(true) {
+            withFrameNanos { nanos ->
+                val dt = if (lastFrameNanos == 0L) 0.016f else ((nanos - lastFrameNanos) / 1_000_000_000f).coerceAtMost(0.1f)
+                lastFrameNanos = nanos
+                if (!currentIsHenPaused) {
+                    visualHenAnimTime += dt
+                }
+            }
+        }
+    }
+
+    Box(modifier = Modifier.fillMaxSize().zIndex(200f), contentAlignment = Alignment.Center) {
+        HenVisual(
+            timeLeft = 0f,
+            isPaused = state.isHenPaused,
+            onTogglePause = { onIntent(GameIntent.ToggleHenPause) },
+            eggWobbleRotation = 0f,
+            henSequenceElapsed = visualHenAnimTime, // Passes the live time again!
+            showEgg = false,
+            isPainedBeakOpen = false,
+            isPainedBeakClosed = state.isPainedBeakClosed,
+            isDarkMode = true,
+            modifier = Modifier.fillMaxSize()
+        )
     }
 }

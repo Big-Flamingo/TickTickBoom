@@ -69,6 +69,8 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathOperation
@@ -90,6 +92,7 @@ import androidx.compose.ui.input.pointer.changedToDown
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.res.imageResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -100,6 +103,8 @@ import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
@@ -178,6 +183,79 @@ const val C4_PLASMA_SHADER = """
     }
 """
 
+const val EXPLOSION_SHADER = """
+    uniform float2 resolution;
+    uniform float2 center; // <-- NEW: Receives your dynamic origin!
+    uniform float time;
+    uniform float progress; 
+
+    float hash(vec2 p) {
+        vec3 p3  = fract(vec3(p.xyx) * 0.1031);
+        p3 += dot(p3, p3.yzx + 33.33);
+        return fract((p3.x + p3.y) * p3.z);
+    }
+
+    float noise(vec2 x) {
+        vec2 i = floor(x);
+        vec2 f = fract(x);
+        float a = hash(i);
+        float b = hash(i + vec2(1.0, 0.0));
+        float c = hash(i + vec2(0.0, 1.0));
+        float d = hash(i + vec2(1.0, 1.0));
+        vec2 u = f * f * (3.0 - 2.0 * f);
+        return mix(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
+    }
+
+    float fbm(vec2 uv) {
+        float f = 0.0;
+        float amp = 0.5;
+        // THE FIX: Changed from 4 to 3! Cuts GPU load by 25% with zero visual difference.
+        for(int i = 0; i < 3; i++) { 
+            f += amp * noise(uv);
+            uv *= 2.0;
+            amp *= 0.5;
+        }
+        return f;
+    }
+
+    half4 main(float2 fragCoord) {
+        // <-- UPDATED: Now centers the effect exactly on your dynamic offset!
+        vec2 uv = (fragCoord - center) / min(resolution.x, resolution.y); 
+        float d = length(uv);
+
+        float flash = exp(-progress * 15.0); 
+        float shockRadius = 1.2 * (1.0 - exp(-progress * 5.0)); 
+        float shockThickness = 0.05 * (1.0 - progress);
+        
+        float ring = smoothstep(shockRadius + shockThickness, shockRadius, d) * smoothstep(shockRadius - shockThickness * 3.0, shockRadius, d);
+        float ringGlow = ring * (1.0 - progress) * 2.0;
+
+        float n = fbm(uv * 8.0 - vec2(0.0, time * 3.0));
+        float fireRadius = 0.8 * (1.0 - exp(-progress * 4.0));
+        
+        float fireMask = smoothstep(fireRadius, fireRadius - 0.3, d);
+        float fireIntensity = n * fireMask * (1.0 - progress);
+
+        vec3 col = vec3(0.0);
+        col += vec3(1.0) * flash;
+        col += vec3(0.8, 0.95, 1.0) * ringGlow;
+        
+        vec3 smoke = vec3(0.1, 0.1, 0.12);
+        vec3 orange = vec3(1.0, 0.4, 0.0);
+        vec3 yellow = vec3(1.0, 0.9, 0.2);
+        
+        vec3 fireCol = mix(smoke, orange, smoothstep(0.1, 0.5, fireIntensity));
+        fireCol = mix(fireCol, yellow, smoothstep(0.5, 0.8, fireIntensity));
+        
+        col += fireCol * smoothstep(0.0, 0.2, fireIntensity) * 2.0;
+
+        float finalAlpha = max(max(flash, ringGlow), fireIntensity * 1.5);
+        finalAlpha = clamp(finalAlpha, 0.0, 1.0) * (1.0 - pow(progress, 2.0));
+
+        return half4(col * finalAlpha, finalAlpha);
+    }
+"""
+
 @Composable
 fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors, isPaused: Boolean, onTogglePause: () -> Unit, isDarkMode: Boolean) {
     // Now using the shared VisualParticle class from AppModels.kt
@@ -232,6 +310,8 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors, isPaused
     val glowRadius = 25f * d; val coreRadius = 8f * d; val whiteRadius = 4f * d
     val particleRad = 3f * d; val particleRadS = 1.5f * d; val tapThreshold = 60f * d; val fuseYOffset = 5f * d
     val sparkPos = remember { floatArrayOf(0f, 0f) }
+
+    val smokeSprite = ImageBitmap.imageResource(id = R.drawable.smoke_wisp)
 
     LaunchedEffect(isPaused) {
         while (true) {
@@ -431,13 +511,32 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors, isPaused
                     if (Math.random() < 0.3) { val angle = Math.random() * Math.PI * 2; val speed = (2f + Math.random() * 4f).toFloat(); val sx = if (isCritical) innerHoleRect.center.x else sparkCenter.x; val sy = if (isCritical) innerHoleRect.center.y else sparkCenter.y; sparks.add(VisualParticle(x = sx, y = sy, vx = cos(angle).toFloat() * speed, vy = (sin(angle) * speed - 2f).toFloat(), life = (0.2f + Math.random() * 0.3f).toFloat(), maxLife = 0.5f)) }
                     if (Math.random() < 0.2) { val angle = -Math.PI / 2 + (Math.random() - 0.5) * 0.5; val speed = (1f + Math.random() * 2f).toFloat(); val sx = if (isCritical) innerHoleRect.center.x else sparkCenter.x; val sy = if (isCritical) innerHoleRect.center.y else sparkCenter.y; val smokeVy = if (isCritical) sin(angle).toFloat() * speed * 2f else sin(angle).toFloat() * speed; smokePuffs.add(VisualParticle(x = sx, y = sy - fuseYOffset, vx = (cos(angle) * speed).toFloat(), vy = smokeVy, life = (1f + Math.random().toFloat() * 0.5f), maxLife = 1.5f)) }
                 }
-                // FIX SMOKE:
-                smokePuffs.forEach { puff ->
+                // FIX SMOKE: Stable Rotation & Normal Blending
+                smokePuffs.forEach { puff -> // Removed the 'Indexed' and 'i'!
                     val p = 1f - (puff.life / puff.maxLife)
-                    val size = 10f + p * 20f
+
+                    val currentSize = 30f + (p * 60f)
+                    val halfSize = currentSize / 2f
                     val currentAlpha = (1f - p).coerceIn(0f, 0.6f)
-                    // Pass alpha separately!
-                    drawCircle(color = colors.smokeColor, alpha = currentAlpha, radius = size, center = Offset(puff.x, puff.y))
+
+                    // FIX 1: Stable rotation based on the particle's own X velocity!
+                    val rotationSpeed = if (puff.vx > 0) 50f else -50f
+                    val currentRotation = puff.life * rotationSpeed
+
+                    withTransform({
+                        translate(left = puff.x, top = puff.y)
+                        rotate(degrees = currentRotation, pivot = Offset.Zero)
+                        translate(left = -halfSize, top = -halfSize)
+                    }) {
+                        drawImage(
+                            image = smokeSprite,
+                            dstOffset = IntOffset.Zero,
+                            dstSize = IntSize(currentSize.toInt(), currentSize.toInt()),
+                            alpha = currentAlpha,
+                            colorFilter = ColorFilter.tint(colors.smokeColor)
+                            // FIX 2: BlendMode.Screen completely removed!
+                        )
+                    }
                 }
 
                 // FIX SPARKS:
