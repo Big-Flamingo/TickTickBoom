@@ -46,15 +46,24 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import android.view.ViewAnimationUtils
 import kotlin.math.hypot
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
 
     // 1. Hold our new controller at the Activity level
     private lateinit var audioController: AudioController
 
+    // --- The Gatekeeper Flag ---
+    private var isAppReady = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val splashScreen = installSplashScreen()
+
+        // --- Tell Android to hold the screen until we say so! ---
+        splashScreen.setKeepOnScreenCondition { !isAppReady }
 
         // --- NEW: Custom Splash Screen Exit Animation ---
         splashScreen.setOnExitAnimationListener { splashScreenViewProvider ->
@@ -117,12 +126,35 @@ class MainActivity : AppCompatActivity() {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         WindowCompat.setDecorFitsSystemWindows(window, false)
 
-        // 2. Initialize it using applicationContext (which never leaks!)
+        // Initialize it using applicationContext (which never leaks!)
         audioController = AudioController(applicationContext)
 
         val prefs = getSharedPreferences("bomb_timer_prefs", MODE_PRIVATE)
         audioController.timerVolume = prefs.getFloat("vol_timer", 0.8f)
         audioController.explosionVolume = prefs.getFloat("vol_explode", 1.0f)
+
+        // --- The Enforcer (Checks audio and forces minimum time) ---
+        lifecycleScope.launch {
+            val startTime = System.currentTimeMillis()
+
+            // 1. Wait until AudioController reports all 25 files are loaded
+            // (We add a 5-second timeout safety net just in case a file gets corrupted)
+            while (!audioController.isFullyLoaded && (System.currentTimeMillis() - startTime) < 5000L) {
+                delay(50)
+            }
+
+            // 2. Ensure a HARD minimum splash screen time
+            // (Set to 1500ms here, but adjust to match your exact preference!)
+            val minimumSplashTime = 1500L
+            val elapsed = System.currentTimeMillis() - startTime
+            if (elapsed < minimumSplashTime) {
+                delay(minimumSplashTime - elapsed)
+            }
+
+            // 3. Open the gates!
+            // (This immediately drops the static screen and triggers your slick exit animation)
+            isAppReady = true
+        }
 
         setContent {
             MaterialTheme {

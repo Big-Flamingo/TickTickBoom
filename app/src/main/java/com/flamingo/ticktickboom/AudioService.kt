@@ -11,7 +11,8 @@ class AudioController(context: Context) {
     private var soundPool: SoundPool? = null
 
     private var vibrator: Vibrator? = null
-
+    var isFullyLoaded = false
+        private set
     // --- SOUND IDs ---
     private var tickSoundId: Int = 0
     private var clockSoundId: Int = 0
@@ -63,6 +64,17 @@ class AudioController(context: Context) {
             .setMaxStreams(32)
             .setAudioAttributes(audioAttributes)
             .build()
+
+        // --- Track loaded audio files ---
+        var loadedCount = 0
+        val totalSoundsToLoad = 25 // The exact number of it.load() calls you have!
+        soundPool?.setOnLoadCompleteListener { _, _, _ ->
+            // Even if a file fails, we count it so the app doesn't get stuck forever
+            loadedCount++
+            if (loadedCount >= totalSoundsToLoad) {
+                isFullyLoaded = true
+            }
+        }
 
         soundPool?.let {
             tickSoundId = it.load(context, R.raw.tick, 1)
