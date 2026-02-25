@@ -5,6 +5,7 @@ import android.animation.ObjectAnimator
 import android.content.Context
 import android.os.Bundle
 import android.view.View
+import android.view.ViewAnimationUtils
 import android.view.WindowManager
 import android.view.animation.AnticipateInterpolator
 import androidx.activity.ComponentActivity
@@ -25,7 +26,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -41,14 +41,13 @@ import androidx.core.view.WindowCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
-import android.view.ViewAnimationUtils
-import kotlin.math.hypot
-import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.math.hypot
 
 class MainActivity : AppCompatActivity() {
 
@@ -192,9 +191,6 @@ fun BombApp(viewModel: BombViewModel, audioController: AudioController) {
     // 1. COLLECT THE STATE
     val state by viewModel.state.collectAsState()
 
-    // --- NEW: Safely read the latest state without triggering a recomposition! ---
-    val currentState by rememberUpdatedState(state)
-
     // --- NEW: LIFECYCLE INTERRUPT HANDLER ---
     val lifecycleOwner = LocalLifecycleOwner.current
 
@@ -202,25 +198,16 @@ fun BombApp(viewModel: BombViewModel, audioController: AudioController) {
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_PAUSE) {
-                // 1. Pause the ticking bomb
-                if (currentState.appState == AppState.RUNNING && !currentState.isPaused) {
-                    viewModel.processIntent(GameIntent.TogglePause)
-                }
-                // 2. Pause the Hen Explosion animation!
-                else if (currentState.appState == AppState.EXPLODED && currentState.bombStyle == "HEN" && !currentState.isHenPaused) {
-                    viewModel.processIntent(GameIntent.ToggleHenPause)
-                }
+                // Send the intent, let the ViewModel decide what to do!
+                viewModel.processIntent(GameIntent.AppEnteredBackground)
             }
             else if (event == Lifecycle.Event.ON_RESUME) {
-                // 3. Auto-resume the Hen Explosion when returning to the app!
-                if (currentState.appState == AppState.EXPLODED && currentState.bombStyle == "HEN" && currentState.isHenPaused) {
-                    viewModel.processIntent(GameIntent.ToggleHenPause)
-                }
+                // Send the intent, let the ViewModel decide what to do!
+                viewModel.processIntent(GameIntent.AppEnteredForeground)
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
 
-        // Clean up the observer if the app is destroyed
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
         }

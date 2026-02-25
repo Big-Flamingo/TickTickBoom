@@ -921,11 +921,10 @@ fun AnimatedHenOverlay(state: GameState, onIntent: (GameIntent) -> Unit) {
     val currentIsHenPaused by rememberUpdatedState(state.isHenPaused)
     var visualHenAnimTime by remember { mutableFloatStateOf(2.5f) }
 
-    // THE FIX: The loop is restored! The timer will now advance past 2.5s,
-    // triggering the Hen's slide animation perfectly.
+    // THE FIX 1: Terminate the loop when she leaves the screen!
     LaunchedEffect(Unit) {
         var lastFrameNanos = 0L
-        while(true) {
+        while(visualHenAnimTime <= 9.0f) {
             withFrameNanos { nanos ->
                 val dt = if (lastFrameNanos == 0L) 0.016f else ((nanos - lastFrameNanos) / 1_000_000_000f).coerceAtMost(0.1f)
                 lastFrameNanos = nanos
@@ -936,18 +935,21 @@ fun AnimatedHenOverlay(state: GameState, onIntent: (GameIntent) -> Unit) {
         }
     }
 
-    Box(modifier = Modifier.fillMaxSize().zIndex(200f), contentAlignment = Alignment.Center) {
-        HenVisual(
-            timeLeft = 0f,
-            isPaused = state.isHenPaused,
-            onTogglePause = { onIntent(GameIntent.ToggleHenPause) },
-            eggWobbleRotation = 0f,
-            henSequenceElapsed = visualHenAnimTime, // Passes the live time again!
-            showEgg = false,
-            isPainedBeakOpen = false,
-            isPainedBeakClosed = state.isPainedBeakClosed,
-            isDarkMode = true,
-            modifier = Modifier.fillMaxSize()
-        )
+    // THE FIX 2: Cull the entire Hen from the Compose UI Tree!
+    if (visualHenAnimTime <= 9.0f) {
+        Box(modifier = Modifier.fillMaxSize().zIndex(200f), contentAlignment = Alignment.Center) {
+            HenVisual(
+                timeLeft = 0f,
+                isPaused = state.isHenPaused,
+                onTogglePause = { onIntent(GameIntent.ToggleHenPause) },
+                eggWobbleRotation = 0f,
+                henSequenceElapsed = visualHenAnimTime,
+                showEgg = false,
+                isPainedBeakOpen = false,
+                isPainedBeakClosed = state.isPainedBeakClosed,
+                isDarkMode = true,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
     }
 }

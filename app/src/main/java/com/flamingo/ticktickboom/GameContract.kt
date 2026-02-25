@@ -36,11 +36,14 @@ data class GameState(
 sealed class GameIntent {
     data class StartTimer(val settings: TimerSettings) : GameIntent()
     object TogglePause : GameIntent()
+    object ToggleHenPause : GameIntent()
     object Abort : GameIntent()
     object Reset : GameIntent()
 
     // Allows the UI to tell the logic layer exactly where the bomb is on screen
     data class UpdateExplosionOrigin(val offset: Offset) : GameIntent()
 
-    object ToggleHenPause : GameIntent() // <-- NEW
+    // --- NEW LIFECYCLE INTENTS ---
+    object AppEnteredBackground : GameIntent()
+    object AppEnteredForeground : GameIntent()
 }

@@ -39,6 +39,8 @@ class BombViewModel(private val audio: AudioController) : ViewModel() {
     private var hasPlayedSlide = false
     private var postGameJob: Job? = null
     private var logicalHenAnimTime = 0f
+    // --- NEW: App Lifecycle Tracker ---
+    @Volatile private var isAppInForeground = true
 
     // 3. THE INTENT PROCESSOR: The only way the UI can talk to the logic
     fun processIntent(intent: GameIntent) {
@@ -51,6 +53,9 @@ class BombViewModel(private val audio: AudioController) : ViewModel() {
             is GameIntent.UpdateExplosionOrigin -> {
                 _state.update { it.copy(explosionOrigin = intent.offset) }
             }
+            // --- NEW ---
+            is GameIntent.AppEnteredBackground -> handleAppBackgrounded()
+            is GameIntent.AppEnteredForeground -> handleAppForegrounded()
         }
     }
 
@@ -75,8 +80,8 @@ class BombViewModel(private val audio: AudioController) : ViewModel() {
                 // 3. Open the beak
                 _state.update { it.copy(isPainedBeakClosed = false) }
 
-                // 4. Play the sound (with our trusty safety check!)
-                if (_state.value.isHenPaused) {
+                // 4. Play the sound (Only if we are STILL paused AND the app is open!)
+                if (_state.value.isHenPaused && isAppInForeground) {
                     audio.playPainedCluck()
                 }
             }
@@ -334,41 +339,55 @@ class BombViewModel(private val audio: AudioController) : ViewModel() {
                 val currentState = _state.value
 
                 if (currentState.isHenPaused) {
-                    painedCluckTimer += dt
-                    if (painedCluckTimer >= nextPainedCluckTarget) {
-                        // 1. Close the beak
-                        _state.update { it.copy(isPainedBeakClosed = true) }
+                    // THE FIX: Completely freeze the cluck math if we are in the background!
+                    if (isAppInForeground) {
+                        painedCluckTimer += dt
+                        if (painedCluckTimer >= nextPainedCluckTarget) {
+                            // 1. Close the beak
+                            _state.update { it.copy(isPainedBeakClosed = true) }
 
-                        // 2. Wait for 150ms
-                        delay(150)
+                            // 2. Wait for 150ms
+                            delay(150)
 
-                        // 3. Open the beak
-                        _state.update { it.copy(isPainedBeakClosed = false) }
+                            // 3. Open the beak
+                            _state.update { it.copy(isPainedBeakClosed = false) }
 
-                        // --- THE FIX: Only play the cluck if we are STILL paused after waking up! ---
-                        if (_state.value.isHenPaused) {
-                            audio.playPainedCluck()
+                            // 4. Play sound
+                            if (_state.value.isHenPaused && isAppInForeground) {
+                                audio.playPainedCluck()
+                            }
+                            lastTimeNanos = System.nanoTime()
+                            painedCluckTimer = 0f
+                            nextPainedCluckTarget = Random.nextFloat() * 2f + 1f
                         }
+                    } else {
+                        // Just update the clock so we don't get a massive 'dt' jump when we return
                         lastTimeNanos = System.nanoTime()
-                        painedCluckTimer = 0f
-                        nextPainedCluckTarget = Random.nextFloat() * 2f + 1f
                     }
                 } else {
-                    // --- THE FIX: Only update internal logic! ---
                     logicalHenAnimTime += dt
 
                     if (logicalHenAnimTime > 2.5f && !hasPlayedWhistle) { audio.playWhistle(); hasPlayedWhistle = true }
-                    if (logicalHenAnimTime > 4.5f && !hasPlayedThud) { audio.playGlassTap(); hasPlayedThud = true }
+                    if (logicalHenAnimTime > 4.5f && !hasPlayedThud) {
+                        audio.stopWhistle() // THE FIX: Forcefully cut the whistle on impact!
+                        audio.playGlassTap()
+                        hasPlayedThud = true
+                    }
                     if (logicalHenAnimTime > 6.0f && !hasPlayedSlide) { audio.playHenSlide(); hasPlayedSlide = true }
 
-                    val currentMs = currentNanos / 1_000_000
+                    // THE FIX: Grab the current time before doing the math!
+                    val currentMs = System.currentTimeMillis()
+
                     if (logicalHenAnimTime > 6.0f && (currentMs - lastVolumeUpdateTime > 50)) {
-                        lastVolumeUpdateTime = currentMs
                         val slideProgress = (logicalHenAnimTime - 6.0f) / 2.5f
-                        val fadeVol = (1f - slideProgress).coerceIn(0f, 1f)
-                        audio.updateSlideVolume(fadeVol)
+                        audio.updateSlideVolume((1f - slideProgress).coerceIn(0f, 1f))
+                        lastVolumeUpdateTime = currentMs
                     }
-                    // REMOVED: _state.update { it.copy(henAnimTime = newAnimTime) }
+
+                    // THE GOOD PRACTICE FIX: Kill the coroutine when she is off-screen!
+                    if (logicalHenAnimTime > 9.0f) {
+                        break // Breaks out of the while loop and ends the Coroutine!
+                    }
                 }
             }
         }
@@ -378,4 +397,40 @@ class BombViewModel(private val audio: AudioController) : ViewModel() {
         super.onCleared()
         gameLoopJob?.cancel()
     }
+
+    private fun handleAppBackgrounded() {
+        isAppInForeground = false
+        val currentState = _state.value
+
+        // 1. Pause the ticking bomb
+        if (currentState.appState == AppState.RUNNING && !currentState.isPaused) {
+            handleTogglePause()
+        }
+        // 2. Pause the Hen Explosion animation!
+        else if (currentState.appState == AppState.EXPLODED && currentState.bombStyle == "HEN" && !currentState.isHenPaused) {
+            // THE FIX: Only auto-pause if the slide hasn't finished yet!
+            if (logicalHenAnimTime <= 9.0f) {
+                handleToggleHenPause()
+            }
+        }
+    }
+
+    private fun handleAppForegrounded() {
+        isAppInForeground = true
+        val currentState = _state.value
+
+        // 1. Hen Auto-Resume: ONLY if falling (< 4.5s) OR sliding off-screen but still active (> 7.0s to 9.0s)
+        if (currentState.appState == AppState.EXPLODED && currentState.bombStyle == "HEN" && currentState.isHenPaused) {
+            // THE FIX: Add an explicit ceiling so she is ignored forever after 9.0s!
+            if (logicalHenAnimTime < 4.5f || (logicalHenAnimTime > 7.0f && logicalHenAnimTime <= 9.0f)) {
+                handleToggleHenPause()
+            }
+        }
+
+        // 2. Frog Flail Resume: If it's a Frog, running, paused, and in the critical panic phase
+        if (currentState.appState == AppState.RUNNING && currentState.bombStyle == "FROG" && currentState.isPaused && currentState.timeLeft <= 1.0f) {
+            audio.playFlail()
+        }
+    }
 }
+
