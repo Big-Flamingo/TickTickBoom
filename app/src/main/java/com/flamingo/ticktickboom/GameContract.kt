@@ -18,6 +18,11 @@ data class GameState(
     val isPaused: Boolean = false,
     val isLedOn: Boolean = false,
     val explosionOrigin: Offset = Offset.Zero,
+    // --- NEW GROUP MODE STATE ---
+    val playMode: PlayMode = PlayMode.SOLO,
+    val activePlayers: List<Player> = emptyList(), // The roster of students
+    val currentPlayerIndex: Int = 0, // Who is holding the potato right now?
+    val resetTimeOnExplosion: Boolean = false, // The teacher's rule choice
     // Pre-calculated lists for the explosion screen
     val particles: List<Particle> = emptyList(),
     val smoke: List<SmokeParticle> = emptyList(),
@@ -48,4 +53,10 @@ sealed class GameIntent {
     // --- NEW LIFECYCLE INTENTS ---
     object AppEnteredBackground : GameIntent()
     object AppEnteredForeground : GameIntent()
+
+    // --- NEW GROUP MODE INTENTS ---
+    // We pass the preset into the start command instead of the basic TimerSettings
+    data class StartGroupTimer(val preset: GroupPreset, val style: String) : GameIntent()
+    object NextPlayer : GameIntent()
+    object PreviousPlayer : GameIntent()
 }

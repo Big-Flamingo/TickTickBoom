@@ -5,6 +5,26 @@ import androidx.compose.ui.graphics.Color
 
 enum class AppState { SETUP, RUNNING, EXPLODED }
 
+enum class PlayMode { SOLO, GROUP }
+
+@Immutable
+data class Player(
+    val id: String, // Unique ID so we can track them perfectly
+    val name: String,
+    val timeLeft: Float, // This is their saved time while waiting
+    val isEliminated: Boolean = false,
+    val isAbsent: Boolean = false // Checked off during setup
+)
+
+@Immutable
+data class GroupPreset(
+    val id: String,
+    val presetName: String,
+    val players: List<Player>,
+    val defaultTime: Float, // The starting time for everyone
+    val resetOnExplosion: Boolean
+)
+
 data class TimerSettings(val minSeconds: Int, val maxSeconds: Int, val style: String = "C4")
 
 @Immutable

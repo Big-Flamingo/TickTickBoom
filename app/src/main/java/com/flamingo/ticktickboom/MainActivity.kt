@@ -275,6 +275,7 @@ fun BombApp(viewModel: BombViewModel, audioController: AudioController) {
                         audio = audioController,
                         onToggleTheme = { toggleTheme() },
                         onStart = { settings -> viewModel.processIntent(GameIntent.StartTimer(settings)) },
+                        onGroupStart = { preset, style -> viewModel.processIntent(GameIntent.StartGroupTimer(preset, style)) }, // <-- THE FIX
                         onToggleLanguage = { toggleLanguage() }
                     )
 

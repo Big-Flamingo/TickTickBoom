@@ -19,6 +19,7 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -39,9 +40,13 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.PlayArrow
@@ -110,17 +115,32 @@ import kotlinx.coroutines.launch
 // --- SCREENS ---
 
 @Composable
-fun SetupScreen(colors: AppColors, isDarkMode: Boolean, audio: AudioController, onToggleTheme: () -> Unit, onStart: (TimerSettings) -> Unit, onToggleLanguage: () -> Unit) {
+fun SetupScreen(colors: AppColors, isDarkMode: Boolean, audio: AudioController, onToggleTheme: () -> Unit, onStart: (TimerSettings) -> Unit, onGroupStart: (GroupPreset, String) -> Unit, onToggleLanguage: () -> Unit) {
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
     val prefs = remember { context.getSharedPreferences("bomb_timer_prefs", Context.MODE_PRIVATE) }
 
+    // --- NEW: Group Manager ---
+    val groupManager = remember { GroupPresetManager(context) }
+    var savedPresets by remember { mutableStateOf(groupManager.loadPresets()) }
+    var selectedTabIndex by remember { mutableIntStateOf(0) } // 0 = Solo, 1 = Group
+    var selectedPresetIndex by remember { mutableStateOf(if (savedPresets.isNotEmpty()) 0 else null) }
+
+    // Solo Data
     var minText by remember { mutableStateOf(prefs.getInt("min", 10).toString()) }
     var maxText by remember { mutableStateOf(prefs.getInt("max", 20).toString()) }
+
+    // Group Data (If creating a new preset or editing)
+    var groupTimeText by remember { mutableStateOf("10") }
+    var isCreatingNewPreset by remember { mutableStateOf(false) }
+    var newPresetName by remember { mutableStateOf("") }
+    var newPlayerName by remember { mutableStateOf("") }
+    var tempPlayers by remember { mutableStateOf(emptyList<Player>()) }
+    var resetTimeRule by remember { mutableStateOf(false) }
+
     var style by remember { mutableStateOf(prefs.getString("style", "C4") ?: "C4") }
     var timerVol by remember { mutableFloatStateOf(prefs.getFloat("vol_timer", 1.0f)) }
     var explodeVol by remember { mutableFloatStateOf(prefs.getFloat("vol_explode", 1.0f)) }
-    // Holds the Resource ID of the error, or null if there is no error
     var errorResId by remember { mutableStateOf<Int?>(null) }
 
     var easterEggTaps by remember { mutableIntStateOf(0) }
@@ -128,7 +148,6 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, audio: AudioController, 
     val flyAwayAnim = remember { Animatable(0f) }
     val setupFusePath = remember { Path() }
 
-    // --- UPDATED: Grab the density and use it to calculate pixels! ---
     val density = LocalDensity.current
     val bombFuseStroke = remember(density) {
         with(density) {
@@ -204,18 +223,24 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, audio: AudioController, 
 
     fun tryStart() {
         audio.playClick()
+        if (selectedTabIndex == 0) {
+            var min = minText.toIntOrNull() ?: 1
+            if (min <= 0) min = 1
+            var max = maxText.toIntOrNull() ?: 1
+            if (max < min) max = min
 
-        // Final Safety Check before starting
-        var min = minText.toIntOrNull() ?: 1
-        if (min <= 0) min = 1
-        var max = maxText.toIntOrNull() ?: 1
-        if (max < min) max = min // Default safety: ensure range is valid
+            minText = min.toString()
+            maxText = max.toString()
+            prefs.edit { putInt("min", min); putInt("max", max) }
 
-        minText = min.toString()
-        maxText = max.toString()
-        prefs.edit { putInt("min", min); putInt("max", max) }
-
-        onStart(TimerSettings(min, max, style))
+            onStart(TimerSettings(min, max, style))
+        } else {
+            // Group Mode Start!
+            if (selectedPresetIndex != null && savedPresets.isNotEmpty()) {
+                val preset = savedPresets[selectedPresetIndex!!]
+                onGroupStart(preset, style)
+            }
+        }
     }
 
     fun handleBombTap() {
@@ -374,8 +399,26 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, audio: AudioController, 
                 Text(stringResource(R.string.app_title_boom), color = NeonRed, fontSize = 26.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont, letterSpacing = 1.sp)
             }
             Text(stringResource(R.string.randomized_sequence), color = colors.textSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, modifier = Modifier.padding(top=4.dp), fontFamily = CustomFont)
-            Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.height(24.dp))
 
+            // --- THE NEW TABS ---
+            Row(modifier = Modifier.fillMaxWidth().height(40.dp).background(Slate800, RoundedCornerShape(8.dp)).clip(RoundedCornerShape(8.dp))) {
+                Box(
+                    modifier = Modifier.weight(1f).fillMaxHeight().background(if (selectedTabIndex == 0) NeonCyan else Color.Transparent)
+                        .clickable { selectedTabIndex = 0; audio.playClick() },
+                    contentAlignment = Alignment.Center
+                ) { Text("SOLO MODE", color = if (selectedTabIndex == 0) Slate950 else Color.White, fontWeight = FontWeight.Bold, fontFamily = CustomFont) }
+
+                Box(
+                    modifier = Modifier.weight(1f).fillMaxHeight().background(if (selectedTabIndex == 1) NeonOrange else Color.Transparent)
+                        .clickable { selectedTabIndex = 1; audio.playClick() },
+                    contentAlignment = Alignment.Center
+                ) { Text("GROUP MODE", color = if (selectedTabIndex == 1) Slate950 else Color.White, fontWeight = FontWeight.Bold, fontFamily = CustomFont) }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // THE STYLE BUTTONS (Shared across both modes)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 StyleButton(stringResource(R.string.style_digital), Icons.Rounded.DeveloperBoard, style == "C4", NeonCyan, colors) { saveStyle("C4") }
                 StyleButton(stringResource(R.string.style_fuse), Icons.Rounded.LocalFireDepartment, style == "FUSE", NeonOrange, colors) { saveStyle("FUSE") }
@@ -383,20 +426,189 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, audio: AudioController, 
             }
             Spacer(modifier = Modifier.height(24.dp))
 
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                TimeInput(stringResource(R.string.min_secs), minText, { saveMin(it) }, NeonCyan, colors, Modifier.weight(1f), { validateMin() })
-                TimeInput(stringResource(R.string.max_secs), maxText, { saveMax(it) }, NeonRed, colors, Modifier.weight(1f), { validateMax() })
-            }
+            // --- DYNAMIC CONTENT BASED ON TAB ---
+            if (selectedTabIndex == 0) {
+                // SOLO MODE UI (Your original inputs)
+                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    TimeInput(stringResource(R.string.min_secs), minText, { saveMin(it) }, NeonCyan, colors, Modifier.weight(1f), { validateMin() })
+                    TimeInput(stringResource(R.string.max_secs), maxText, { saveMax(it) }, NeonRed, colors, Modifier.weight(1f), { validateMax() })
+                }
+                if (errorResId != null) {
+                    Text(text = stringResource(errorResId!!), color = NeonRed, fontSize = 14.sp, modifier = Modifier.padding(top = 8.dp), fontFamily = CustomFont)
+                }
+            } else {
+                // GROUP MODE UI
+                if (!isCreatingNewPreset) {
+                    if (savedPresets.isEmpty()) {
+                        Text("No saved presets. Create one for your class!", color = colors.textSecondary, fontFamily = CustomFont)
+                        Spacer(modifier = Modifier.height(16.dp))
+                        ActionButton("Create Class Preset", Icons.Filled.PlayArrow, NeonOrange, Slate950, NeonOrange, 0.dp, remember { MutableInteractionSource() }) {
+                            isCreatingNewPreset = true
+                            tempPlayers = emptyList()
+                            newPresetName = "Class 1"
+                        }
+                    } else {
+                        // THE DROPDOWN SELECTOR
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Text("SELECT PRESET:", color = colors.textSecondary, fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont)
+                            ActionButton("New Class", Icons.Filled.Add, Slate800, Color.White, Slate800, 0.dp, remember { MutableInteractionSource() }) {
+                                isCreatingNewPreset = true
+                                tempPlayers = emptyList()
+                                newPresetName = "Class ${savedPresets.size + 1}"
+                            }
+                        }
 
-            // --- NEW: If we have an ID, grab the string for the current language! ---
-            if (errorResId != null) {
-                Text(
-                    text = stringResource(errorResId!!),
-                    color = NeonRed,
-                    fontSize = 14.sp,
-                    modifier = Modifier.padding(top = 8.dp),
-                    fontFamily = CustomFont
-                )
+                        // Render a simple list of saved presets as clickable buttons for now
+                        Column(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            savedPresets.forEachIndexed { index, preset ->
+                                val isSelected = selectedPresetIndex == index
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(if (isSelected) NeonOrange else Slate800, RoundedCornerShape(8.dp))
+                                        .border(2.dp, if (isSelected) NeonOrange else Color.Transparent, RoundedCornerShape(8.dp))
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .clickable { selectedPresetIndex = index; audio.playClick() }
+                                        .padding(12.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(preset.presetName, color = if (isSelected) Slate950 else Color.White, fontWeight = FontWeight.Bold, fontFamily = CustomFont)
+                                    Text("${preset.players.size} Players", color = if (isSelected) Slate950.copy(alpha=0.7f) else colors.textSecondary, fontSize = 12.sp, fontFamily = CustomFont)
+                                }
+                            }
+                        }
+
+                        // SHOW THE ROSTER OF THE SELECTED PRESET
+                        if (selectedPresetIndex != null && selectedPresetIndex!! < savedPresets.size) {
+                            val activePreset = savedPresets[selectedPresetIndex!!]
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            Box(modifier = Modifier.fillMaxWidth().background(Slate900, RoundedCornerShape(8.dp)).padding(12.dp)) {
+                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                        Text("ROSTER (Uncheck if absent)", color = colors.textSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont)
+                                        Text("${activePreset.defaultTime}s start time", color = NeonCyan, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont)
+                                    }
+
+                                    // The Player List
+                                    activePreset.players.forEachIndexed { playerIndex, player ->
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Text("${playerIndex + 1}. ${player.name}", color = if (player.isAbsent) colors.textSecondary else Color.White, fontFamily = CustomFont)
+                                            Switch(
+                                                checked = !player.isAbsent,
+                                                onCheckedChange = { isPresent ->
+                                                    // Functional mutability update!
+                                                    val updatedPlayers = activePreset.players.toMutableList()
+                                                    updatedPlayers[playerIndex] = player.copy(isAbsent = !isPresent)
+
+                                                    val updatedPreset = activePreset.copy(players = updatedPlayers)
+                                                    val updatedPresetsList = savedPresets.toMutableList()
+                                                    updatedPresetsList[selectedPresetIndex!!] = updatedPreset
+
+                                                    savedPresets = updatedPresetsList
+                                                    groupManager.savePresets(savedPresets) // Save to disk instantly
+                                                },
+                                                colors = SwitchDefaults.colors(checkedThumbColor = NeonCyan, checkedTrackColor = Slate800, uncheckedThumbColor = Slate800, uncheckedTrackColor = Slate950),
+                                                modifier = Modifier.size(36.dp, 20.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    // THE "NEW CLASS" BUILDER UI
+                    Column(modifier = Modifier.fillMaxWidth().background(Slate900, RoundedCornerShape(8.dp)).padding(16.dp)) {
+                        Text("CREATE NEW CLASS", color = NeonOrange, fontWeight = FontWeight.Bold, fontFamily = CustomFont)
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        androidx.compose.material3.OutlinedTextField(
+                            value = newPresetName,
+                            onValueChange = { newPresetName = it },
+                            label = { Text("Class Name (e.g. Period 1)", color = colors.textSecondary, fontFamily = CustomFont) },
+                            modifier = Modifier.fillMaxWidth(),
+                            textStyle = androidx.compose.ui.text.TextStyle(color = Color.White, fontFamily = CustomFont),
+                            singleLine = true
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        TimeInput("Starting Time (Seconds)", groupTimeText, { groupTimeText = it }, NeonCyan, colors, Modifier.fillMaxWidth(), { /* Validation */ })
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        // Toggle Rule
+                        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("Reset times on explosion?", color = Color.White, fontFamily = CustomFont)
+                            Switch(
+                                checked = resetTimeRule,
+                                onCheckedChange = { resetTimeRule = it },
+                                colors = SwitchDefaults.colors(checkedThumbColor = NeonRed, checkedTrackColor = Slate800)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(24.dp))
+                        Text("ADD STUDENTS", color = colors.textSecondary, fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont)
+
+                        Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            androidx.compose.material3.OutlinedTextField(
+                                value = newPlayerName,
+                                onValueChange = { newPlayerName = it },
+                                placeholder = { Text("Student Name", color = colors.textSecondary, fontFamily = CustomFont) },
+                                modifier = Modifier.weight(1f),
+                                textStyle = androidx.compose.ui.text.TextStyle(color = Color.White, fontFamily = CustomFont),
+                                singleLine = true
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Icon(Icons.Filled.Add, null, tint = NeonCyan, modifier = Modifier.size(36.dp).clickable {
+                                if (newPlayerName.isNotBlank()) {
+                                    val time = groupTimeText.toFloatOrNull() ?: 10f
+                                    tempPlayers = tempPlayers + Player(id = java.util.UUID.randomUUID().toString(), name = newPlayerName.trim(), timeLeft = time)
+                                    newPlayerName = ""
+                                }
+                            })
+                        }
+
+                        // Temp Player List
+                        Column(modifier = Modifier.fillMaxWidth().padding(top = 16.dp)) {
+                            tempPlayers.forEachIndexed { i, p ->
+                                Text("${i + 1}. ${p.name}", color = Color.White, fontFamily = CustomFont, modifier = Modifier.padding(vertical = 4.dp))
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(24.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Box(modifier = Modifier.weight(1f)) {
+                                ActionButton("Cancel", Icons.Filled.Refresh, Slate800, Color.White, Slate800, 0.dp, remember { MutableInteractionSource() }) {
+                                    isCreatingNewPreset = false
+                                }
+                            }
+                            Box(modifier = Modifier.weight(1f)) {
+                                ActionButton("Save Class", Icons.Filled.PlayArrow, NeonOrange, Slate950, NeonOrange, 0.dp, remember { MutableInteractionSource() }) {
+                                    if (newPresetName.isNotBlank() && tempPlayers.isNotEmpty()) {
+                                        val time = groupTimeText.toFloatOrNull() ?: 10f
+                                        val newPreset = GroupPreset(
+                                            id = java.util.UUID.randomUUID().toString(),
+                                            presetName = newPresetName,
+                                            players = tempPlayers,
+                                            defaultTime = time,
+                                            resetOnExplosion = resetTimeRule
+                                        )
+                                        savedPresets = savedPresets + newPreset
+                                        groupManager.savePresets(savedPresets)
+                                        selectedPresetIndex = savedPresets.size - 1
+                                        isCreatingNewPreset = false
+                                        audio.playClick()
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
             Spacer(modifier = Modifier.height(32.dp))
@@ -696,10 +908,16 @@ fun BombScreen(
                             .padding(start = bombHalfWidth),
                         contentAlignment = Alignment.Center
                     ) {
+                        // 1. THE LANDSCAPE COLUMN
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically)
                         ) {
+                            // --- NEW: Add the Player UI! ---
+                            if (state.playMode == PlayMode.GROUP) {
+                                PlayerTurnUI(state, audio, onIntent)
+                            }
+
                             BombTextContent(
                                 style = state.bombStyle,
                                 timeLeftProvider = timeProvider,
@@ -716,7 +934,15 @@ fun BombScreen(
                     }
                 }
             } else {
+                // 2. THE PORTRAIT COLUMN
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
+
+                    // --- NEW: Add the Player UI! ---
+                    if (state.playMode == PlayMode.GROUP) {
+                        PlayerTurnUI(state, audio, onIntent)
+                        Spacer(modifier = Modifier.height(16.dp))
+                    }
+
                     BombTextContent(
                         style = state.bombStyle,
                         timeLeftProvider = timeProvider,
@@ -951,5 +1177,61 @@ fun AnimatedHenOverlay(state: GameState, onIntent: (GameIntent) -> Unit) {
                 modifier = Modifier.fillMaxSize()
             )
         }
+    }
+}
+
+@Composable
+fun PlayerTurnUI(state: GameState, audio: AudioController, onIntent: (GameIntent) -> Unit) {
+    if (state.playMode != PlayMode.GROUP || state.activePlayers.isEmpty()) return
+
+    val currentPlayer = state.activePlayers.getOrNull(state.currentPlayerIndex) ?: return
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
+        modifier = Modifier
+            .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(24.dp))
+            .border(2.dp, NeonCyan.copy(alpha = 0.5f), RoundedCornerShape(24.dp))
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+    ) {
+        Icon(
+            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
+            contentDescription = "Previous Player",
+            tint = NeonCyan,
+            modifier = Modifier
+                .size(32.dp)
+                .clip(CircleShape)
+                .clickable {
+                    audio.playClick()
+                    onIntent(GameIntent.PreviousPlayer)
+                }
+                .padding(4.dp)
+        )
+
+        Spacer(modifier = Modifier.width(16.dp))
+
+        Text(
+            text = currentPlayer.name.uppercase(),
+            color = Color.White,
+            fontSize = 22.sp,
+            fontWeight = FontWeight.Bold,
+            fontFamily = CustomFont
+        )
+
+        Spacer(modifier = Modifier.width(16.dp))
+
+        Icon(
+            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            contentDescription = "Next Player",
+            tint = NeonCyan,
+            modifier = Modifier
+                .size(32.dp)
+                .clip(CircleShape)
+                .clickable {
+                    audio.playClick()
+                    onIntent(GameIntent.NextPlayer)
+                }
+                .padding(4.dp)
+        )
     }
 }

@@ -54,6 +54,10 @@ class BombViewModel(private val audio: AudioController) : ViewModel() {
                 _state.update { it.copy(explosionOrigin = intent.offset) }
             }
             // --- NEW ---
+            is GameIntent.StartGroupTimer -> handleGroupStart(intent.preset, intent.style)
+            is GameIntent.NextPlayer -> handlePlayerSwap(isNext = true)
+            is GameIntent.PreviousPlayer -> handlePlayerSwap(isNext = false)
+            // --- NEW ---
             is GameIntent.AppEnteredBackground -> handleAppBackgrounded()
             is GameIntent.AppEnteredForeground -> handleAppForegrounded()
         }
@@ -129,6 +133,78 @@ class BombViewModel(private val audio: AudioController) : ViewModel() {
         }
 
         startGameLoop()
+    }
+
+    private fun handleGroupStart(preset: GroupPreset, style: String) {
+        // 1. Filter out anyone marked absent
+        val playingRoster = preset.players.filter { !it.isAbsent && !it.isEliminated }
+        if (playingRoster.isEmpty()) return // Failsafe
+
+        val startingPlayer = playingRoster[0]
+
+        // 2. Setup mathematical trackers
+        exactElapsedSeconds = 0.0
+        lastTickRunTimeMs = -1000L
+        isFuseFinished = startingPlayer.timeLeft <= 5f
+
+        hasPlayedDing = false; hasPlayedAlert = false; hasPlayedFlail = false
+        lastPlayedCrackStage = 0; hasPlayedWhistle = false; hasPlayedThud = false; hasPlayedSlide = false
+
+        // 3. Dispatch the State!
+        _state.update {
+            it.copy(
+                appState = AppState.RUNNING,
+                playMode = PlayMode.GROUP,
+                bombStyle = style,
+                activePlayers = playingRoster,
+                currentPlayerIndex = 0,
+                resetTimeOnExplosion = preset.resetOnExplosion,
+                duration = startingPlayer.timeLeft.toInt(), // Used for math loop
+                timeLeft = startingPlayer.timeLeft,
+                isPaused = false,
+                isLedOn = false,
+                particles = emptyList(),
+                smoke = emptyList()
+            )
+        }
+
+        if (style == "FUSE") audio.startFuse(isFuseFinished)
+        startGameLoop()
+    }
+
+    private fun handlePlayerSwap(isNext: Boolean) {
+        val currentState = _state.value
+        if (currentState.playMode != PlayMode.GROUP || currentState.activePlayers.isEmpty()) return
+
+        // 1. Save the active float into the current player's slot
+        val updatedPlayers = currentState.activePlayers.toMutableList()
+        val currentIndex = currentState.currentPlayerIndex
+        updatedPlayers[currentIndex] = updatedPlayers[currentIndex].copy(timeLeft = currentState.timeLeft)
+
+        // 2. Find the next valid index
+        var nextIndex = currentIndex
+        do {
+            nextIndex = if (isNext) {
+                (nextIndex + 1) % updatedPlayers.size
+            } else {
+                if (nextIndex - 1 < 0) updatedPlayers.size - 1 else nextIndex - 1
+            }
+        } while (updatedPlayers[nextIndex].isEliminated || updatedPlayers[nextIndex].isAbsent)
+
+        // 3. Reset the math trackers so the time doesn't instantly jump
+        val nextPlayerTime = updatedPlayers[nextIndex].timeLeft
+        exactElapsedSeconds = 0.0
+        isFuseFinished = nextPlayerTime <= 5f
+
+        // 4. Update the state instantly
+        _state.update {
+            it.copy(
+                activePlayers = updatedPlayers,
+                currentPlayerIndex = nextIndex,
+                timeLeft = nextPlayerTime,
+                duration = nextPlayerTime.toInt() // Resets the anchor for ExactElapsedSeconds
+            )
+        }
     }
 
     private fun handleTogglePause() {
@@ -303,10 +379,33 @@ class BombViewModel(private val audio: AudioController) : ViewModel() {
             Pair(p, s)
         }
 
+        // --- NEW: Handle Player Elimination ---
+        val finalState = _state.value
+        var finalPlayers = finalState.activePlayers
+
+        if (finalState.playMode == PlayMode.GROUP && finalPlayers.isNotEmpty()) {
+            val updatedPlayers = finalPlayers.toMutableList()
+            val doomedIndex = finalState.currentPlayerIndex
+
+            // Mark the loser as eliminated!
+            updatedPlayers[doomedIndex] = updatedPlayers[doomedIndex].copy(isEliminated = true)
+
+            // If the teacher chose the reset rule, restore everyone else's time
+            if (finalState.resetTimeOnExplosion) {
+                for (i in updatedPlayers.indices) {
+                    if (i != doomedIndex && !updatedPlayers[i].isEliminated) {
+                        // We use the duration as a hack to store the default time
+                        updatedPlayers[i] = updatedPlayers[i].copy(timeLeft = 10f) // We will pass the true defaultTime here later via UI!
+                    }
+                }
+            }
+            finalPlayers = updatedPlayers
+        }
+
         _state.update {
             it.copy(
                 appState = AppState.EXPLODED,
-                timeLeft = 0f,
+                activePlayers = finalPlayers,
                 particles = newParticles,
                 smoke = newSmoke
             )
