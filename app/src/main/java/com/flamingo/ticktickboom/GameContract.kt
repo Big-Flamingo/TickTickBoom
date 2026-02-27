@@ -1,5 +1,6 @@
 package com.flamingo.ticktickboom
 
+import androidx.compose.runtime.Immutable
 import androidx.compose.ui.geometry.Offset
 
 /**
@@ -8,6 +9,7 @@ import androidx.compose.ui.geometry.Offset
  * It is 100% immutable. The UI cannot change these values directly;
  * it can only observe them and draw what they say.
  */
+@Immutable
 data class GameState(
     val appState: AppState = AppState.SETUP,
     val bombStyle: String = "C4",

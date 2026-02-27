@@ -1,11 +1,13 @@
 package com.flamingo.ticktickboom
 
+import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.Color
 
 enum class AppState { SETUP, RUNNING, EXPLODED }
 
 data class TimerSettings(val minSeconds: Int, val maxSeconds: Int, val style: String = "C4")
 
+@Immutable
 data class Particle(
     val id: Int,
     val dirX: Float, // <-- Replaces angle
@@ -16,6 +18,7 @@ data class Particle(
     val rotationSpeed: Float
 )
 
+@Immutable
 data class SmokeParticle(
     var x: Float,
     var y: Float,

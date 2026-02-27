@@ -144,7 +144,7 @@ class MainActivity : AppCompatActivity() {
 
             // 2. Ensure a HARD minimum splash screen time
             // (Set to 1500ms here, but adjust to match your exact preference!)
-            val minimumSplashTime = 1500L
+            val minimumSplashTime = 1000L
             val elapsed = System.currentTimeMillis() - startTime
             if (elapsed < minimumSplashTime) {
                 delay(minimumSplashTime - elapsed)
