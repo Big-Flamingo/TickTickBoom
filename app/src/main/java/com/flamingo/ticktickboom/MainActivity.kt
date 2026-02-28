@@ -127,6 +127,7 @@ class MainActivity : AppCompatActivity() {
 
         // Initialize it using applicationContext (which never leaks!)
         audioController = AudioController(applicationContext)
+        val groupManager = GroupPresetManager(applicationContext)
 
         val prefs = getSharedPreferences("bomb_timer_prefs", MODE_PRIVATE)
         audioController.timerVolume = prefs.getFloat("vol_timer", 0.8f)
@@ -162,7 +163,7 @@ class MainActivity : AppCompatActivity() {
                 val viewModel: BombViewModel = viewModel(
                     factory = viewModelFactory {
                         initializer {
-                            BombViewModel(audioController)
+                            BombViewModel(audioController, groupManager)
                         }
                     }
                 )

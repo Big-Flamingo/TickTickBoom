@@ -1202,6 +1202,7 @@ fun DynamiteVisual(
     val vibrationMagnitude = remember { Animatable(1f) }
     LaunchedEffect(hasShownDing) {
         if (hasShownDing) {
+            vibrationMagnitude.snapTo(1f) // <-- ADDED: Snap back to 100% energy!
             // Decays the multiplier from 1f to 0f over 2 seconds!
             vibrationMagnitude.animateTo(0f, tween(2000, easing = LinearOutSlowInEasing))
         }
@@ -1210,11 +1211,20 @@ fun DynamiteVisual(
     val currentTimeLeft by rememberUpdatedState(timeLeft)
     val currentIsPaused by rememberUpdatedState(isPaused)
 
-    // THE FIX: Unified Physics & Bulletproof Trigger Loop
+    // THE FIX: Exact countdown boundary syncing
     LaunchedEffect(Unit) {
         var lastTime = 0L
-        var localLastTickTime = Float.MAX_VALUE // Guarantees an immediate tick on frame 1
         var localHasShownDing = false
+        var previousTLeft = currentTimeLeft
+
+        // Exact same function used by the Audio Engine!
+        fun getNextTick(time: Float): Float {
+            val interval = if (time <= 5f) 0.5f else 1.0f
+            // THE FIX: Match the ViewModel's floor math perfectly!
+            return kotlin.math.floor(time / interval) * interval
+        }
+
+        var nextVisualTickTime = getNextTick(currentTimeLeft)
 
         while(true) {
             withFrameNanos { nanos ->
@@ -1224,17 +1234,24 @@ fun DynamiteVisual(
                 val tLeft = currentTimeLeft
                 val paused = currentIsPaused
 
-                // 1. Check for Ticks
-                val isFast = tLeft <= 5f
-                val tickInterval = if (isFast) 0.5f else 1.0f
+                // STRICT TIME TRAVEL DETECTOR
+                if (kotlin.math.abs(tLeft - previousTLeft) > 0.5f) {
+                    nextVisualTickTime = getNextTick(tLeft)
+                    if (tLeft > 1.0f) {
+                        localHasShownDing = false
+                        hasShownDing = false
+                    }
+                }
+                previousTLeft = tLeft
 
-                // --- THE FIX: Removed the manual pause reset! ---
-                // By just checking !paused, it remembers the last TRUE tick (e.g., 10.0)
-                // and perfectly waits for the next integer boundary (e.g., 9.0) even if paused in between!
-                if (!paused && (localLastTickTime - tLeft >= tickInterval) && tLeft > 1.1f) {
+                // 1. Check for Ticks (Syncs perfectly with audio)
+                if (!paused && tLeft <= nextVisualTickTime && tLeft > 1.1f) {
+                    val isFast = tLeft <= 5f
                     textEffects.add(VisualText(tickText, (Math.random() * 100 - 50).toFloat(), tickOffsetY, if (isFast) NeonRed else TextGray, fontSize = 20f))
-                    // Snap the tracker to the perfect mathematical interval to prevent drifting
-                    localLastTickTime = kotlin.math.ceil(tLeft / tickInterval) * tickInterval
+
+                    val interval = if (isFast) 0.5f else 1.0f
+                    nextVisualTickTime -= interval
+                    while (nextVisualTickTime >= tLeft) nextVisualTickTime -= interval
                 }
 
                 // 2. Check for the Ding

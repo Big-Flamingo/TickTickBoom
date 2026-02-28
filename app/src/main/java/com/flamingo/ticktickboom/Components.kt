@@ -6,6 +6,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.VectorConverter
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -80,6 +81,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.core.os.ConfigurationCompat
+import androidx.compose.ui.focus.onFocusChanged
 
 // --- SHARED DRAWING HELPERS ---
 
@@ -178,18 +180,32 @@ fun ActionButton(
     textColor: Color,
     borderColor: Color = Color.Transparent,
     borderWidth: Dp = 1.dp,
-    interactionSource: MutableInteractionSource = remember { MutableInteractionSource() }, // <-- NEW PARAMETER!
+    interactionSource: MutableInteractionSource = remember { MutableInteractionSource() },
     onClick: () -> Unit
 ) {
-    val isPressed by interactionSource.collectIsPressedAsState()
+    // 1. Read from the interactionSource (This keeps your Explosion Screen "Ghost Click" trick working!)
+    val isPressedRemotely by interactionSource.collectIsPressedAsState()
 
-    // Smooth fade to a neutral gray for universal light/dark mode support
-    val targetColor = if (isPressed) lerp(color, Color.Gray, 0.4f) else color
-    val animatedColor by animateColorAsState(
-        targetValue = targetColor,
-        animationSpec = tween(durationMillis = 150), // Subtle yet quick transition
-        label = "buttonHighlight"
+    // 2. Track instant local touches (Using explicit .value fixes the IDE's "never used" warning)
+    val isPressedLocally = remember { mutableStateOf(false) }
+
+    // 3. The button lights up if EITHER the remote or local state is true!
+    val isActuallyPressed = isPressedRemotely || isPressedLocally.value
+
+    // THE FIX: Animate a float to separate touch from theme toggles!
+    val pressProgress by animateFloatAsState(
+        targetValue = if (isActuallyPressed) 1f else 0f,
+        animationSpec = if (isActuallyPressed) tween(0) else tween(150),
+        label = "btnPress"
     )
+
+    // Background Math (Now perfectly tracking your actual NeonOrange!)
+    val pressedBg = if (color == NeonOrange) Color(0xFFB24D00) else lerp(color, Color.Gray, 0.4f)
+    val animatedColor = lerp(color, pressedBg, pressProgress)
+
+    // Border Math
+    val pressedBorder = if (color == NeonOrange) Color(0xFFB24D00) else Color.Transparent
+    val animatedBorder = lerp(borderColor, pressedBorder, pressProgress)
 
     Row(
         modifier = Modifier
@@ -197,11 +213,18 @@ fun ActionButton(
             .height(60.dp)
             .clip(RoundedCornerShape(50))
             .background(animatedColor)
-            .border(borderWidth, borderColor, RoundedCornerShape(50))
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null
-            ) { onClick() }
+            // UPDATE THIS LINE to use the animatedBorder!
+            .border(borderWidth, animatedBorder, RoundedCornerShape(50))
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onPress = {
+                        isPressedLocally.value = true
+                        tryAwaitRelease()
+                        isPressedLocally.value = false
+                    },
+                    onTap = { onClick() }
+                )
+            }
             .padding(horizontal = 16.dp),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically
@@ -228,7 +251,7 @@ fun RowScope.StyleButton(
     val baseBgColor = if (isSelected) colors.surface else colors.surface.copy(alpha = 0.3f)
 
     // 2. Animate based on our new raw touch state
-    val pressBlend by androidx.compose.animation.core.animateFloatAsState(
+    val pressBlend by animateFloatAsState(
         targetValue = if (isActuallyPressed.value) 0.4f else 0f, // <-- Added .value
         animationSpec = if (isActuallyPressed.value) tween(0) else tween(150), // <-- Added .value
         label = "pressBlend"
@@ -282,7 +305,23 @@ fun TimeInput(
     modifier: Modifier = Modifier,
     onDone: () -> Unit = {}
 ) {
-    Column(modifier = modifier.background(colors.surface.copy(alpha = 0.5f), RoundedCornerShape(16.dp)).border(1.dp, colors.border, RoundedCornerShape(16.dp)).padding(16.dp)) {
+    // 1. Track if the user is currently typing in this specific box
+    val isFocused = remember { mutableStateOf(false) }
+
+    // 2. Smoothly animate the border so it glows when tapped!
+    val animatedBorderColor by animateColorAsState(
+        targetValue = if (isFocused.value) color else colors.border,
+        animationSpec = tween(150),
+        label = "timeInputBorder"
+    )
+
+    Column(
+        modifier = modifier
+            .background(colors.surface.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
+            // THE FIX: Use the animated border color and thicken it when focused!
+            .border(if (isFocused.value) 2.dp else 1.dp, animatedBorderColor, RoundedCornerShape(16.dp))
+            .padding(16.dp)
+    ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Rounded.AccessTime, null, tint = color, modifier = Modifier.size(14.dp))
             Spacer(modifier = Modifier.width(6.dp))
@@ -294,7 +333,14 @@ fun TimeInput(
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
             keyboardActions = KeyboardActions(onDone = { onDone() }),
             textStyle = TextStyle(color = colors.text, fontSize = 32.sp, fontWeight = FontWeight.Black, fontFamily = CustomFont),
-            modifier = Modifier.padding(top = 8.dp)
+            cursorBrush = androidx.compose.ui.graphics.SolidColor(color),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 8.dp)
+                // THE FIX: Cleanly use the imported extension function!
+                .onFocusChanged { focusState ->
+                    isFocused.value = focusState.isFocused
+                }
         )
     }
 }

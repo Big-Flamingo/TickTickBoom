@@ -107,6 +107,11 @@ import androidx.compose.ui.zIndex
 import androidx.core.content.edit
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 
 // NOTE: Uses VisualParticle from AppModels.kt
 // NOTE: Uses drawReflection and StrokeGlowText from Components.kt
@@ -120,11 +125,28 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, audio: AudioController, 
     val focusManager = LocalFocusManager.current
     val prefs = remember { context.getSharedPreferences("bomb_timer_prefs", Context.MODE_PRIVATE) }
 
+    // --- DESIGN TOKENS (Change these once to update the whole screen!) ---
+    val unselectedGlass = colors.surface.copy(alpha = 0.3f)
+    val faintOutline = colors.border
+    val touchDarkenAmount = 0.4f // <-- NEW: Controls how dark buttons get when tapped!
+    val darkOrangePressed = Color(0xFFB24D00)
+    val darkCyanPressed = Color(0xFF007A8A)
+
     // --- NEW: Group Manager ---
     val groupManager = remember { GroupPresetManager(context) }
     var savedPresets by remember { mutableStateOf(groupManager.loadPresets()) }
-    var selectedTabIndex by remember { mutableIntStateOf(0) } // 0 = Solo, 1 = Group
-    var selectedPresetIndex by remember { mutableStateOf(if (savedPresets.isNotEmpty()) 0 else null) }
+    var selectedTabIndex by remember { mutableIntStateOf(prefs.getInt("last_tab", 0)) }
+    var selectedPresetIndex by remember {
+        mutableStateOf(
+            if (savedPresets.isEmpty()) null
+            else {
+                val lastId = prefs.getString("last_preset_id", null)
+                val index = savedPresets.indexOfFirst { it.id == lastId }
+                // If the saved ID was found, use its index. Otherwise, default to 0.
+                if (index >= 0) index else 0
+            }
+        )
+    }
 
     // Solo Data
     var minText by remember { mutableStateOf(prefs.getInt("min", 10).toString()) }
@@ -133,6 +155,10 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, audio: AudioController, 
     // Group Data (If creating a new preset or editing)
     var groupTimeText by remember { mutableStateOf("10") }
     var isCreatingNewPreset by remember { mutableStateOf(false) }
+    var isEditingPreset by remember { mutableStateOf(false) }
+    var editingPresetId by remember { mutableStateOf<String?>(null) }
+    // --- UPDATED: Remembers the last expanded state ---
+    var isRosterExpanded by remember { mutableStateOf(prefs.getBoolean("is_roster_expanded", false)) }
     var newPresetName by remember { mutableStateOf("") }
     var newPlayerName by remember { mutableStateOf("") }
     var tempPlayers by remember { mutableStateOf(emptyList<Player>()) }
@@ -402,18 +428,77 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, audio: AudioController, 
             Spacer(modifier = Modifier.height(24.dp))
 
             // --- THE NEW TABS ---
-            Row(modifier = Modifier.fillMaxWidth().height(40.dp).background(Slate800, RoundedCornerShape(8.dp)).clip(RoundedCornerShape(8.dp))) {
+            val soloPressed = remember { mutableStateOf(false) }
+            val groupPressed = remember { mutableStateOf(false) }
+
+            // 1. SOLO MODE MATH (NeonCyan)
+            val isSoloSelected = selectedTabIndex == 0
+            val soloPressProgress by androidx.compose.animation.core.animateFloatAsState(
+                targetValue = if (soloPressed.value) 1f else 0f,
+                animationSpec = if (soloPressed.value) tween(0) else tween(150),
+                label = "soloPress"
+            )
+
+            val soloBaseBg = if (isSoloSelected) NeonCyan else unselectedGlass
+            val soloPressedBg = if (isSoloSelected) darkCyanPressed else lerp(unselectedGlass, Color.Gray, touchDarkenAmount)
+            val soloAnimatedBg = lerp(soloBaseBg, soloPressedBg, soloPressProgress)
+
+            val soloBaseBorder = if (isSoloSelected) NeonCyan else faintOutline
+            val soloPressedBorder = if (isSoloSelected) darkCyanPressed else Color.Transparent
+            val soloAnimatedBorder = lerp(soloBaseBorder, soloPressedBorder, soloPressProgress)
+
+            // 2. GROUP MODE MATH (NeonOrange)
+            val isGroupSelected = selectedTabIndex == 1
+            val groupPressProgress by androidx.compose.animation.core.animateFloatAsState(
+                targetValue = if (groupPressed.value) 1f else 0f,
+                animationSpec = if (groupPressed.value) tween(0) else tween(150),
+                label = "groupPress"
+            )
+
+            val groupBaseBg = if (isGroupSelected) NeonOrange else unselectedGlass
+            val groupPressedBg = if (isGroupSelected) darkOrangePressed else lerp(unselectedGlass, Color.Gray, touchDarkenAmount)
+            val groupAnimatedBg = lerp(groupBaseBg, groupPressedBg, groupPressProgress)
+
+            val groupBaseBorder = if (isGroupSelected) NeonOrange else faintOutline
+            val groupPressedBorder = if (isGroupSelected) darkOrangePressed else Color.Transparent
+            val groupAnimatedBorder = lerp(groupBaseBorder, groupPressedBorder, groupPressProgress)
+
+            // 3. THE SPLIT LAYOUT
+            Row(
+                modifier = Modifier.fillMaxWidth().height(40.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp) // <-- THE FIX: Splits them apart!
+            ) {
                 Box(
-                    modifier = Modifier.weight(1f).fillMaxHeight().background(if (selectedTabIndex == 0) NeonCyan else Color.Transparent)
-                        .clickable { selectedTabIndex = 0; audio.playClick() },
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .background(soloAnimatedBg, RoundedCornerShape(8.dp))
+                        .border(if (isSoloSelected) 2.dp else 1.dp, soloAnimatedBorder, RoundedCornerShape(8.dp)) // Independent border!
+                        .clip(RoundedCornerShape(8.dp))
+                        .pointerInput(Unit) {
+                            detectTapGestures(
+                                onPress = { soloPressed.value = true; tryAwaitRelease(); soloPressed.value = false },
+                                onTap = { selectedTabIndex = 0; prefs.edit { putInt("last_tab", 0) }; audio.playClick() }
+                            )
+                        },
                     contentAlignment = Alignment.Center
-                ) { Text("SOLO MODE", color = if (selectedTabIndex == 0) Slate950 else Color.White, fontWeight = FontWeight.Bold, fontFamily = CustomFont) }
+                ) { Text("SOLO MODE", color = if (isSoloSelected) Slate950 else colors.textSecondary, fontWeight = FontWeight.Bold, fontFamily = CustomFont) }
 
                 Box(
-                    modifier = Modifier.weight(1f).fillMaxHeight().background(if (selectedTabIndex == 1) NeonOrange else Color.Transparent)
-                        .clickable { selectedTabIndex = 1; audio.playClick() },
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .background(groupAnimatedBg, RoundedCornerShape(8.dp))
+                        .border(if (isGroupSelected) 2.dp else 1.dp, groupAnimatedBorder, RoundedCornerShape(8.dp)) // Independent border!
+                        .clip(RoundedCornerShape(8.dp))
+                        .pointerInput(Unit) {
+                            detectTapGestures(
+                                onPress = { groupPressed.value = true; tryAwaitRelease(); groupPressed.value = false },
+                                onTap = { selectedTabIndex = 1; prefs.edit { putInt("last_tab", 1) }; audio.playClick() }
+                            )
+                        },
                     contentAlignment = Alignment.Center
-                ) { Text("GROUP MODE", color = if (selectedTabIndex == 1) Slate950 else Color.White, fontWeight = FontWeight.Bold, fontFamily = CustomFont) }
+                ) { Text("GROUP MODE", color = if (isGroupSelected) Slate950 else colors.textSecondary, fontWeight = FontWeight.Bold, fontFamily = CustomFont) }
             }
 
             Spacer(modifier = Modifier.height(24.dp))
@@ -438,7 +523,7 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, audio: AudioController, 
                 }
             } else {
                 // GROUP MODE UI
-                if (!isCreatingNewPreset) {
+                if (!isCreatingNewPreset && !isEditingPreset) {
                     if (savedPresets.isEmpty()) {
                         Text("No saved presets. Create one for your class!", color = colors.textSecondary, fontFamily = CustomFont)
                         Spacer(modifier = Modifier.height(16.dp))
@@ -446,76 +531,213 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, audio: AudioController, 
                             isCreatingNewPreset = true
                             tempPlayers = emptyList()
                             newPresetName = "Class 1"
+                            groupTimeText = "10"
+                            resetTimeRule = false
                         }
                     } else {
                         // THE DROPDOWN SELECTOR
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                             Text("SELECT PRESET:", color = colors.textSecondary, fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont)
-                            ActionButton("New Class", Icons.Filled.Add, Slate800, Color.White, Slate800, 0.dp, remember { MutableInteractionSource() }) {
+
+                            // Hollowed out the button to match the bomb style!
+                            ActionButton(
+                                text = "New Class",
+                                icon = Icons.Filled.Add,
+                                color = unselectedGlass,
+                                textColor = colors.text,
+                                borderColor = faintOutline,
+                                borderWidth = 1.dp,
+                                interactionSource = remember { MutableInteractionSource() }
+                            ) {
                                 isCreatingNewPreset = true
                                 tempPlayers = emptyList()
                                 newPresetName = "Class ${savedPresets.size + 1}"
+                                groupTimeText = "10"
+                                resetTimeRule = false
                             }
                         }
 
-                        // Render a simple list of saved presets as clickable buttons for now
+                        // --- UNIFIED ACCORDION CLASS LIST ---
                         Column(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             savedPresets.forEachIndexed { index, preset ->
                                 val isSelected = selectedPresetIndex == index
-                                Row(
+                                val rosterBg = if (isDarkMode) Slate900 else Color.White
+
+                                // 1. Track local touches for the Row and the Arrow separately
+                                val headerPressed = remember(preset.id) { mutableStateOf(false) }
+                                val arrowPressed = remember(preset.id) { mutableStateOf(false) }
+
+                                val currentIsSelected by rememberUpdatedState(isSelected)
+                                val currentIsRosterExpanded by rememberUpdatedState(isRosterExpanded)
+                                val currentIndex by rememberUpdatedState(index)
+
+                                // --- THE FIX: Animate a Float, not the Colors directly! ---
+                                val isRowPressed = headerPressed.value || arrowPressed.value
+
+                                val rowPressProgress by androidx.compose.animation.core.animateFloatAsState(
+                                    targetValue = if (isRowPressed) 1f else 0f,
+                                    animationSpec = if (isRowPressed) tween(0) else tween(150),
+                                    label = "rowPress"
+                                )
+
+                                // 1. Snap the Background
+                                val baseBgColor = if (isSelected) NeonOrange else unselectedGlass
+                                val pressedBgColor = if (isSelected) darkOrangePressed else lerp(unselectedGlass, Color.Gray, touchDarkenAmount)
+                                val animatedBgColor = lerp(baseBgColor, pressedBgColor, rowPressProgress)
+
+                                // 2. Snap the Border
+                                val baseBorderColor = if (isSelected) NeonOrange else faintOutline
+                                val pressedBorderColor = if (isSelected) darkOrangePressed else Color.Transparent
+                                val animatedBorderColor = lerp(baseBorderColor, pressedBorderColor, rowPressProgress)
+
+                                Column(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .background(if (isSelected) NeonOrange else Slate800, RoundedCornerShape(8.dp))
-                                        .border(2.dp, if (isSelected) NeonOrange else Color.Transparent, RoundedCornerShape(8.dp))
+                                        .background(animatedBgColor, RoundedCornerShape(8.dp))
+                                        .border(
+                                            width = if (isSelected) 2.dp else 1.dp,
+                                            color = animatedBorderColor, // <-- Now perfectly syncs with the fill!
+                                            shape = RoundedCornerShape(8.dp)
+                                        )
                                         .clip(RoundedCornerShape(8.dp))
-                                        .clickable { selectedPresetIndex = index; audio.playClick() }
-                                        .padding(12.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text(preset.presetName, color = if (isSelected) Slate950 else Color.White, fontWeight = FontWeight.Bold, fontFamily = CustomFont)
-                                    Text("${preset.players.size} Players", color = if (isSelected) Slate950.copy(alpha=0.7f) else colors.textSecondary, fontSize = 12.sp, fontFamily = CustomFont)
-                                }
-                            }
-                        }
+                                    // 1. THE CLASS HEADER
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            // THE FIX: We pass 'Unit' so it never restarts!
+                                            .pointerInput(Unit) {
+                                                detectTapGestures(
+                                                    onPress = { headerPressed.value = true; tryAwaitRelease(); headerPressed.value = false },
+                                                    onTap = {
+                                                        if (!currentIsSelected) {
+                                                            selectedPresetIndex = currentIndex
+                                                            prefs.edit { putString("last_preset_id", preset.id) }
+                                                            isRosterExpanded = false
+                                                            prefs.edit { putBoolean("is_roster_expanded", false) }
+                                                        }
+                                                        audio.playClick()
+                                                    }
+                                                )
+                                            }
+                                            .padding(12.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(preset.presetName, color = if (isSelected) Slate950 else colors.text, fontWeight = FontWeight.Bold, fontFamily = CustomFont)
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text("${preset.players.size} Players", color = if (isSelected) Slate950.copy(alpha=0.7f) else colors.textSecondary, fontSize = 12.sp, fontFamily = CustomFont)
 
-                        // SHOW THE ROSTER OF THE SELECTED PRESET
-                        if (selectedPresetIndex != null && selectedPresetIndex!! < savedPresets.size) {
-                            val activePreset = savedPresets[selectedPresetIndex!!]
-                            Spacer(modifier = Modifier.height(16.dp))
+                                            Spacer(modifier = Modifier.width(8.dp))
 
-                            Box(modifier = Modifier.fillMaxWidth().background(Slate900, RoundedCornerShape(8.dp)).padding(12.dp)) {
-                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                        Text("ROSTER (Uncheck if absent)", color = colors.textSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont)
-                                        Text("${activePreset.defaultTime}s start time", color = NeonCyan, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont)
+                                            val isThisExpanded = isSelected && isRosterExpanded
+                                            Icon(
+                                                imageVector = if (isThisExpanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+                                                contentDescription = "Toggle Roster",
+                                                tint = if (arrowPressed.value) Color.Gray else (if (isSelected) Slate950 else colors.text),
+                                                modifier = Modifier
+                                                    .size(28.dp)
+                                                    .clip(CircleShape)
+                                                    // THE FIX: We pass 'Unit' so it never restarts!
+                                                    .pointerInput(Unit) {
+                                                        detectTapGestures(
+                                                            onPress = { arrowPressed.value = true; tryAwaitRelease(); arrowPressed.value = false },
+                                                            onTap = {
+                                                                if (!currentIsSelected) {
+                                                                    selectedPresetIndex = currentIndex
+                                                                    prefs.edit { putString("last_preset_id", preset.id) }
+                                                                    isRosterExpanded = true
+                                                                } else {
+                                                                    isRosterExpanded = !currentIsRosterExpanded
+                                                                }
+                                                                prefs.edit { putBoolean("is_roster_expanded", isRosterExpanded) }
+                                                                audio.playClick()
+                                                            }
+                                                        )
+                                                    }
+                                                    .padding(2.dp)
+                                            )
+                                        }
                                     }
 
-                                    // The Player List
-                                    activePreset.players.forEachIndexed { playerIndex, player ->
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.SpaceBetween
+                                    // 2. THE ROSTER BODY
+                                    if (isSelected && isRosterExpanded) {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .background(rosterBg)
+                                                .padding(12.dp)
                                         ) {
-                                            Text("${playerIndex + 1}. ${player.name}", color = if (player.isAbsent) colors.textSecondary else Color.White, fontFamily = CustomFont)
-                                            Switch(
-                                                checked = !player.isAbsent,
-                                                onCheckedChange = { isPresent ->
-                                                    // Functional mutability update!
-                                                    val updatedPlayers = activePreset.players.toMutableList()
-                                                    updatedPlayers[playerIndex] = player.copy(isAbsent = !isPresent)
+                                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
 
-                                                    val updatedPreset = activePreset.copy(players = updatedPlayers)
-                                                    val updatedPresetsList = savedPresets.toMutableList()
-                                                    updatedPresetsList[selectedPresetIndex!!] = updatedPreset
+                                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                                    Column {
+                                                        Text("ROSTER (Uncheck if absent)", color = colors.textSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont)
+                                                        Text("${preset.defaultTime}s start time", color = NeonCyan, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont)
+                                                    }
+                                                    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                                                        Icon(Icons.Filled.Edit, "Edit", tint = NeonCyan, modifier = Modifier.size(20.dp).clickable(
+                                                            interactionSource = remember { MutableInteractionSource() },
+                                                            indication = null
+                                                        ) {
+                                                            audio.playClick()
+                                                            isEditingPreset = true
+                                                            editingPresetId = preset.id
+                                                            newPresetName = preset.presetName
+                                                            groupTimeText = preset.defaultTime.toInt().toString()
+                                                            resetTimeRule = preset.resetOnExplosion
+                                                            tempPlayers = preset.players
+                                                        })
+                                                        Icon(Icons.Filled.Delete, "Delete", tint = NeonRed, modifier = Modifier.size(20.dp).clickable(
+                                                            interactionSource = remember { MutableInteractionSource() },
+                                                            indication = null
+                                                        ) {
+                                                            audio.playClick()
+                                                            val updatedPresets = savedPresets.filter { it.id != preset.id }
+                                                            savedPresets = updatedPresets
+                                                            groupManager.savePresets(updatedPresets)
+                                                            if (updatedPresets.isNotEmpty()) {
+                                                                selectedPresetIndex = 0
+                                                                prefs.edit { putString("last_preset_id", updatedPresets[0].id) }
+                                                            } else {
+                                                                selectedPresetIndex = null
+                                                                prefs.edit { remove("last_preset_id") }
+                                                            }
+                                                        })
+                                                    }
+                                                }
 
-                                                    savedPresets = updatedPresetsList
-                                                    groupManager.savePresets(savedPresets) // Save to disk instantly
-                                                },
-                                                colors = SwitchDefaults.colors(checkedThumbColor = NeonCyan, checkedTrackColor = Slate800, uncheckedThumbColor = Slate800, uncheckedTrackColor = Slate950),
-                                                modifier = Modifier.size(36.dp, 20.dp)
-                                            )
+                                                Spacer(modifier = Modifier.height(4.dp))
+
+                                                preset.players.forEachIndexed { playerIndex, player ->
+                                                    Row(
+                                                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        horizontalArrangement = Arrangement.SpaceBetween
+                                                    ) {
+                                                        Text("${playerIndex + 1}. ${player.name}", color = if (player.isAbsent) colors.textSecondary else colors.text, fontFamily = CustomFont)
+                                                        Switch(
+                                                            checked = !player.isAbsent,
+                                                            onCheckedChange = { isPresent ->
+                                                                val updatedPlayers = preset.players.toMutableList()
+                                                                updatedPlayers[playerIndex] = player.copy(isAbsent = !isPresent)
+                                                                val updatedPreset = preset.copy(players = updatedPlayers)
+                                                                val updatedPresetsList = savedPresets.toMutableList()
+                                                                updatedPresetsList[selectedPresetIndex!!] = updatedPreset
+                                                                savedPresets = updatedPresetsList
+                                                                groupManager.savePresets(savedPresets)
+                                                            },
+                                                            colors = SwitchDefaults.colors(
+                                                                checkedThumbColor = NeonCyan,
+                                                                checkedTrackColor = if (isDarkMode) Slate800 else Color(0xFFE5E7EB),
+                                                                uncheckedThumbColor = if (isDarkMode) Slate800 else Color.White,
+                                                                uncheckedTrackColor = if (isDarkMode) Slate950 else Color(0xFFD1D5DB)
+                                                            ),
+                                                            modifier = Modifier.size(36.dp, 20.dp)
+                                                        )
+                                                    }
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -523,85 +745,211 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, audio: AudioController, 
                         }
                     }
                 } else {
-                    // THE "NEW CLASS" BUILDER UI
-                    Column(modifier = Modifier.fillMaxWidth().background(Slate900, RoundedCornerShape(8.dp)).padding(16.dp)) {
-                        Text("CREATE NEW CLASS", color = NeonOrange, fontWeight = FontWeight.Bold, fontFamily = CustomFont)
+                    // THE UNIVERSAL EDITOR UI (Handles Create AND Edit)
+                    // We can remove editorBg since it is going transparent!
+                    val fieldBg = if (isDarkMode) Slate800 else Color(0xFFE5E7EB)
+
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color.Transparent, RoundedCornerShape(8.dp))
+                            .border(1.dp, faintOutline, RoundedCornerShape(8.dp))
+                            .padding(16.dp)
+                    ) {
+                        Text(if (isEditingPreset) "EDIT CLASS" else "CREATE NEW CLASS", color = NeonOrange, fontWeight = FontWeight.Bold, fontFamily = CustomFont)
                         Spacer(modifier = Modifier.height(16.dp))
 
                         androidx.compose.material3.OutlinedTextField(
                             value = newPresetName,
                             onValueChange = { newPresetName = it },
-                            label = { Text("Class Name (e.g. Period 1)", color = colors.textSecondary, fontFamily = CustomFont) },
+                            label = { Text("Class Name (e.g. Period 1)", fontFamily = CustomFont) },
                             modifier = Modifier.fillMaxWidth(),
-                            textStyle = androidx.compose.ui.text.TextStyle(color = Color.White, fontFamily = CustomFont),
-                            singleLine = true
+                            textStyle = androidx.compose.ui.text.TextStyle(color = colors.text, fontFamily = CustomFont),
+                            singleLine = true,
+                            // THE FIX: Tell the keyboard to show a "Done" button, and clear focus when tapped!
+                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Done),
+                            keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { focusManager.clearFocus() }),
+                            colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = NeonOrange,
+                                unfocusedBorderColor = faintOutline,
+                                cursorColor = NeonOrange,
+                                focusedLabelColor = NeonOrange,
+                                unfocusedLabelColor = colors.textSecondary
+                            )
                         )
                         Spacer(modifier = Modifier.height(16.dp))
 
-                        TimeInput("Starting Time (Seconds)", groupTimeText, { groupTimeText = it }, NeonCyan, colors, Modifier.fillMaxWidth(), { /* Validation */ })
+                        // THE FIX: Clears focus on Done, and swapped to NeonOrange for consistency!
+                        TimeInput("Starting Time (Seconds)", groupTimeText, { groupTimeText = it }, NeonOrange, colors, Modifier.fillMaxWidth(), { focusManager.clearFocus() })
                         Spacer(modifier = Modifier.height(16.dp))
 
                         // Toggle Rule
                         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text("Reset times on explosion?", color = Color.White, fontFamily = CustomFont)
+                            Text("Reset times on explosion?", color = colors.text, fontFamily = CustomFont)
                             Switch(
                                 checked = resetTimeRule,
-                                onCheckedChange = { resetTimeRule = it },
-                                colors = SwitchDefaults.colors(checkedThumbColor = NeonRed, checkedTrackColor = Slate800)
+                                onCheckedChange = {
+                                    resetTimeRule = it
+                                    audio.playClick() // <-- ADDED AUDIO FEEDBACK!
+                                },
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = NeonRed,
+                                    checkedTrackColor = fieldBg,
+                                    uncheckedThumbColor = if (isDarkMode) Slate800 else Color.White,
+                                    uncheckedTrackColor = if (isDarkMode) Slate950 else Color(0xFFD1D5DB)
+                                )
                             )
                         }
 
                         Spacer(modifier = Modifier.height(24.dp))
-                        Text("ADD STUDENTS", color = colors.textSecondary, fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont)
+                        Text("ADD/EDIT STUDENTS", color = colors.textSecondary, fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont)
 
                         Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                             androidx.compose.material3.OutlinedTextField(
                                 value = newPlayerName,
                                 onValueChange = { newPlayerName = it },
-                                placeholder = { Text("Student Name", color = colors.textSecondary, fontFamily = CustomFont) },
+                                placeholder = { Text("Student Name", fontFamily = CustomFont) },
                                 modifier = Modifier.weight(1f),
-                                textStyle = androidx.compose.ui.text.TextStyle(color = Color.White, fontFamily = CustomFont),
-                                singleLine = true
+                                textStyle = androidx.compose.ui.text.TextStyle(color = colors.text, fontFamily = CustomFont),
+                                singleLine = true,
+                                // THE FIX: Automatically adds the student and clears focus when "Done" is pressed!
+                                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Done),
+                                keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = {
+                                    if (newPlayerName.isNotBlank()) {
+                                        val time = groupTimeText.toFloatOrNull() ?: 10f
+                                        tempPlayers = tempPlayers + Player(id = java.util.UUID.randomUUID().toString(), name = newPlayerName.trim(), timeLeft = time)
+                                        newPlayerName = ""
+                                        audio.playClick()
+                                    }
+                                    focusManager.clearFocus()
+                                }),
+                                colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = NeonOrange,
+                                    unfocusedBorderColor = faintOutline,
+                                    cursorColor = NeonOrange,
+                                    focusedPlaceholderColor = colors.textSecondary,
+                                    unfocusedPlaceholderColor = colors.textSecondary
+                                )
                             )
                             Spacer(modifier = Modifier.width(8.dp))
-                            Icon(Icons.Filled.Add, null, tint = NeonCyan, modifier = Modifier.size(36.dp).clickable {
+                            Icon(Icons.Filled.Add, null, tint = NeonOrange, modifier = Modifier.size(36.dp).clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null
+                            ) {
                                 if (newPlayerName.isNotBlank()) {
                                     val time = groupTimeText.toFloatOrNull() ?: 10f
                                     tempPlayers = tempPlayers + Player(id = java.util.UUID.randomUUID().toString(), name = newPlayerName.trim(), timeLeft = time)
                                     newPlayerName = ""
+                                    audio.playClick()
                                 }
                             })
                         }
 
-                        // Temp Player List
-                        Column(modifier = Modifier.fillMaxWidth().padding(top = 16.dp)) {
+                        // Interactive Temp Player List
+                        Column(modifier = Modifier.fillMaxWidth().padding(top = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             tempPlayers.forEachIndexed { i, p ->
-                                Text("${i + 1}. ${p.name}", color = Color.White, fontFamily = CustomFont, modifier = Modifier.padding(vertical = 4.dp))
+                                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                                    Text("${i + 1}. ${p.name}", color = colors.text, fontFamily = CustomFont, modifier = Modifier.weight(1f))
+
+                                    // Move Up
+                                    if (i > 0) {
+                                        Icon(Icons.Filled.KeyboardArrowUp, null, tint = NeonCyan, modifier = Modifier.size(24.dp).clickable(
+                                            interactionSource = remember { MutableInteractionSource() }, indication = null
+                                        ) {
+                                            audio.playClick()
+                                            val list = tempPlayers.toMutableList()
+                                            val temp = list[i]
+                                            list[i] = list[i-1]
+                                            list[i-1] = temp
+                                            tempPlayers = list
+                                        })
+                                    } else { Spacer(modifier = Modifier.size(24.dp)) }
+
+                                    // Move Down
+                                    if (i < tempPlayers.size - 1) {
+                                        Icon(Icons.Filled.KeyboardArrowDown, null, tint = NeonCyan, modifier = Modifier.size(24.dp).clickable(
+                                            interactionSource = remember { MutableInteractionSource() }, indication = null
+                                        ) {
+                                            audio.playClick()
+                                            val list = tempPlayers.toMutableList()
+                                            val temp = list[i]
+                                            list[i] = list[i+1]
+                                            list[i+1] = temp
+                                            tempPlayers = list
+                                        })
+                                    } else { Spacer(modifier = Modifier.size(24.dp)) }
+
+                                    Spacer(modifier = Modifier.width(16.dp))
+
+                                    // Remove Student
+                                    Icon(Icons.Filled.Close, null, tint = NeonRed, modifier = Modifier.size(20.dp).clickable(
+                                        interactionSource = remember { MutableInteractionSource() }, indication = null
+                                    ) {
+                                        audio.playClick()
+                                        tempPlayers = tempPlayers.filter { it.id != p.id }
+                                    })
+                                }
                             }
                         }
 
                         Spacer(modifier = Modifier.height(24.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Box(modifier = Modifier.weight(1f)) {
-                                ActionButton("Cancel", Icons.Filled.Refresh, Slate800, Color.White, Slate800, 0.dp, remember { MutableInteractionSource() }) {
+                                ActionButton(
+                                    text = "Cancel",
+                                    icon = Icons.Filled.Refresh,
+                                    color = unselectedGlass,
+                                    textColor = colors.text,
+                                    borderColor = faintOutline, // <-- Updated Cancel Border
+                                    borderWidth = 1.dp,
+                                    interactionSource = remember { MutableInteractionSource() }
+                                ) {
+                                    audio.playClick()
                                     isCreatingNewPreset = false
+                                    isEditingPreset = false
                                 }
                             }
                             Box(modifier = Modifier.weight(1f)) {
                                 ActionButton("Save Class", Icons.Filled.PlayArrow, NeonOrange, Slate950, NeonOrange, 0.dp, remember { MutableInteractionSource() }) {
                                     if (newPresetName.isNotBlank() && tempPlayers.isNotEmpty()) {
                                         val time = groupTimeText.toFloatOrNull() ?: 10f
-                                        val newPreset = GroupPreset(
-                                            id = java.util.UUID.randomUUID().toString(),
-                                            presetName = newPresetName,
-                                            players = tempPlayers,
-                                            defaultTime = time,
-                                            resetOnExplosion = resetTimeRule
-                                        )
-                                        savedPresets = savedPresets + newPreset
+
+                                        // If the time changed, we update all surviving players to the new time!
+                                        val updatedPlayers = tempPlayers.map {
+                                            if (!it.isEliminated) it.copy(timeLeft = time) else it
+                                        }
+
+                                        if (isEditingPreset && editingPresetId != null) {
+                                            // Update existing preset
+                                            val updatedPreset = GroupPreset(
+                                                id = editingPresetId!!,
+                                                presetName = newPresetName,
+                                                players = updatedPlayers,
+                                                defaultTime = time,
+                                                resetOnExplosion = resetTimeRule
+                                            )
+                                            savedPresets = savedPresets.map { if (it.id == editingPresetId) updatedPreset else it }
+                                        } else {
+                                            // Save new preset
+                                            val newPreset = GroupPreset(
+                                                id = java.util.UUID.randomUUID().toString(),
+                                                presetName = newPresetName,
+                                                players = updatedPlayers,
+                                                defaultTime = time,
+                                                resetOnExplosion = resetTimeRule
+                                            )
+                                            savedPresets = savedPresets + newPreset
+                                        }
+
                                         groupManager.savePresets(savedPresets)
-                                        selectedPresetIndex = savedPresets.size - 1
+
+                                        // --- UPDATED TARGETING & SAVING LOGIC ---
+                                        val targetIndex = savedPresets.indexOfFirst { it.presetName == newPresetName }.takeIf { it >= 0 } ?: (savedPresets.size - 1)
+                                        selectedPresetIndex = targetIndex
+                                        prefs.edit { putString("last_preset_id", savedPresets[targetIndex].id) }
+
                                         isCreatingNewPreset = false
+                                        isEditingPreset = false
                                         audio.playClick()
                                     }
                                 }
@@ -1201,7 +1549,10 @@ fun PlayerTurnUI(state: GameState, audio: AudioController, onIntent: (GameIntent
             modifier = Modifier
                 .size(32.dp)
                 .clip(CircleShape)
-                .clickable {
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null
+                ) {
                     audio.playClick()
                     onIntent(GameIntent.PreviousPlayer)
                 }
@@ -1227,7 +1578,10 @@ fun PlayerTurnUI(state: GameState, audio: AudioController, onIntent: (GameIntent
             modifier = Modifier
                 .size(32.dp)
                 .clip(CircleShape)
-                .clickable {
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null
+                ) {
                     audio.playClick()
                     onIntent(GameIntent.NextPlayer)
                 }

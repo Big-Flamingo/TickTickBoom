@@ -15,34 +15,41 @@ import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.random.Random
 
-class BombViewModel(private val audio: AudioController) : ViewModel() {
+class BombViewModel(private val audio: AudioController, private val groupManager: GroupPresetManager) : ViewModel() {
 
-    // 1. THE STATE: Backing property (mutable) and Public property (read-only)
     private val _state = MutableStateFlow(GameState())
     val state: StateFlow<GameState> = _state.asStateFlow()
-
-    // 2. THE MASTER JOB: Controls our background physics loop
     private var gameLoopJob: Job? = null
 
-    // Private timing variables (The UI doesn't need to know about these!)
-    private var exactElapsedSeconds = 0.0
-    private var lastTickRunTimeMs = 0L
+    // --- NEW: Tracks which preset is currently playing so we can update it ---
+    private var activePresetId: String? = null
+
+    // --- NEW UNIFIED CLOCK SYSTEM ---
+    private var exactElapsedSeconds = 0.0 // Only used to feed the UI Throttler so it doesn't freeze
+    private var internalTimeLeft = 0.0    // The master countdown clock
+    private var nextAudioTickTime = 0.0   // The exact boundary we are waiting to cross!
+    private var lastLedTurnOnTimeMs = 0L
+
     private var isFuseFinished = false
     private var hasPlayedDing = false
     private var hasPlayedAlert = false
     private var hasPlayedFlail = false
 
-    // --- NEW: Hen Specific Trackers ---
     private var lastPlayedCrackStage = 0
     private var hasPlayedWhistle = false
     private var hasPlayedThud = false
     private var hasPlayedSlide = false
     private var postGameJob: Job? = null
     private var logicalHenAnimTime = 0f
-    // --- NEW: App Lifecycle Tracker ---
     @Volatile private var isAppInForeground = true
 
-    // 3. THE INTENT PROCESSOR: The only way the UI can talk to the logic
+    // Calculates the next whole number (or half number) downwards
+    private fun getNextTickBoundary(currentTime: Double, style: String): Double {
+        val interval = if (style == "HEN") 1.0 else if (currentTime <= 5.0) 0.5 else 1.0
+        // THE FIX: Floor naturally snaps to the exact current integer!
+        return kotlin.math.floor(currentTime / interval) * interval
+    }
+
     fun processIntent(intent: GameIntent) {
         when (intent) {
             is GameIntent.StartTimer -> handleStart(intent.settings)
@@ -50,14 +57,10 @@ class BombViewModel(private val audio: AudioController) : ViewModel() {
             is GameIntent.ToggleHenPause -> handleToggleHenPause()
             is GameIntent.Abort -> handleAbort()
             is GameIntent.Reset -> handleReset()
-            is GameIntent.UpdateExplosionOrigin -> {
-                _state.update { it.copy(explosionOrigin = intent.offset) }
-            }
-            // --- NEW ---
+            is GameIntent.UpdateExplosionOrigin -> { _state.update { it.copy(explosionOrigin = intent.offset) } }
             is GameIntent.StartGroupTimer -> handleGroupStart(intent.preset, intent.style)
             is GameIntent.NextPlayer -> handlePlayerSwap(isNext = true)
             is GameIntent.PreviousPlayer -> handlePlayerSwap(isNext = false)
-            // --- NEW ---
             is GameIntent.AppEnteredBackground -> handleAppBackgrounded()
             is GameIntent.AppEnteredForeground -> handleAppForegrounded()
         }
@@ -73,25 +76,14 @@ class BombViewModel(private val audio: AudioController) : ViewModel() {
             audio.stopSlide()
             audio.stopWhistle()
 
-            // --- THE FIX: A quick coroutine to animate the beak on impact! ---
             viewModelScope.launch {
-                // 1. Clamp the beak shut instantly
                 _state.update { it.copy(isPainedBeakClosed = true) }
-
-                // 2. Wait for the impact to settle
                 delay(150)
-
-                // 3. Open the beak
                 _state.update { it.copy(isPainedBeakClosed = false) }
-
-                // 4. Play the sound (Only if we are STILL paused AND the app is open!)
-                if (_state.value.isHenPaused && isAppInForeground) {
-                    audio.playPainedCluck()
-                }
+                if (_state.value.isHenPaused && isAppInForeground) audio.playPainedCluck()
             }
         } else {
             audio.playPauseInteraction("HEN", false)
-            // --- THE FIX: RESUME AUDIO IF NEEDED ---
             if (logicalHenAnimTime > 2.5f && logicalHenAnimTime < 4.5f) audio.playWhistle()
             if (logicalHenAnimTime > 6.0f && logicalHenAnimTime < 8.5f) audio.playHenSlide()
         }
@@ -101,22 +93,17 @@ class BombViewModel(private val audio: AudioController) : ViewModel() {
         val calculatedDuration = Random.nextInt(settings.minSeconds, settings.maxSeconds + 1)
 
         exactElapsedSeconds = 0.0
-        lastTickRunTimeMs = -1000L
+        internalTimeLeft = calculatedDuration.toDouble()
+        nextAudioTickTime = getNextTickBoundary(internalTimeLeft, settings.style)
         isFuseFinished = calculatedDuration <= 5
 
-        // --- NEW: Reset trackers on start! ---
-        hasPlayedDing = false
-        hasPlayedAlert = false
-        hasPlayedFlail = false
-        lastPlayedCrackStage = 0 // <-- NEW
-        hasPlayedWhistle = false // <-- NEW
-        hasPlayedThud = false // <-- NEW
-        hasPlayedSlide = false // <-- NEW
+        hasPlayedDing = false; hasPlayedAlert = false; hasPlayedFlail = false
+        lastPlayedCrackStage = 0; hasPlayedWhistle = false; hasPlayedThud = false; hasPlayedSlide = false
 
-        // Update the state to RUNNING
         _state.update {
             it.copy(
                 appState = AppState.RUNNING,
+                playMode = PlayMode.SOLO,
                 bombStyle = settings.style,
                 duration = calculatedDuration,
                 timeLeft = calculatedDuration.toFloat(),
@@ -127,30 +114,26 @@ class BombViewModel(private val audio: AudioController) : ViewModel() {
             )
         }
 
-        // --- NEW: Start the Fuse audio immediately if applicable! ---
-        if (settings.style == "FUSE") {
-            audio.startFuse(isFuseFinished)
-        }
-
+        if (settings.style == "FUSE") audio.startFuse(isFuseFinished)
         startGameLoop()
     }
 
     private fun handleGroupStart(preset: GroupPreset, style: String) {
-        // 1. Filter out anyone marked absent
         val playingRoster = preset.players.filter { !it.isAbsent && !it.isEliminated }
-        if (playingRoster.isEmpty()) return // Failsafe
+        if (playingRoster.isEmpty()) return
 
         val startingPlayer = playingRoster[0]
 
-        // 2. Setup mathematical trackers
+        activePresetId = preset.id
+
         exactElapsedSeconds = 0.0
-        lastTickRunTimeMs = -1000L
+        internalTimeLeft = startingPlayer.timeLeft.toDouble()
+        nextAudioTickTime = getNextTickBoundary(internalTimeLeft, style)
         isFuseFinished = startingPlayer.timeLeft <= 5f
 
         hasPlayedDing = false; hasPlayedAlert = false; hasPlayedFlail = false
         lastPlayedCrackStage = 0; hasPlayedWhistle = false; hasPlayedThud = false; hasPlayedSlide = false
 
-        // 3. Dispatch the State!
         _state.update {
             it.copy(
                 appState = AppState.RUNNING,
@@ -159,7 +142,7 @@ class BombViewModel(private val audio: AudioController) : ViewModel() {
                 activePlayers = playingRoster,
                 currentPlayerIndex = 0,
                 resetTimeOnExplosion = preset.resetOnExplosion,
-                duration = startingPlayer.timeLeft.toInt(), // Used for math loop
+                duration = preset.defaultTime.toInt(),
                 timeLeft = startingPlayer.timeLeft,
                 isPaused = false,
                 isLedOn = false,
@@ -176,12 +159,10 @@ class BombViewModel(private val audio: AudioController) : ViewModel() {
         val currentState = _state.value
         if (currentState.playMode != PlayMode.GROUP || currentState.activePlayers.isEmpty()) return
 
-        // 1. Save the active float into the current player's slot
         val updatedPlayers = currentState.activePlayers.toMutableList()
         val currentIndex = currentState.currentPlayerIndex
         updatedPlayers[currentIndex] = updatedPlayers[currentIndex].copy(timeLeft = currentState.timeLeft)
 
-        // 2. Find the next valid index
         var nextIndex = currentIndex
         do {
             nextIndex = if (isNext) {
@@ -191,18 +172,21 @@ class BombViewModel(private val audio: AudioController) : ViewModel() {
             }
         } while (updatedPlayers[nextIndex].isEliminated || updatedPlayers[nextIndex].isAbsent)
 
-        // 3. Reset the math trackers so the time doesn't instantly jump
         val nextPlayerTime = updatedPlayers[nextIndex].timeLeft
-        exactElapsedSeconds = 0.0
+
+        internalTimeLeft = nextPlayerTime.toDouble()
+        nextAudioTickTime = getNextTickBoundary(internalTimeLeft, currentState.bombStyle)
         isFuseFinished = nextPlayerTime <= 5f
 
-        // 4. Update the state instantly
+        if (nextPlayerTime > 1.0f) hasPlayedDing = false
+        if (nextPlayerTime > 1.05f) hasPlayedAlert = false
+        if (nextPlayerTime > 1.0f) hasPlayedFlail = false
+
         _state.update {
             it.copy(
                 activePlayers = updatedPlayers,
                 currentPlayerIndex = nextIndex,
-                timeLeft = nextPlayerTime,
-                duration = nextPlayerTime.toInt() // Resets the anchor for ExactElapsedSeconds
+                timeLeft = nextPlayerTime
             )
         }
     }
@@ -211,7 +195,6 @@ class BombViewModel(private val audio: AudioController) : ViewModel() {
         if (_state.value.appState != AppState.RUNNING) return
 
         val isNowPaused = !_state.value.isPaused
-
         _state.update { it.copy(isPaused = isNowPaused) }
         audio.playPauseInteraction(_state.value.bombStyle, isNowPaused)
 
@@ -240,17 +223,12 @@ class BombViewModel(private val audio: AudioController) : ViewModel() {
 
         gameLoopJob = viewModelScope.launch(Dispatchers.Default) {
             var lastTimeNanos = System.nanoTime()
-
-            // --- FIX 1: Add a tracker for UI throttling ---
             var lastUiUpdateMs = 0L
 
-            // The True Game Loop
             while (_state.value.timeLeft > 0.01f) {
                 delay(5)
 
                 val currentNanos = System.nanoTime()
-
-                // --- FIX 2: Increase clamp to 0.5 to prevent Time Deletion! ---
                 val dt = ((currentNanos - lastTimeNanos) / 1_000_000_000.0).coerceAtMost(0.5)
                 lastTimeNanos = currentNanos
 
@@ -258,18 +236,18 @@ class BombViewModel(private val audio: AudioController) : ViewModel() {
 
                 if (!currentState.isPaused) {
                     exactElapsedSeconds += dt
-                    val newTimeLeft = (currentState.duration - exactElapsedSeconds).coerceAtLeast(0.0).toFloat()
+                    internalTimeLeft -= dt
+
+                    val newTimeLeft = internalTimeLeft.coerceAtLeast(0.0).toFloat()
                     val currentRunTimeMs = (exactElapsedSeconds * 1000).toLong()
 
                     var newIsLedOn = currentState.isLedOn
 
-                    // --- Audio & Trigger Logic ---
                     if (newTimeLeft <= 5f && !isFuseFinished) {
                         isFuseFinished = true
                         if (currentState.bombStyle == "FUSE") audio.dimFuse()
                     }
 
-                    // --- One-Shot Audio Triggers ---
                     if (currentState.bombStyle == "DYNAMITE" && newTimeLeft <= 1.0f && !hasPlayedDing && newTimeLeft > 0f) {
                         audio.playDing()
                         hasPlayedDing = true
@@ -282,8 +260,6 @@ class BombViewModel(private val audio: AudioController) : ViewModel() {
                         audio.playFlail()
                         hasPlayedFlail = true
                     }
-
-                    // --- Crack Audio Logic ---
                     if (currentState.bombStyle == "HEN") {
                         val currentCrackStage = when {
                             newTimeLeft <= 1.5f -> 3
@@ -297,10 +273,8 @@ class BombViewModel(private val audio: AudioController) : ViewModel() {
                         }
                     }
 
-                    // --- UPGRADE: Use <= 5f to perfectly match the visual animation threshold! ---
-                    val tickInterval = if (currentState.bombStyle == "HEN") 1000L else if (newTimeLeft <= 5f) 500L else 1000L
-
-                    if (currentRunTimeMs - lastTickRunTimeMs >= tickInterval) {
+                    // THE FIX: We wait to cross the exact next mathematical boundary!
+                    if (internalTimeLeft <= nextAudioTickTime) {
                         if (newTimeLeft > 0.05f) {
                             if (currentState.bombStyle == "C4") { audio.playTick(); newIsLedOn = true }
                             if (currentState.bombStyle == "DYNAMITE" && newTimeLeft > 1.0) audio.playClockTick()
@@ -308,25 +282,19 @@ class BombViewModel(private val audio: AudioController) : ViewModel() {
                             if (currentState.bombStyle == "HEN" && newTimeLeft > 6.0f) audio.playHenCluck()
                         }
 
-                        // --- PROPORTIONAL SOFT SYNC ---
-                        // 1. Calculate the ideal mathematical grid
-                        val idealGridTime = (currentRunTimeMs / tickInterval) * tickInterval
+                        // Calculate the NEXT boundary to aim for!
+                        val isFast = internalTimeLeft <= 5.0
+                        val interval = if (currentState.bombStyle == "HEN") 1.0 else if (isFast) 0.5 else 1.0
+                        nextAudioTickTime -= interval
 
-                        // 2. Calculate the exact Time Debt
-                        val driftError = currentRunTimeMs - idealGridTime
+                        // Failsafe in case of huge lag spikes
+                        while (nextAudioTickTime >= internalTimeLeft) nextAudioTickTime -= interval
 
-                        // 3. Proportional Correction: Pay off 25% of the debt!
-                        // (We cap the maximum possible jump at 25ms just in case of a 500ms mega-freeze)
-                        val proportionalCorrection = (driftError * 0.25).toLong().coerceAtMost(25L)
-
-                        // 4. Apply the smooth, scaling correction
-                        lastTickRunTimeMs = currentRunTimeMs - proportionalCorrection
+                        lastLedTurnOnTimeMs = currentRunTimeMs
                     }
 
-                    if (newIsLedOn && (currentRunTimeMs - lastTickRunTimeMs > 50)) newIsLedOn = false
+                    if (newIsLedOn && (currentRunTimeMs - lastLedTurnOnTimeMs > 50)) newIsLedOn = false
 
-                    // --- FIX 3: Throttle UI updates to ~60fps (16ms) ---
-                    // We also force an immediate update if the LED state flips so the flash never gets missed!
                     if (currentRunTimeMs - lastUiUpdateMs >= 16L || newIsLedOn != currentState.isLedOn) {
                         _state.update {
                             it.copy(
@@ -345,12 +313,8 @@ class BombViewModel(private val audio: AudioController) : ViewModel() {
 
     private suspend fun triggerExplosion() {
         audio.stopAll()
-
-        // --- RESTORED: The actual BOOM! ---
         audio.playExplosion()
 
-        // --- STEP 3 PREVIEW: Coroutine Optimization ---
-        // We calculate particles on the Default (Background) thread so the UI doesn't stutter!
         val (newParticles, newSmoke) = withContext(Dispatchers.Default) {
             val colorsList = listOf(androidx.compose.ui.graphics.Color(0xFFEF4444), androidx.compose.ui.graphics.Color(0xFFFB923C), androidx.compose.ui.graphics.Color.Yellow, androidx.compose.ui.graphics.Color.White)
 
@@ -379,7 +343,6 @@ class BombViewModel(private val audio: AudioController) : ViewModel() {
             Pair(p, s)
         }
 
-        // --- NEW: Handle Player Elimination ---
         val finalState = _state.value
         var finalPlayers = finalState.activePlayers
 
@@ -387,18 +350,62 @@ class BombViewModel(private val audio: AudioController) : ViewModel() {
             val updatedPlayers = finalPlayers.toMutableList()
             val doomedIndex = finalState.currentPlayerIndex
 
-            // Mark the loser as eliminated!
-            updatedPlayers[doomedIndex] = updatedPlayers[doomedIndex].copy(isEliminated = true)
+            // --- FIX 1: Instantly reset the loser's time so they are ready for the next round! ---
+            updatedPlayers[doomedIndex] = updatedPlayers[doomedIndex].copy(
+                isEliminated = true,
+                isAbsent = true,
+                timeLeft = finalState.duration.toFloat() // <-- Resets their specific timer!
+            )
 
-            // If the teacher chose the reset rule, restore everyone else's time
+            // 2. Handle the "Reset Time" rule for survivors
             if (finalState.resetTimeOnExplosion) {
                 for (i in updatedPlayers.indices) {
                     if (i != doomedIndex && !updatedPlayers[i].isEliminated) {
-                        // We use the duration as a hack to store the default time
-                        updatedPlayers[i] = updatedPlayers[i].copy(timeLeft = 10f) // We will pass the true defaultTime here later via UI!
+                        updatedPlayers[i] = updatedPlayers[i].copy(timeLeft = finalState.duration.toFloat())
                     }
                 }
             }
+
+            // 3. --- SAVE THE ROUND RESULTS TO DISK INSTANTLY ---
+            activePresetId?.let { presetId ->
+                val allPresets = groupManager.loadPresets().toMutableList()
+                val targetIndex = allPresets.indexOfFirst { it.id == presetId }
+
+                if (targetIndex != -1) {
+                    val targetPreset = allPresets[targetIndex]
+                    var masterPlayers = targetPreset.players.toMutableList()
+
+                    // Sync the active players' exact remaining times back to the master roster
+                    for (i in masterPlayers.indices) {
+                        val activeMatch = updatedPlayers.find { it.id == masterPlayers[i].id }
+                        if (activeMatch != null) {
+                            masterPlayers[i] = masterPlayers[i].copy(
+                                timeLeft = activeMatch.timeLeft,
+                                isAbsent = activeMatch.isAbsent
+                            )
+                        }
+                    }
+
+                    // --- FIX 2: THE AUTO-RESET (Match Over!) ---
+                    // Count how many people in the whole class are still checked-in
+                    val survivors = masterPlayers.count { !it.isAbsent }
+
+                    // If only 1 (or 0) players are left, the match is over! Reset everyone.
+                    if (survivors <= 1) {
+                        masterPlayers = masterPlayers.map {
+                            it.copy(
+                                isAbsent = false,
+                                isEliminated = false,
+                                timeLeft = targetPreset.defaultTime
+                            )
+                        }.toMutableList()
+                    }
+
+                    allPresets[targetIndex] = targetPreset.copy(players = masterPlayers)
+                    groupManager.savePresets(allPresets)
+                }
+            }
+
             finalPlayers = updatedPlayers
         }
 
@@ -411,11 +418,9 @@ class BombViewModel(private val audio: AudioController) : ViewModel() {
             )
         }
 
-        // 1. THE TRIGGER: Needs to be inside triggerExplosion!
         if (_state.value.bombStyle == "HEN") startHenPostGameLoop()
-    } // <-- End of triggerExplosion
+    }
 
-    // 2. THE NEW LOOP: Needs to be INSIDE the BombViewModel class!
     private fun startHenPostGameLoop() {
         postGameJob?.cancel()
         postGameJob = viewModelScope.launch(Dispatchers.Default) {
@@ -424,9 +429,7 @@ class BombViewModel(private val audio: AudioController) : ViewModel() {
             var painedCluckTimer = 0f
             var nextPainedCluckTarget = Random.nextFloat() * 2f + 1f
 
-            // --- NEW: Internal tracker just for Audio! ---
             logicalHenAnimTime = 2.5f
-
             _state.update { it.copy(isHenPaused = false, isPainedBeakClosed = false) }
 
             while (_state.value.appState == AppState.EXPLODED) {
@@ -438,20 +441,13 @@ class BombViewModel(private val audio: AudioController) : ViewModel() {
                 val currentState = _state.value
 
                 if (currentState.isHenPaused) {
-                    // THE FIX: Completely freeze the cluck math if we are in the background!
                     if (isAppInForeground) {
                         painedCluckTimer += dt
                         if (painedCluckTimer >= nextPainedCluckTarget) {
-                            // 1. Close the beak
                             _state.update { it.copy(isPainedBeakClosed = true) }
-
-                            // 2. Wait for 150ms
                             delay(150)
-
-                            // 3. Open the beak
                             _state.update { it.copy(isPainedBeakClosed = false) }
 
-                            // 4. Play sound
                             if (_state.value.isHenPaused && isAppInForeground) {
                                 audio.playPainedCluck()
                             }
@@ -460,7 +456,6 @@ class BombViewModel(private val audio: AudioController) : ViewModel() {
                             nextPainedCluckTarget = Random.nextFloat() * 2f + 1f
                         }
                     } else {
-                        // Just update the clock so we don't get a massive 'dt' jump when we return
                         lastTimeNanos = System.nanoTime()
                     }
                 } else {
@@ -468,25 +463,20 @@ class BombViewModel(private val audio: AudioController) : ViewModel() {
 
                     if (logicalHenAnimTime > 2.5f && !hasPlayedWhistle) { audio.playWhistle(); hasPlayedWhistle = true }
                     if (logicalHenAnimTime > 4.5f && !hasPlayedThud) {
-                        audio.stopWhistle() // THE FIX: Forcefully cut the whistle on impact!
+                        audio.stopWhistle()
                         audio.playGlassTap()
                         hasPlayedThud = true
                     }
                     if (logicalHenAnimTime > 6.0f && !hasPlayedSlide) { audio.playHenSlide(); hasPlayedSlide = true }
 
-                    // THE FIX: Grab the current time before doing the math!
                     val currentMs = System.currentTimeMillis()
-
                     if (logicalHenAnimTime > 6.0f && (currentMs - lastVolumeUpdateTime > 50)) {
                         val slideProgress = (logicalHenAnimTime - 6.0f) / 2.5f
                         audio.updateSlideVolume((1f - slideProgress).coerceIn(0f, 1f))
                         lastVolumeUpdateTime = currentMs
                     }
 
-                    // THE GOOD PRACTICE FIX: Kill the coroutine when she is off-screen!
-                    if (logicalHenAnimTime > 9.0f) {
-                        break // Breaks out of the while loop and ends the Coroutine!
-                    }
+                    if (logicalHenAnimTime > 9.0f) break
                 }
             }
         }
@@ -501,13 +491,10 @@ class BombViewModel(private val audio: AudioController) : ViewModel() {
         isAppInForeground = false
         val currentState = _state.value
 
-        // 1. Pause the ticking bomb
         if (currentState.appState == AppState.RUNNING && !currentState.isPaused) {
             handleTogglePause()
         }
-        // 2. Pause the Hen Explosion animation!
         else if (currentState.appState == AppState.EXPLODED && currentState.bombStyle == "HEN" && !currentState.isHenPaused) {
-            // THE FIX: Only auto-pause if the slide hasn't finished yet!
             if (logicalHenAnimTime <= 9.0f) {
                 handleToggleHenPause()
             }
@@ -518,18 +505,14 @@ class BombViewModel(private val audio: AudioController) : ViewModel() {
         isAppInForeground = true
         val currentState = _state.value
 
-        // 1. Hen Auto-Resume: ONLY if falling (< 4.5s) OR sliding off-screen but still active (> 7.0s to 9.0s)
         if (currentState.appState == AppState.EXPLODED && currentState.bombStyle == "HEN" && currentState.isHenPaused) {
-            // THE FIX: Add an explicit ceiling so she is ignored forever after 9.0s!
             if (logicalHenAnimTime < 4.5f || (logicalHenAnimTime > 7.0f && logicalHenAnimTime <= 9.0f)) {
                 handleToggleHenPause()
             }
         }
 
-        // 2. Frog Flail Resume: If it's a Frog, running, paused, and in the critical panic phase
         if (currentState.appState == AppState.RUNNING && currentState.bombStyle == "FROG" && currentState.isPaused && currentState.timeLeft <= 1.0f) {
             audio.playFlail()
         }
     }
 }
-
