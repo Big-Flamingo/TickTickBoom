@@ -1,7 +1,6 @@
 package com.flamingo.ticktickboom
 
 import androidx.compose.animation.animateColor
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
@@ -14,6 +13,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -53,6 +54,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -66,6 +68,7 @@ import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -81,7 +84,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.core.os.ConfigurationCompat
-import androidx.compose.ui.focus.onFocusChanged
 
 // --- SHARED DRAWING HELPERS ---
 
@@ -178,42 +180,44 @@ fun ActionButton(
     icon: ImageVector,
     color: Color,
     textColor: Color,
+    // THE FIX: Modifier is now the FIRST optional parameter, defaulting to exactly 'Modifier'
+    modifier: Modifier = Modifier,
     borderColor: Color = Color.Transparent,
     borderWidth: Dp = 1.dp,
+    pressedBgColor: Color? = null,
+    pressedBorderColor: Color? = null,
+    pressedContentColor: Color? = null,
     interactionSource: MutableInteractionSource = remember { MutableInteractionSource() },
     onClick: () -> Unit
 ) {
-    // 1. Read from the interactionSource (This keeps your Explosion Screen "Ghost Click" trick working!)
     val isPressedRemotely by interactionSource.collectIsPressedAsState()
-
-    // 2. Track instant local touches (Using explicit .value fixes the IDE's "never used" warning)
     val isPressedLocally = remember { mutableStateOf(false) }
-
-    // 3. The button lights up if EITHER the remote or local state is true!
     val isActuallyPressed = isPressedRemotely || isPressedLocally.value
 
-    // THE FIX: Animate a float to separate touch from theme toggles!
     val pressProgress by animateFloatAsState(
         targetValue = if (isActuallyPressed) 1f else 0f,
         animationSpec = if (isActuallyPressed) tween(0) else tween(150),
         label = "btnPress"
     )
 
-    // Background Math (Now perfectly tracking your actual NeonOrange!)
-    val pressedBg = if (color == NeonOrange) Color(0xFFB24D00) else lerp(color, Color.Gray, 0.4f)
-    val animatedColor = lerp(color, pressedBg, pressProgress)
+    val defaultPressedBg = if (color == NeonOrange) Color(0xFFB24D00) else lerp(color, Color.Gray, 0.4f)
+    val targetBg = pressedBgColor ?: defaultPressedBg
+    val animatedColor = lerp(color, targetBg, pressProgress)
 
-    // Border Math
-    val pressedBorder = if (color == NeonOrange) Color(0xFFB24D00) else Color.Transparent
-    val animatedBorder = lerp(borderColor, pressedBorder, pressProgress)
+    val defaultPressedBorder = if (color == NeonOrange) Color(0xFFB24D00) else Color.Transparent
+    val targetBorder = pressedBorderColor ?: defaultPressedBorder
+    val animatedBorder = lerp(borderColor, targetBorder, pressProgress)
+
+    val targetContent = pressedContentColor ?: textColor
+    val animatedContentColor = lerp(textColor, targetContent, pressProgress)
 
     Row(
-        modifier = Modifier
-            .width(200.dp)
+        // THE FIX: We apply the modifier here, and ensure it's at least 200dp wide!
+        modifier = modifier
+            .widthIn(min = 200.dp)
             .height(60.dp)
             .clip(RoundedCornerShape(50))
             .background(animatedColor)
-            // UPDATE THIS LINE to use the animatedBorder!
             .border(borderWidth, animatedBorder, RoundedCornerShape(50))
             .pointerInput(Unit) {
                 detectTapGestures(
@@ -229,9 +233,9 @@ fun ActionButton(
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(icon, null, tint = textColor)
+        Icon(icon, null, tint = animatedContentColor)
         Spacer(modifier = Modifier.width(8.dp))
-        Text(text, color = textColor, fontSize = 18.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp, fontFamily = CustomFont)
+        Text(text, color = animatedContentColor, fontSize = 18.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp, fontFamily = CustomFont)
     }
 }
 
@@ -308,12 +312,15 @@ fun TimeInput(
     // 1. Track if the user is currently typing in this specific box
     val isFocused = remember { mutableStateOf(false) }
 
-    // 2. Smoothly animate the border so it glows when tapped!
-    val animatedBorderColor by animateColorAsState(
-        targetValue = if (isFocused.value) color else colors.border,
+    // THE FIX: Decouple the color animation from the theme engine!
+    val focusProgress by animateFloatAsState(
+        targetValue = if (isFocused.value) 1f else 0f,
         animationSpec = tween(150),
-        label = "timeInputBorder"
+        label = "timeInputFocus"
     )
+
+    // Instantly snaps on theme change, but smoothly fades on touch!
+    val animatedBorderColor = lerp(colors.border, color, focusProgress)
 
     Column(
         modifier = modifier
@@ -346,6 +353,59 @@ fun TimeInput(
 }
 
 @Composable
+fun CustomTextField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    placeholder: String,
+    color: Color,
+    colors: AppColors,
+    modifier: Modifier = Modifier,
+    keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
+    keyboardActions: KeyboardActions = KeyboardActions.Default
+) {
+    val isFocused = remember { mutableStateOf(false) }
+
+    // THE FIX: Decoupled Float animation to completely bypass theme-switch lag!
+    val focusProgress by animateFloatAsState(
+        targetValue = if (isFocused.value) 1f else 0f,
+        animationSpec = tween(150),
+        label = "customTextFocus"
+    )
+
+    val animatedBorderColor = lerp(colors.border, color, focusProgress)
+
+    BasicTextField(
+        value = value,
+        onValueChange = onValueChange,
+        textStyle = TextStyle(color = colors.text, fontSize = 16.sp, fontFamily = CustomFont),
+        cursorBrush = androidx.compose.ui.graphics.SolidColor(color),
+        keyboardOptions = keyboardOptions,
+        keyboardActions = keyboardActions,
+        singleLine = true,
+        modifier = modifier
+            .onFocusChanged { focusState ->
+                isFocused.value = focusState.isFocused
+            },
+        decorationBox = { innerTextField ->
+            // This inner box perfectly matches the visual styling of TimeInput!
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(colors.surface.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
+                    .border(if (isFocused.value) 2.dp else 1.dp, animatedBorderColor, RoundedCornerShape(16.dp))
+                    .padding(horizontal = 16.dp, vertical = 16.dp),
+                contentAlignment = Alignment.CenterStart
+            ) {
+                if (value.isEmpty()) {
+                    Text(placeholder, color = colors.textSecondary, fontSize = 16.sp, fontFamily = CustomFont)
+                }
+                innerTextField()
+            }
+        }
+    )
+}
+
+@Composable
 fun VolumeSlider(
     label: String,
     value: Float,
@@ -353,16 +413,52 @@ fun VolumeSlider(
     colors: AppColors,
     onValueChange: (Float) -> Unit
 ) {
+    // 1. Create an interaction source to track dragging and pressing
+    val interactionSource = remember { MutableInteractionSource() }
+
+    // THE FIX: Call them directly on the object instead of using the package path!
+    val isDragging by interactionSource.collectIsDraggedAsState()
+    val isPressed by interactionSource.collectIsPressedAsState()
+
+    val isInteracting = isDragging || isPressed
+
+    // 2. Smoothly animate a float based on the touch state
+    val interactionProgress by animateFloatAsState(
+        targetValue = if (isInteracting) 1f else 0f,
+        animationSpec = tween(150),
+        label = "sliderInteract"
+    )
+
+    // 3. Make the inactive track softly glow with the neon color when touched!
+    val animatedInactiveTrack = lerp(colors.border, color.copy(alpha = 0.3f), interactionProgress)
+
+    // 4. Illuminate the labels when touched
+    val animatedLabelColor = lerp(colors.textSecondary, color, interactionProgress)
+
     Column {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(if (label == stringResource(R.string.timer_volume)) Icons.AutoMirrored.Filled.VolumeUp else Icons.Filled.Warning, null, tint = colors.textSecondary, modifier = Modifier.size(12.dp))
+                Icon(
+                    imageVector = if (label == stringResource(R.string.timer_volume)) Icons.AutoMirrored.Filled.VolumeUp else Icons.Filled.Warning,
+                    contentDescription = null,
+                    tint = animatedLabelColor, // <-- Now illuminates!
+                    modifier = Modifier.size(12.dp)
+                )
                 Spacer(modifier = Modifier.width(8.dp))
-                Text(label, color = colors.textSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont)
+                Text(label, color = animatedLabelColor, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont) // <-- Now illuminates!
             }
-            Text("${(value * 100).toInt()}%", color = colors.textSecondary, fontSize = 10.sp, fontFamily = CustomFont)
+            Text("${(value * 100).toInt()}%", color = animatedLabelColor, fontSize = 10.sp, fontFamily = CustomFont) // <-- Now illuminates!
         }
-        Slider(value = value, onValueChange = onValueChange, colors = SliderDefaults.colors(thumbColor = color, activeTrackColor = color.copy(alpha=0.7f), inactiveTrackColor = colors.border))
+        Slider(
+            value = value,
+            onValueChange = onValueChange,
+            interactionSource = interactionSource, // <-- Wires up the touch tracking!
+            colors = SliderDefaults.colors(
+                thumbColor = color,
+                activeTrackColor = color, // <-- THE FIX: 100% solid neon!
+                inactiveTrackColor = animatedInactiveTrack // <-- THE FIX: Glows when touched!
+            )
+        )
     }
 }
 
@@ -552,10 +648,14 @@ fun AbortButtonContent(colors: AppColors, onAbort: () -> Unit) {
     ActionButton(
         text = stringResource(R.string.abort),
         icon = Icons.Filled.Close,
-        color = Color.Transparent, // <-- Changed from colors.surface.copy(alpha=0.5f)
+        color = Color.Transparent,
         textColor = colors.textSecondary,
         borderColor = colors.textSecondary,
         borderWidth = 1.dp,
+        // THE FIX: Tap fills with the border color, border melts away, text lights up NeonOrange!
+        pressedBgColor = colors.textSecondary,
+        pressedBorderColor = Color.Transparent,
+        pressedContentColor = NeonOrange,
         onClick = { onAbort() }
     )
 }
@@ -582,83 +682,61 @@ fun LanguageSwitch(
     val halfDuration = animationDuration / 2
 
     // 2. Helper to draw a single language chip with complex animation logic
+    // 2. Helper to draw a single language chip with complex animation logic
     @Composable
     fun LanguageChip(
         text: String,
-        amISelected: Boolean, // Renamed for clarity inside the effect
+        amISelected: Boolean,
         modifier: Modifier = Modifier
     ) {
-        // We need manual control over the offset value
         val offsetAnimatable = remember { Animatable(if (amISelected) selectedOffset else restingBackOffset, Dp.VectorConverter) }
-        // We also need manual control over the zIndex to flip it mid-animation
-        var zIndex by remember { mutableFloatStateOf(if (amISelected) 1f else 0f) }
-
-        // NEW: Remember if this is the first time the chip is being drawn
+        val zIndex = remember { mutableFloatStateOf(if (amISelected) 1f else 0f) }
         var isInitialRender by remember { mutableStateOf(true) }
 
-        // The complex animation sequence
         LaunchedEffect(amISelected) {
-            // NEW: Skip the animation if we just got to the screen!
             if (isInitialRender) {
                 isInitialRender = false
                 return@LaunchedEffect
             }
 
             if (amISelected) {
-                // CASE 1: Becoming Selected (Moving to Front-Left)
-                // Incoming chip goes to Layer 1
-                zIndex = 1f
-                offsetAnimatable.animateTo(
-                    targetValue = selectedOffset,
-                    animationSpec = tween(animationDuration, easing = FastOutSlowInEasing)
-                )
+                zIndex.floatValue = 1f
+                offsetAnimatable.animateTo(selectedOffset, tween(animationDuration, easing = FastOutSlowInEasing))
             } else {
-                // CASE 2: Becoming Unselected (The "Pop-Out" move)
-                // Fix: Push the outgoing chip to Layer 2 ("Super Foreground")
-                // so it always beats the incoming chip!
-                zIndex = 2f
-
-                // Stage 1: Slide far out diagonally (down-right)
-                offsetAnimatable.animateTo(
-                    targetValue = farOutOffset,
-                    animationSpec = tween(halfDuration, easing = LinearOutSlowInEasing)
-                )
-
-                // Stage 2: MID-POINT - Drop to the background layer (Layer 0)
-                zIndex = 0f
-
-                // Stage 3: Slide back in to the resting position (down-right)
-                offsetAnimatable.animateTo(
-                    targetValue = restingBackOffset,
-                    animationSpec = tween(halfDuration, easing = FastOutSlowInEasing)
-                )
+                zIndex.floatValue = 2f
+                offsetAnimatable.animateTo(farOutOffset, tween(halfDuration, easing = LinearOutSlowInEasing))
+                zIndex.floatValue = 0f
+                offsetAnimatable.animateTo(restingBackOffset, tween(halfDuration, easing = FastOutSlowInEasing))
             }
         }
 
-        // Color animation stays simple
-        val targetColor = if (amISelected) NeonRed else Color.Gray
-        val animatedColor by animateColorAsState(
-            targetValue = targetColor,
+        // THE FIX 1: Float-based color animation to prevent theme lag
+        val selectProgress by animateFloatAsState(
+            targetValue = if (amISelected) 1f else 0f,
             animationSpec = tween(animationDuration),
-            label = "color"
+            label = "langColorProgress"
         )
+
+        // Keeping your preferred Color.Gray!
+        val animatedColor = lerp(Color.Gray, NeonRed, selectProgress)
+
+        // THE FIX 2: Lock the font size so it ignores system/language scaling
+        val density = LocalDensity.current
+        val fixedFontSize = with(density) { (12 / fontScale).sp }
 
         Box(
             contentAlignment = Alignment.Center,
             modifier = modifier
-                // Use the current value of our manual animatable
                 .offset(x = offsetAnimatable.value, y = offsetAnimatable.value)
-                // Use our manually managed zIndex
-                .zIndex(zIndex)
+                .zIndex(zIndex.floatValue)
                 .size(28.dp)
                 .border(1.5.dp, animatedColor, RoundedCornerShape(8.dp))
-                // Crucial: Opaque background so the "pop-out" actually hides things
                 .background(colors.background, RoundedCornerShape(8.dp))
         ) {
             Text(
                 text = text,
                 color = animatedColor,
-                fontSize = 12.sp,
+                fontSize = fixedFontSize, // <-- Applied here!
                 fontWeight = FontWeight.Bold,
                 fontFamily = CustomFont
             )
