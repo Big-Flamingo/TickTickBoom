@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.res.Configuration
 import android.graphics.RuntimeShader
 import android.os.Build
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutLinearInEasing
@@ -17,6 +18,12 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -77,6 +84,7 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -159,6 +167,7 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, audio: AudioController, 
     var editingPresetId by remember { mutableStateOf<String?>(null) }
     // --- UPDATED: Remembers the last expanded state ---
     var isRosterExpanded by remember { mutableStateOf(prefs.getBoolean("is_roster_expanded", false)) }
+    var isOtherPresetsExpanded by remember { mutableStateOf(false) }
     var newPresetName by remember { mutableStateOf("") }
     var newPlayerName by remember { mutableStateOf("") }
     var tempPlayers by remember { mutableStateOf(emptyList<Player>()) }
@@ -343,18 +352,30 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, audio: AudioController, 
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Spacer(modifier = Modifier.statusBarsPadding())
-            // Spacer(modifier = Modifier.height(16.dp))
 
-            // Capture the rotation value outside the Canvas
-            val currentRotation = if (isHoldingBomb) holdingShakeOffset else wobbleAnim.value
+            // --- THE FIX 3: Pre-allocate lists so shaking the bomb doesn't spawn memory garbage! ---
+            val fuseColors = remember { listOf(Color(0xFFB91C1C), NeonRed, Color(0xFFB91C1C)) }
+            val neckColors = remember { listOf(NeonRed, Color(0xFF7F1D1D)) }
+            val bodyColors = remember { listOf(Color(0xFFFF6B6B), NeonRed, Color(0xFF991B1B)) }
+            val glintColors = remember { listOf(Color.White.copy(alpha = 0.4f), Color.White.copy(alpha = 0.05f)) }
 
             // --- NEW: Wrapper Box to align Bomb and Language Switch ---
             Box(modifier = Modifier.fillMaxWidth()) {
                 // 1. THE BOMB (Centered)
+                // THE FIX: A pure class bypasses Compose's state-tracking overhead entirely!
+                class BombCache {
+                    var size: Size = Size.Zero
+                    var fuse: Brush? = null
+                    var neck: Brush? = null
+                    var body: Brush? = null
+                    var glint: Brush? = null
+                }
+                val cache = remember { BombCache() }
+
                 Box(
                     modifier = Modifier
                         .align(Alignment.TopCenter)
-                        .size(80.dp)
+                        .size(64.dp)
                         .pointerInput(Unit) {
                             detectTapGestures(
                                 onPress = {
@@ -380,12 +401,23 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, audio: AudioController, 
                         },
                     contentAlignment = Alignment.Center
                 ) {
-                    Canvas(modifier = Modifier.size(40.dp).offset(y = 10.dp)) {
+                    Canvas(modifier = Modifier.size(40.dp).offset(y = 2.dp)) {
+                        val currentRotation = if (isHoldingBomb) holdingShakeOffset else wobbleAnim.value
                         val bodyRadius = 12.dp.toPx()
                         val floorY = center.y + bodyRadius
 
                         val neckOffsetX = 4.dp.toPx(); val neckOffsetY = 14.dp.toPx()
                         val neckW = 8.dp.toPx(); val neckH = 4.dp.toPx()
+
+                        // --- THE FIX: Generate Shaders exactly once! ---
+                        if (size != cache.size) {
+                            cache.fuse = Brush.linearGradient(fuseColors)
+                            cache.neck = Brush.linearGradient(neckColors)
+                            val bodyOffsetX = 4.dp.toPx(); val bodyOffsetY = 4.dp.toPx(); val gradRadius = 16.dp.toPx()
+                            cache.body = Brush.radialGradient(bodyColors, center = Offset(center.x - bodyOffsetX, center.y - bodyOffsetY), radius = gradRadius)
+                            cache.glint = Brush.linearGradient(glintColors)
+                            cache.size = size
+                        }
 
                         // Using the shared drawReflection from Components.kt
                         drawReflection(isDarkMode, floorY, 0.25f) { isReflection ->
@@ -415,19 +447,18 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, audio: AudioController, 
                                     fuseStart.x + 7.dp.toPx(), fuseStart.y - 7.dp.toPx(),
                                     fuseStart.x + 8.dp.toPx(), fuseStart.y + 1.dp.toPx()
                                 )
-                                drawPath(path = setupFusePath, brush = Brush.linearGradient(colors = listOf(Color(0xFFB91C1C), NeonRed, Color(0xFFB91C1C))), style = bombFuseStroke)
+                                drawPath(path = setupFusePath, brush = cache.fuse!!, style = bombFuseStroke)
 
                                 // B. NECK
-                                drawRoundRect(brush = Brush.linearGradient(colors = listOf(NeonRed, Color(0xFF7F1D1D))), topLeft = Offset(center.x - neckOffsetX, center.y - neckOffsetY), size = Size(neckW, neckH), cornerRadius = CornerRadius(2f, 2f))
+                                drawRoundRect(brush = cache.neck!!, topLeft = Offset(center.x - neckOffsetX, center.y - neckOffsetY), size = Size(neckW, neckH), cornerRadius = CornerRadius(2f, 2f))
 
                                 // C. BODY
-                                val bodyOffsetX = 4.dp.toPx(); val bodyOffsetY = 4.dp.toPx(); val gradRadius = 16.dp.toPx()
-                                drawCircle(brush = Brush.radialGradient(colors = listOf(Color(0xFFFF6B6B), NeonRed, Color(0xFF991B1B)), center = Offset(center.x - bodyOffsetX, center.y - bodyOffsetY), radius = gradRadius), radius = bodyRadius, center = center)
+                                drawCircle(brush = cache.body!!, radius = bodyRadius, center = center)
 
                                 // D. GLINT
                                 val glintPivot = 3.dp.toPx(); val glintOffsetX = 8.dp.toPx(); val glintOffsetY = 8.dp.toPx(); val glintW = 8.dp.toPx(); val glintH = 5.dp.toPx()
                                 withTransform({ rotate(-20f, pivot = Offset(center.x - glintPivot, center.y - glintPivot)) }) {
-                                    drawOval(brush = Brush.linearGradient(colors = listOf(Color.White.copy(0.4f), Color.White.copy(0.05f))), topLeft = Offset(center.x - glintOffsetX, center.y - glintOffsetY), size = Size(glintW, glintH))
+                                    drawOval(brush = cache.glint!!, topLeft = Offset(center.x - glintOffsetX, center.y - glintOffsetY), size = Size(glintW, glintH))
                                 }
                             }
                         }
@@ -438,18 +469,19 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, audio: AudioController, 
                 Box(
                     modifier = Modifier
                         .align(Alignment.TopEnd)
-                        .padding(top = 24.dp, end = 0.dp) // <--- FIX 2: Nudges it down and left!
+                        .padding(top = 12.dp, end = 0.dp)
+                        .offset(x = 10.dp)
                 ) {
                     LanguageSwitch(colors = colors, onClick = onToggleLanguage)
                 }
             }
 
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(8.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(stringResource(R.string.app_title_tick), color = colors.text, fontSize = 26.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont, letterSpacing = 1.sp)
+                Text(stringResource(R.string.app_title_tick), color = colors.text, fontSize = 26.sp, fontWeight = FontWeight.Normal, fontFamily = CustomFont, letterSpacing = 1.sp)
                 Text(stringResource(R.string.app_title_boom), color = NeonRed, fontSize = 26.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont, letterSpacing = 1.sp)
             }
-            Text(stringResource(R.string.randomized_sequence), color = colors.textSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, modifier = Modifier.padding(top=4.dp), fontFamily = CustomFont)
+            Text(stringResource(R.string.randomized_sequence), color = colors.textSecondary, fontSize = 10.sp, fontWeight = FontWeight.Normal, letterSpacing = 1.sp, modifier = Modifier.padding(top=4.dp), fontFamily = CustomFont)
             Spacer(modifier = Modifier.height(24.dp))
 
             // --- THE NEW TABS ---
@@ -593,271 +625,306 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, audio: AudioController, 
                         }
 
                         // --- UNIFIED ACCORDION PRESET LIST ---
-                        Column(modifier = Modifier.fillMaxWidth().padding(top = 24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            savedPresets.forEachIndexed { index, preset ->
-                                val isSelected = selectedPresetIndex == index
-                                val rosterBg = if (isDarkMode) Slate900 else Color.White
+                        // 1. Build the dropdown order: Selected ALWAYS on top!
+                        val visuallyOrderedPresets = remember(savedPresets, selectedPresetIndex) {
+                            val list = mutableListOf<Pair<Int, GroupPreset>>()
+                            if (selectedPresetIndex != null && selectedPresetIndex!! in savedPresets.indices) {
+                                list.add(selectedPresetIndex!! to savedPresets[selectedPresetIndex!!])
+                                savedPresets.forEachIndexed { i, p -> if (i != selectedPresetIndex) list.add(i to p) }
+                            } else {
+                                savedPresets.forEachIndexed { i, p -> list.add(i to p) }
+                            }
+                            list
+                        }
 
-                                // 1. Track local touches for the Row and the Arrow separately
-                                val headerPressed = remember(preset.id) { mutableStateOf(false) }
-                                val arrowPressed = remember(preset.id) { mutableStateOf(false) }
+                        // 2. Define the Reusable Card Composable (Saves 200 lines of duplication!)
+                        val renderPresetCard: @Composable (Int, GroupPreset) -> Unit = { originalIndex, preset ->
+                            val isSelected = selectedPresetIndex == originalIndex
+                            val rosterBg = if (isDarkMode) Slate900 else Color.White
 
-                                val currentIsSelected by rememberUpdatedState(isSelected)
-                                val currentIsRosterExpanded by rememberUpdatedState(isRosterExpanded)
-                                val currentIndex by rememberUpdatedState(index)
+                            val headerPressed = remember(preset.id) { mutableStateOf(false) }
+                            val arrowPressed = remember(preset.id) { mutableStateOf(false) }
 
-                                // --- THE FIX: Animate a Float, not the Colors directly! ---
-                                val isRowPressed = headerPressed.value || arrowPressed.value
+                            val currentIsSelected by rememberUpdatedState(isSelected)
+                            val currentIsRosterExpanded by rememberUpdatedState(isRosterExpanded)
+                            val currentIndex by rememberUpdatedState(originalIndex)
 
-                                val rowPressProgress by androidx.compose.animation.core.animateFloatAsState(
-                                    targetValue = if (isRowPressed) 1f else 0f,
-                                    animationSpec = if (isRowPressed) tween(0) else tween(150),
-                                    label = "rowPress"
-                                )
+                            val isRowPressed = headerPressed.value || arrowPressed.value
 
-                                // 1. Snap the Background
-                                val baseBgColor = if (isSelected) NeonOrange else unselectedGlass
-                                val pressedBgColor = if (isSelected) darkOrangePressed else lerp(unselectedGlass, Color.Gray, touchDarkenAmount)
-                                val animatedBgColor = lerp(baseBgColor, pressedBgColor, rowPressProgress)
+                            val rowPressProgress by androidx.compose.animation.core.animateFloatAsState(
+                                targetValue = if (isRowPressed) 1f else 0f,
+                                animationSpec = if (isRowPressed) tween(0) else tween(150),
+                                label = "rowPress"
+                            )
 
-                                // 2. Snap the Border
-                                val baseBorderColor = if (isSelected) NeonOrange else faintOutline
-                                val pressedBorderColor = if (isSelected) darkOrangePressed else Color.Transparent
-                                val animatedBorderColor = lerp(baseBorderColor, pressedBorderColor, rowPressProgress)
+                            val baseBgColor = if (isSelected) NeonOrange else unselectedGlass
+                            val pressedBgColor = if (isSelected) darkOrangePressed else lerp(unselectedGlass, Color.Gray, touchDarkenAmount)
+                            val animatedBgColor = lerp(baseBgColor, pressedBgColor, rowPressProgress)
 
-                                Column(
+                            val baseBorderColor = if (isSelected) NeonOrange else faintOutline
+                            val pressedBorderColor = if (isSelected) darkOrangePressed else Color.Transparent
+                            val animatedBorderColor = lerp(baseBorderColor, pressedBorderColor, rowPressProgress)
+
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(animatedBgColor, RoundedCornerShape(8.dp))
+                                    .border(if (isSelected) 2.dp else 1.dp, animatedBorderColor, RoundedCornerShape(8.dp))
+                                    .clip(RoundedCornerShape(8.dp))
+                            ) {
+                                Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .background(animatedBgColor, RoundedCornerShape(8.dp))
-                                        .border(
-                                            width = if (isSelected) 2.dp else 1.dp,
-                                            color = animatedBorderColor, // <-- Now perfectly syncs with the fill!
-                                            shape = RoundedCornerShape(8.dp)
-                                        )
-                                        .clip(RoundedCornerShape(8.dp))
-                                ) {
-                                    // 1. THE PRESET HEADER
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            // THE FIX: We pass 'Unit' so it never restarts!
-                                            .pointerInput(Unit) {
-                                                detectTapGestures(
-                                                    onPress = { headerPressed.value = true; tryAwaitRelease(); headerPressed.value = false },
-                                                    onTap = {
-                                                        if (!currentIsSelected) {
-                                                            selectedPresetIndex = currentIndex
-                                                            prefs.edit { putString("last_preset_id", preset.id) }
-                                                            isRosterExpanded = false
-                                                            prefs.edit { putBoolean("is_roster_expanded", false) }
-                                                        }
-                                                        audio.playClick()
+                                        .pointerInput(preset.id) {
+                                            detectTapGestures(
+                                                onPress = { headerPressed.value = true; tryAwaitRelease(); headerPressed.value = false },
+                                                onTap = {
+                                                    // THE FIX: Smart Dropdown Toggling!
+                                                    if (!currentIsSelected) {
+                                                        selectedPresetIndex = currentIndex
+                                                        prefs.edit { putString("last_preset_id", preset.id) }
+                                                        isRosterExpanded = false
+                                                        prefs.edit { putBoolean("is_roster_expanded", false) }
+                                                        isOtherPresetsExpanded = false // Collapse list on pick
+                                                    } else {
+                                                        isOtherPresetsExpanded = !isOtherPresetsExpanded // Toggle list
                                                     }
-                                                )
-                                            }
-                                            .padding(12.dp),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(preset.presetName, color = if (isSelected) colors.text else colors.textSecondary, fontWeight = FontWeight.Bold, fontFamily = CustomFont)
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            // THE FIX 1: Dynamically drop the 's' if there is exactly 1 player!
-                                            val pCount = preset.players.size
-                                            Text("$pCount Player${if (pCount == 1) "" else "s"}", color = if (isSelected) colors.text else colors.textSecondary, fontSize = 12.sp, fontFamily = CustomFont)
-
-                                            Spacer(modifier = Modifier.width(8.dp))
-
-                                            val isThisExpanded = isSelected && isRosterExpanded
-                                            Icon(
-                                                imageVector = if (isThisExpanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
-                                                contentDescription = "Toggle Roster",
-                                                tint = if (arrowPressed.value) Color.Gray else (if (isSelected) colors.text else colors.textSecondary),
-                                                modifier = Modifier
-                                                    .size(28.dp)
-                                                    .clip(CircleShape)
-                                                    // THE FIX: We pass 'Unit' so it never restarts!
-                                                    .pointerInput(Unit) {
-                                                        detectTapGestures(
-                                                            onPress = { arrowPressed.value = true; tryAwaitRelease(); arrowPressed.value = false },
-                                                            onTap = {
-                                                                if (!currentIsSelected) {
-                                                                    selectedPresetIndex = currentIndex
-                                                                    prefs.edit { putString("last_preset_id", preset.id) }
-                                                                    isRosterExpanded = true
-                                                                } else {
-                                                                    isRosterExpanded = !currentIsRosterExpanded
-                                                                }
-                                                                prefs.edit { putBoolean("is_roster_expanded", isRosterExpanded) }
-                                                                audio.playClick()
-                                                            }
-                                                        )
-                                                    }
-                                                    .padding(2.dp)
+                                                    audio.playClick()
+                                                }
                                             )
                                         }
-                                    }
+                                        .padding(12.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(preset.presetName, color = if (isSelected) colors.text else colors.textSecondary, fontWeight = FontWeight.Bold, fontFamily = CustomFont)
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        val pCount = preset.players.size
+                                        Text("$pCount Player${if (pCount == 1) "" else "s"}", color = if (isSelected) colors.text else colors.textSecondary, fontSize = 12.sp, fontFamily = CustomFont)
 
-                                    // 2. THE ROSTER BODY
-                                    if (isSelected && isRosterExpanded) {
-                                        Box(
+                                        Spacer(modifier = Modifier.width(8.dp))
+
+                                        val isThisExpanded = isSelected && isRosterExpanded
+                                        Icon(
+                                            imageVector = if (isThisExpanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+                                            contentDescription = "Toggle Roster",
+                                            tint = if (arrowPressed.value) Color.Gray else (if (isSelected) colors.text else colors.textSecondary),
                                             modifier = Modifier
-                                                .fillMaxWidth()
-                                                .background(rosterBg)
-                                                .padding(12.dp)
-                                        ) {
-                                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-
-                                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                                    Column {
-                                                        Text("ROSTER (Uncheck if absent)", color = colors.textSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont)
-                                                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 2.dp)) {
-                                                            Text("${preset.defaultTime}s start time", color = NeonCyan, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont)
-
-                                                            // THE FIX 1: Only show RESET TIMES if at least one player needs it!
-                                                            val needsReset = preset.players.any { it.timeLeft != preset.defaultTime }
-                                                            if (needsReset) {
-                                                                Spacer(modifier = Modifier.width(8.dp))
-                                                                Text(
-                                                                    text = "RESET TIMES",
-                                                                    color = NeonOrange,
-                                                                    fontSize = 10.sp,
-                                                                    fontWeight = FontWeight.Bold,
-                                                                    fontFamily = CustomFont,
-                                                                    modifier = Modifier.clickable(
-                                                                        interactionSource = remember { MutableInteractionSource() },
-                                                                        indication = null
-                                                                    ) {
-                                                                        audio.playClick()
-                                                                        val resetPlayers = preset.players.map { it.copy(timeLeft = preset.defaultTime) }
-                                                                        val updatedPreset = preset.copy(players = resetPlayers)
-                                                                        val updatedPresetsList = savedPresets.toMutableList()
-                                                                        updatedPresetsList[selectedPresetIndex!!] = updatedPreset
-                                                                        savedPresets = updatedPresetsList
-                                                                        groupManager.savePresets(savedPresets)
-                                                                    }
-                                                                )
-                                                            }
-                                                        }
-                                                    }
-                                                    Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                                                        // THE FIX 2: Moved Edit Icon to be FIRST!
-                                                        Icon(Icons.Filled.Edit, "Edit", tint = NeonCyan, modifier = Modifier.size(20.dp).clickable(
-                                                            interactionSource = remember { MutableInteractionSource() },
-                                                            indication = null
-                                                        ) {
-                                                            audio.playClick()
-                                                            isEditingPreset = true
-                                                            editingPresetId = preset.id
-                                                            newPresetName = preset.presetName
-                                                            groupTimeText = preset.defaultTime.toInt().toString()
-                                                            resetTimeRule = preset.resetOnExplosion
-                                                            tempPlayers = preset.players
-                                                        })
-
-                                                        // THE FIX 2: Moved Auto-Reset Toggle to be SECOND!
-                                                        Icon(
-                                                            imageVector = Icons.Filled.Refresh,
-                                                            contentDescription = "Toggle Auto-Reset",
-                                                            tint = if (preset.resetOnExplosion) NeonOrange else colors.textSecondary,
-                                                            modifier = Modifier.size(20.dp).clickable(
-                                                                interactionSource = remember { MutableInteractionSource() },
-                                                                indication = null
-                                                            ) {
-                                                                audio.playClick()
-                                                                val updatedPreset = preset.copy(resetOnExplosion = !preset.resetOnExplosion)
-                                                                val updatedPresetsList = savedPresets.toMutableList()
-                                                                updatedPresetsList[selectedPresetIndex!!] = updatedPreset
-                                                                savedPresets = updatedPresetsList
-                                                                groupManager.savePresets(savedPresets)
-                                                            }
-                                                        )
-
-                                                        Icon(Icons.Filled.Delete, "Delete", tint = NeonRed, modifier = Modifier.size(20.dp).clickable(
-                                                            interactionSource = remember { MutableInteractionSource() },
-                                                            indication = null
-                                                        ) {
-                                                            audio.playClick()
-                                                            val updatedPresets = savedPresets.filter { it.id != preset.id }
-                                                            savedPresets = updatedPresets
-                                                            groupManager.savePresets(updatedPresets)
-                                                            if (updatedPresets.isNotEmpty()) {
-                                                                selectedPresetIndex = 0
-                                                                prefs.edit { putString("last_preset_id", updatedPresets[0].id) }
+                                                .size(28.dp)
+                                                .clip(CircleShape)
+                                                .pointerInput(preset.id) {
+                                                    detectTapGestures(
+                                                        onPress = { arrowPressed.value = true; tryAwaitRelease(); arrowPressed.value = false },
+                                                        onTap = {
+                                                            if (!currentIsSelected) {
+                                                                selectedPresetIndex = currentIndex
+                                                                prefs.edit { putString("last_preset_id", preset.id) }
+                                                                isRosterExpanded = true
+                                                                isOtherPresetsExpanded = false
                                                             } else {
-                                                                selectedPresetIndex = null
-                                                                prefs.edit { remove("last_preset_id") }
+                                                                isRosterExpanded = !currentIsRosterExpanded
                                                             }
-                                                        })
-                                                    }
+                                                            prefs.edit { putBoolean("is_roster_expanded", isRosterExpanded) }
+                                                            audio.playClick()
+                                                        }
+                                                    )
                                                 }
+                                                .padding(2.dp)
+                                        )
+                                    }
+                                }
 
-                                                Spacer(modifier = Modifier.height(4.dp))
+                                AnimatedVisibility(
+                                    visible = isSelected && isRosterExpanded,
+                                    enter = expandVertically(expandFrom = Alignment.Top) + fadeIn(),
+                                    exit = shrinkVertically(shrinkTowards = Alignment.Top) + fadeOut()
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .background(rosterBg)
+                                            .padding(12.dp)
+                                    ) {
+                                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
 
-                                                preset.players.forEachIndexed { playerIndex, player ->
-                                                    // THE FIX: Wrap the Row and the Divider in a Column!
-                                                    Column {
-                                                        Row(
-                                                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).padding(end = 8.dp),
-                                                            verticalAlignment = Alignment.CenterVertically,
-                                                            horizontalArrangement = Arrangement.SpaceBetween
-                                                        ) {
-                                                            Row(
-                                                                modifier = Modifier.weight(1f),
-                                                                verticalAlignment = Alignment.CenterVertically
-                                                            ) {
-                                                                Text(
-                                                                    text = "${playerIndex + 1}.",
-                                                                    color = if (player.isAbsent) colors.textSecondary else colors.text,
-                                                                    fontFamily = CustomFont,
-                                                                    textAlign = androidx.compose.ui.text.style.TextAlign.End,
-                                                                    modifier = Modifier.width(28.dp)
-                                                                )
-                                                                Spacer(modifier = Modifier.width(8.dp))
-                                                                Text(
-                                                                    text = player.name,
-                                                                    color = if (player.isAbsent) colors.textSecondary else colors.text,
-                                                                    fontFamily = CustomFont,
-                                                                    maxLines = 1,
-                                                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                                                                )
-                                                            }
+                                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                                Column {
+                                                    Text("ROSTER (Uncheck if absent)", color = colors.textSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont)
+                                                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 2.dp)) {
+                                                        Text("${preset.defaultTime}s start time", color = NeonCyan, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont)
 
-                                                            Switch(
-                                                                checked = !player.isAbsent,
-                                                                onCheckedChange = { isPresent ->
+                                                        val needsReset = preset.players.any { it.timeLeft != preset.defaultTime }
+                                                        if (needsReset) {
+                                                            Spacer(modifier = Modifier.width(8.dp))
+                                                            Text(
+                                                                text = "RESET TIMES",
+                                                                color = NeonOrange,
+                                                                fontSize = 10.sp,
+                                                                fontWeight = FontWeight.Bold,
+                                                                fontFamily = CustomFont,
+                                                                modifier = Modifier.clickable(
+                                                                    interactionSource = remember { MutableInteractionSource() },
+                                                                    indication = null
+                                                                ) {
                                                                     audio.playClick()
-                                                                    val updatedPlayers = preset.players.toMutableList()
-                                                                    updatedPlayers[playerIndex] = player.copy(isAbsent = !isPresent)
-                                                                    val updatedPreset = preset.copy(players = updatedPlayers)
+                                                                    val resetPlayers = preset.players.map { it.copy(timeLeft = preset.defaultTime) }
+                                                                    val updatedPreset = preset.copy(players = resetPlayers)
                                                                     val updatedPresetsList = savedPresets.toMutableList()
                                                                     updatedPresetsList[selectedPresetIndex!!] = updatedPreset
                                                                     savedPresets = updatedPresetsList
                                                                     groupManager.savePresets(savedPresets)
-                                                                },
-                                                                colors = SwitchDefaults.colors(
-                                                                    checkedThumbColor = NeonRed,
-                                                                    checkedTrackColor = if (isDarkMode) Slate800 else Color(0xFFE5E7EB),
-                                                                    uncheckedThumbColor = if (isDarkMode) Slate800 else Color.White,
-                                                                    uncheckedTrackColor = if (isDarkMode) Slate950 else Color(0xFFD1D5DB)
-                                                                ),
-                                                                modifier = Modifier.size(36.dp, 20.dp)
-                                                            )
-                                                        }
-
-                                                        // THE FIX: Add a subtle divider below every player (except the last one!)
-                                                        if (playerIndex < preset.players.size - 1) {
-                                                            Box(
-                                                                modifier = Modifier
-                                                                    .fillMaxWidth()
-                                                                    .padding(start = 36.dp, end = 8.dp) // Indents perfectly with the names!
-                                                                    .padding(top = 8.dp)
-                                                                    .height(1.dp)
-                                                                    .background(colors.border.copy(alpha = 0.5f))
+                                                                }
                                                             )
                                                         }
                                                     }
                                                 }
+                                                Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                                                    Icon(Icons.Filled.Edit, "Edit", tint = NeonCyan, modifier = Modifier.size(20.dp).clickable(
+                                                        interactionSource = remember { MutableInteractionSource() },
+                                                        indication = null
+                                                    ) {
+                                                        audio.playClick()
+                                                        isEditingPreset = true
+                                                        editingPresetId = preset.id
+                                                        newPresetName = preset.presetName
+                                                        groupTimeText = preset.defaultTime.toInt().toString()
+                                                        resetTimeRule = preset.resetOnExplosion
+                                                        tempPlayers = preset.players
+                                                    })
+
+                                                    Icon(
+                                                        imageVector = Icons.Filled.Refresh,
+                                                        contentDescription = "Toggle Auto-Reset",
+                                                        tint = if (preset.resetOnExplosion) NeonOrange else colors.textSecondary,
+                                                        modifier = Modifier.size(20.dp).clickable(
+                                                            interactionSource = remember { MutableInteractionSource() },
+                                                            indication = null
+                                                        ) {
+                                                            audio.playClick()
+                                                            val updatedPreset = preset.copy(resetOnExplosion = !preset.resetOnExplosion)
+                                                            val updatedPresetsList = savedPresets.toMutableList()
+                                                            updatedPresetsList[selectedPresetIndex!!] = updatedPreset
+                                                            savedPresets = updatedPresetsList
+                                                            groupManager.savePresets(savedPresets)
+                                                        }
+                                                    )
+
+                                                    Icon(Icons.Filled.Delete, "Delete", tint = NeonRed, modifier = Modifier.size(20.dp).clickable(
+                                                        interactionSource = remember { MutableInteractionSource() },
+                                                        indication = null
+                                                    ) {
+                                                        audio.playClick()
+                                                        val updatedPresets = savedPresets.filter { it.id != preset.id }
+                                                        savedPresets = updatedPresets
+                                                        groupManager.savePresets(updatedPresets)
+                                                        if (updatedPresets.isNotEmpty()) {
+                                                            selectedPresetIndex = 0
+                                                            prefs.edit { putString("last_preset_id", updatedPresets[0].id) }
+                                                        } else {
+                                                            selectedPresetIndex = null
+                                                            prefs.edit { remove("last_preset_id") }
+                                                        }
+                                                    })
+                                                }
                                             }
+
+                                            Spacer(modifier = Modifier.height(4.dp))
+
+                                            preset.players.forEachIndexed { playerIndex, player ->
+                                                Column {
+                                                    Row(
+                                                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).padding(end = 8.dp),
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        horizontalArrangement = Arrangement.SpaceBetween
+                                                    ) {
+                                                        Row(
+                                                            modifier = Modifier.weight(1f),
+                                                            verticalAlignment = Alignment.CenterVertically
+                                                        ) {
+                                                            Text(
+                                                                text = "${playerIndex + 1}.",
+                                                                color = if (player.isAbsent) colors.textSecondary else colors.text,
+                                                                fontFamily = CustomFont,
+                                                                textAlign = androidx.compose.ui.text.style.TextAlign.End,
+                                                                modifier = Modifier.width(28.dp)
+                                                            )
+                                                            Spacer(modifier = Modifier.width(8.dp))
+                                                            Text(
+                                                                text = player.name,
+                                                                color = if (player.isAbsent) colors.textSecondary else colors.text,
+                                                                fontFamily = CustomFont,
+                                                                maxLines = 1,
+                                                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                                            )
+                                                        }
+
+                                                        Switch(
+                                                            checked = !player.isAbsent,
+                                                            onCheckedChange = { isPresent ->
+                                                                audio.playClick()
+                                                                val updatedPlayers = preset.players.toMutableList()
+                                                                updatedPlayers[playerIndex] = player.copy(isAbsent = !isPresent)
+                                                                val updatedPreset = preset.copy(players = updatedPlayers)
+                                                                val updatedPresetsList = savedPresets.toMutableList()
+                                                                updatedPresetsList[selectedPresetIndex!!] = updatedPreset
+                                                                savedPresets = updatedPresetsList
+                                                                groupManager.savePresets(savedPresets)
+                                                            },
+                                                            colors = SwitchDefaults.colors(
+                                                                checkedThumbColor = NeonRed,
+                                                                checkedTrackColor = if (isDarkMode) Slate800 else Color(0xFFE5E7EB),
+                                                                uncheckedThumbColor = if (isDarkMode) Slate800 else Color.White,
+                                                                uncheckedTrackColor = if (isDarkMode) Slate950 else Color(0xFFD1D5DB)
+                                                            ),
+                                                            modifier = Modifier.size(36.dp, 20.dp)
+                                                        )
+                                                    }
+
+                                                    if (playerIndex < preset.players.size - 1) {
+                                                        Box(
+                                                            modifier = Modifier
+                                                                .fillMaxWidth()
+                                                                .padding(start = 36.dp, end = 8.dp)
+                                                                .padding(top = 8.dp)
+                                                                .height(1.dp)
+                                                                .background(colors.border.copy(alpha = 0.5f))
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // 3. The New Z-Indexed Slide Engine
+                        Column(
+                            modifier = Modifier.fillMaxWidth().padding(top = 24.dp)
+                        ) {
+                            if (visuallyOrderedPresets.isNotEmpty()) {
+                                // A. The Top Card (Sits above the others)
+                                Box(modifier = Modifier.zIndex(2f)) {
+                                    renderPresetCard(visuallyOrderedPresets[0].first, visuallyOrderedPresets[0].second)
+                                }
+
+                                // B. The Sliding Dropdown (Sits behind the top card and slides down)
+                                AnimatedVisibility(
+                                    visible = isOtherPresetsExpanded,
+                                    enter = expandVertically(expandFrom = Alignment.Top) +
+                                            slideInVertically(initialOffsetY = { -it }) +
+                                            fadeIn(),
+                                    exit = shrinkVertically(shrinkTowards = Alignment.Top) +
+                                            slideOutVertically(targetOffsetY = { -it }) +
+                                            fadeOut(),
+                                    modifier = Modifier.zIndex(1f)
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(top = 8.dp),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        for (i in 1 until visuallyOrderedPresets.size) {
+                                            renderPresetCard(visuallyOrderedPresets[i].first, visuallyOrderedPresets[i].second)
                                         }
                                     }
                                 }
@@ -1255,14 +1322,8 @@ fun BombScreen(
         }
     }
 
-    // Calculate cracks using the VISUAL timer to prevent thread desync!
-    val visualTime = visualTimeLeftState.floatValue
-    val crackStage = if (state.bombStyle != "HEN") 0 else when {
-        visualTime <= 1.5f -> 3
-        visualTime <= 3.0f -> 2
-        visualTime <= 4.5f -> 1
-        else -> 0
-    }
+    // THE FIX: Track the crack stage as a state so we don't read the timer in the UI body!
+    var crackStage by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(crackStage) {
         if (state.bombStyle == "HEN" && !state.isPaused && crackStage > 0) {
@@ -1308,39 +1369,54 @@ fun BombScreen(
     LaunchedEffect(Unit) {
         var lastFrameNanos = System.nanoTime()
         while(true) {
-            withFrameNanos { nanos ->
-                val dt = ((nanos - lastFrameNanos) / 1_000_000_000f).coerceAtMost(0.1f)
-                lastFrameNanos = nanos
+            // THE FIX: Return 'it' to prevent the lambda from generating memory garbage!
+            val nanos = withFrameNanos { it }
+            val dt = ((nanos - lastFrameNanos) / 1_000_000_000f).coerceAtMost(0.1f)
+            lastFrameNanos = nanos
 
-                // 1. Visual Timer Engine
-                if (!currentIsPaused && visualTimeLeftState.floatValue > 0f) {
-                    visualTimeLeftState.floatValue -= dt
+            // 1. Visual Timer Engine
+            if (!currentIsPaused && visualTimeLeftState.floatValue > 0f) {
+                visualTimeLeftState.floatValue -= dt
 
-                    if (kotlin.math.abs(visualTimeLeftState.floatValue - masterTimeLeft) > 0.05f) {
-                        visualTimeLeftState.floatValue = masterTimeLeft
-                    }
-                } else if (currentIsPaused) {
+                if (kotlin.math.abs(visualTimeLeftState.floatValue - masterTimeLeft) > 0.2f) {
                     visualTimeLeftState.floatValue = masterTimeLeft
                 }
+            } else if (currentIsPaused) {
+                visualTimeLeftState.floatValue = masterTimeLeft
+            }
 
-                // 2. Hen Fly Engine
-                if (currentBombStyle == "HEN") {
-                    // THE FIX 2: Mathematically bind the animation directly to the master timer!
-                    henSequenceElapsed = (6.0f - visualTimeLeftState.floatValue).coerceAtLeast(0f)
+            // --- THE FIX: Calculate Crack Stage in the background! ---
+            if (currentBombStyle == "HEN") {
+                val currentVisual = visualTimeLeftState.floatValue
+                val newCrackStage = when {
+                    currentVisual <= 1.5f -> 3
+                    currentVisual <= 3.0f -> 2
+                    currentVisual <= 4.5f -> 1
+                    else -> 0
+                }
+                // It only forces a UI update 3 times total, instead of 600 times!
+                if (newCrackStage != crackStage) {
+                    crackStage = newCrackStage
+                }
+            }
 
-                    if (!currentIsPaused) {
-                        if (henSequenceElapsed > 0.5f && henSequenceElapsed < 2.5f) {
-                            if (!hasPlayedFly) {
-                                audio.playLoudCluck()
-                                audio.playWingFlap(audio.timerVolume)
-                                hasPlayedFly = true
-                            }
-                            val currentVol = (2.5f - henSequenceElapsed) / 1.5f
-                            audio.updateWingFlapVolume(currentVol.coerceIn(0f, 1f))
-                        } else if (henSequenceElapsed >= 2.5f) {
-                            audio.stopWingFlap()
-                            hasPlayedFly = true // Prevents loud cluck if swapping to someone already post-flight!
+            // 2. Hen Fly Engine
+            if (currentBombStyle == "HEN") {
+                // THE FIX 2: Mathematically bind the animation directly to the master timer!
+                henSequenceElapsed = (6.0f - visualTimeLeftState.floatValue).coerceAtLeast(0f)
+
+                if (!currentIsPaused) {
+                    if (henSequenceElapsed > 0.5f && henSequenceElapsed < 2.5f) {
+                        if (!hasPlayedFly) {
+                            audio.playLoudCluck()
+                            audio.playWingFlap(audio.timerVolume)
+                            hasPlayedFly = true
                         }
+                        val currentVol = (2.5f - henSequenceElapsed) / 1.5f
+                        audio.updateWingFlapVolume(currentVol.coerceIn(0f, 1f))
+                    } else if (henSequenceElapsed >= 2.5f) {
+                        audio.stopWingFlap()
+                        hasPlayedFly = true // Prevents loud cluck if swapping to someone already post-flight!
                     }
                 }
             }
@@ -1352,15 +1428,19 @@ fun BombScreen(
             .fillMaxSize()
             .graphicsLayer { translationY = slideInAnim.value }
     ) {
-        if (flashAnim.value > 0f) {
-            val flashColor = if (isDarkMode) Color.White else Slate950
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(flashColor.copy(alpha = flashAnim.value))
-                    .zIndex(-1f)
-            )
-        }
+        // --- THE FIX: Draw Phase Deferral! 0 Recompositions! (Removed the 'if' wrapper) ---
+        val flashColor = if (isDarkMode) Color.White else Slate950
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .drawBehind {
+                    val currentFlash = flashAnim.value
+                    if (currentFlash > 0f) {
+                        drawRect(color = flashColor.copy(alpha = currentFlash))
+                    }
+                }
+                .zIndex(-1f)
+        )
 
         Box(
             modifier = Modifier
@@ -1434,7 +1514,7 @@ fun BombScreen(
                         ) {
                             // --- NEW: Add the Player UI! ---
                             if (state.playMode == PlayMode.GROUP) {
-                                PlayerTurnUI(state, audio, onIntent)
+                                PlayerTurnUI(state, colors, audio, onIntent)
                             }
 
                             BombTextContent(
@@ -1473,7 +1553,7 @@ fun BombScreen(
                                 .padding(top = playerTopPadding),
                             contentAlignment = Alignment.Center
                         ) {
-                            PlayerTurnUI(state, audio, onIntent)
+                            PlayerTurnUI(state, colors, audio, onIntent)
                         }
                     }
 
@@ -1539,15 +1619,16 @@ fun ExplosionScreen(state: GameState, audio: AudioController, onIntent: (GameInt
         } else null
     }
 
-    // THE FIX 1: Wrap the Brush creation in a strict API check!
     val explosionBrush = remember(explosionShader) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && explosionShader != null) {
             ShaderBrush(explosionShader as android.graphics.Shader)
         } else null
     }
 
-    // --- LOAD THE WEBP SPRITE ---
     val smokeSprite = ImageBitmap.imageResource(id = R.drawable.smoke_wisp)
+
+// --- THE FIX 1: Cache the filter so it doesn't create 900 objects a second! ---
+    val smokeColorFilter = remember { ColorFilter.tint(Color.Gray) }
 
     LaunchedEffect(Unit) {
         if (!hasPlayedExplosion) {
@@ -1556,13 +1637,12 @@ fun ExplosionScreen(state: GameState, audio: AudioController, onIntent: (GameInt
         }
 
         var lastTimeNanos = 0L
-        // THE FIX: Kill the loop the millisecond the explosion is finished!
         while (animationProgress.value < 1f) {
-            withFrameNanos { nanos ->
-                val dt = if (lastTimeNanos == 0L) 0.016f else ((nanos - lastTimeNanos) / 1_000_000_000f).coerceAtMost(0.1f)
-                shaderTime += dt
-                lastTimeNanos = nanos
-            }
+            // THE FIX: Return 'it' to prevent the lambda from generating memory garbage!
+            val nanos = withFrameNanos { it }
+            val dt = if (lastTimeNanos == 0L) 0.016f else ((nanos - lastTimeNanos) / 1_000_000_000f).coerceAtMost(0.1f)
+            shaderTime += dt
+            lastTimeNanos = nanos
         }
     }
 
@@ -1583,23 +1663,23 @@ fun ExplosionScreen(state: GameState, audio: AudioController, onIntent: (GameInt
             }
             center = center.copy(y = center.y + yOffset)
 
-            // 1. THE SHRAPNEL PARTICLES (Bottom Layer)
-            state.particles.forEach { p ->
-                val dist = p.velocity * progress * 2.5f // Fly slightly further
+            // 1. THE SHRAPNEL PARTICLES (Zero-Allocation Primitive Loop!)
+            for (i in state.particles.indices) {
+                val p = state.particles[i]
+                val dist = p.velocity * progress * 2.5f
                 val x = center.x + (p.dirX * dist)
                 val y = center.y + (p.dirY * dist)
                 val alpha = (1f - progress).coerceIn(0f, 1f)
-                // Bigger physical particles
                 if (alpha > 0) drawCircle(color = p.color, alpha = alpha, radius = p.size * 1.5f, center = Offset(x, y))
             }
 
-            // 2. THE WEBP SMOKE (Middle Layer - Underneath the Fire)
-            state.smoke.forEachIndexed { i, s ->
+            // 2. THE WEBP SMOKE (Zero-Allocation Primitive Loop!)
+            for (i in state.smoke.indices) {
+                val s = state.smoke[i]
                 val currentX = center.x + (s.vx * progress * 3f)
                 val currentY = center.y + (s.vy * progress * 3f)
-                val currentSize = s.size + (progress * 250f) // BIGGER SMOKE
+                val currentSize = s.size + (progress * 250f)
 
-                // LONGER FADE: Changed 1.5f to 1.1f
                 val fadeProgress = (progress * 1.1f).coerceIn(0f, 1f)
                 val currentAlpha = (s.alpha * (1f - fadeProgress)).coerceIn(0f, 1f)
 
@@ -1618,14 +1698,13 @@ fun ExplosionScreen(state: GameState, audio: AudioController, onIntent: (GameInt
                             dstOffset = IntOffset.Zero,
                             dstSize = IntSize(currentSize.toInt(), currentSize.toInt()),
                             alpha = currentAlpha,
-                            // ALWAYS GRAY (Unaffected by themes)
-                            colorFilter = ColorFilter.tint(Color.Gray)
+                            colorFilter = smokeColorFilter
                         )
                     }
                 }
             }
 
-            // 3. THE GPU EXPLOSION (Top Layer - Premultiplied alpha blends perfectly over the smoke)
+            // 3. GPU EXPLOSION
             if (progress < 1f) {
                 if (explosionShader != null && explosionBrush != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                     explosionShader.setFloatUniform("resolution", size.width, size.height)
@@ -1648,13 +1727,133 @@ fun ExplosionScreen(state: GameState, audio: AudioController, onIntent: (GameInt
         val titleText = if (state.bombStyle == "FROG") stringResource(R.string.croaked) else stringResource(R.string.boom)
         val titleSize = if (state.bombStyle == "FROG") 72.sp else 96.sp
 
-        val boomBrush = Brush.verticalGradient(
-            colors = listOf(Color.Yellow, NeonRed)
-        )
+        // THE FIX 2: Cache the Brush so it doesn't allocate memory on recomposition!
+        val boomBrush = remember { Brush.verticalGradient(listOf(Color.Yellow, NeonRed)) }
 
         val sharedRestartInteraction = remember { MutableInteractionSource() }
 
-        // Bottom Layer (Visuals)
+        // --- THE FIX 3: Cache the Winner Logic so .filter doesn't spawn new ArrayLists! ---
+        val winnerName = remember(state.activePlayers, state.playMode) {
+            val survivors = state.activePlayers.filter { !it.isEliminated }
+            if (state.playMode == PlayMode.GROUP && survivors.size == 1) survivors.first().name else null
+        }
+
+        val maxConfetti = 150
+        val cX = remember { FloatArray(maxConfetti) }
+        val cY = remember { FloatArray(maxConfetti) }
+        val cVx = remember { FloatArray(maxConfetti) }
+        val cVy = remember { FloatArray(maxConfetti) }
+        val cRot = remember { FloatArray(maxConfetti) }
+        val cRotSpeed = remember { FloatArray(maxConfetti) }
+
+        val cColorIndex = remember { IntArray(maxConfetti) }
+
+        var confettiFrame by remember { mutableIntStateOf(0) }
+        var hasSpawnedConfetti by remember { mutableStateOf(false) }
+
+        val windowInfo = androidx.compose.ui.platform.LocalWindowInfo.current
+        val screenWidthPx = windowInfo.containerSize.width.toFloat()
+        val screenHeightPx = windowInfo.containerSize.height.toFloat()
+
+        // --- THE FIX: Create dynamically updating bounds for the physics engine! ---
+        val currentScreenWidth by rememberUpdatedState(screenWidthPx)
+        val currentScreenHeight by rememberUpdatedState(screenHeightPx)
+
+        LaunchedEffect(winnerName) {
+            if (winnerName != null && !hasSpawnedConfetti) {
+                hasSpawnedConfetti = true
+                audio.playVictory()
+                for (i in 0 until maxConfetti) {
+                    cX[i] = (Math.random() * currentScreenWidth).toFloat()
+                    cY[i] = (-50f - Math.random() * 800f).toFloat()
+                    cVx[i] = ((Math.random() - 0.5) * 300f).toFloat()
+                    cVy[i] = (300f + Math.random() * 400f).toFloat()
+                    cColorIndex[i] = (Math.random() * 6).toInt()
+                    cRot[i] = (Math.random() * 360f).toFloat()
+                    cRotSpeed[i] = ((Math.random() - 0.5) * 500f).toFloat()
+                }
+
+                var lastTime = 0L
+                var isRunning = true // Track physics state without allocating!
+
+                while (isRunning) {
+                    // THE FIX: Returning 'it' prevents the lambda from capturing variables. ZERO heap allocations!
+                    val nanos = withFrameNanos { it }
+
+                    val dt = if (lastTime == 0L) 0.016f else ((nanos - lastTime) / 1_000_000_000f).coerceAtMost(0.1f)
+                    lastTime = nanos
+                    var activeParticles = 0
+
+                    for (i in 0 until maxConfetti) {
+                        if (cY[i] < currentScreenHeight + 100f) {
+                            cX[i] += cVx[i] * dt + (kotlin.math.sin(nanos / 400_000_000.0 + i) * 150f * dt).toFloat()
+                            cY[i] += cVy[i] * dt
+                            cRot[i] += cRotSpeed[i] * dt
+                            activeParticles++
+                        }
+                    }
+
+                    // THE FIX: Zero allocations! If activeParticles is 0, they all fell off the screen!
+                    if (activeParticles > 0) {
+                        confettiFrame++
+                    } else {
+                        isRunning = false
+                    }
+                }
+            }
+        }
+
+        val infiniteTransition = rememberInfiniteTransition(label = "winner_glint")
+        val glintScale1 by infiniteTransition.animateFloat(
+            initialValue = 0.4f,
+            targetValue = 1.4f,
+            animationSpec = infiniteRepeatable(tween(2000, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+            label = "glint_scale_1"
+        )
+        // Made this one slightly slower so they drift beautifully out of sync!
+        val glintScale2 by infiniteTransition.animateFloat(
+            initialValue = 0.4f,
+            targetValue = 1.4f,
+            animationSpec = infiniteRepeatable(tween(2300, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+            label = "glint_scale_2"
+        )
+
+        val winnerTextBrush = remember { Brush.verticalGradient(listOf(Color(0xFFFFFACD), Color(0xFFFFD700))) }
+        val confettiOffset = remember { Offset(-8f, -12f) }
+        val confettiSize = remember { Size(16f, 24f) }
+
+        // --- Z-INDEX 90: CONFETTI CANVAS ---
+        if (winnerName != null) {
+            Canvas(modifier = Modifier.fillMaxSize().zIndex(90f)) {
+                if (confettiFrame >= 0) Unit
+
+                for (i in 0 until maxConfetti) {
+                    if (cY[i] < size.height + 50f) {
+                        withTransform({
+                            translate(cX[i], cY[i])
+                            rotate(cRot[i], pivot = Offset.Zero)
+                        }) {
+                            // THE FIX: Bypassing arrays entirely eliminates 9,000 unboxing operations per second!
+                            val pColor = when (cColorIndex[i]) {
+                                0 -> Color(0xFFEF4444)
+                                1 -> Color(0xFF3B82F6)
+                                2 -> Color(0xFF10B981)
+                                3 -> Color(0xFFF59E0B)
+                                4 -> Color(0xFF8B5CF6)
+                                else -> Color(0xFFEC4899)
+                            }
+                            drawRect(
+                                color = pColor,
+                                topLeft = confettiOffset,
+                                size = confettiSize
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // --- Z-INDEX 100: VISUAL TEXT & GLINTS ---
         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.zIndex(100f)) {
             StrokeGlowText(
                 text = titleText,
@@ -1665,7 +1864,55 @@ fun ExplosionScreen(state: GameState, audio: AudioController, onIntent: (GameInt
                 strokeWidth = 10f,
                 blurRadius = 25f
             )
-            Spacer(modifier = Modifier.height(80.dp))
+
+            if (winnerName != null) {
+                Spacer(modifier = Modifier.height(16.dp))
+                Box(contentAlignment = Alignment.Center) {
+                    StrokeGlowText(
+                        text = "#1 ${winnerName.uppercase()}",
+                        color = Color(0xFFFFD700),
+                        gradientBrush = winnerTextBrush,
+                        fontSize = 42.sp,
+                        fontWeight = FontWeight.Black,
+                        strokeWidth = 8f,
+                        blurRadius = 20f
+                    )
+
+                    Canvas(modifier = Modifier.matchParentSize()) {
+                        val gWidth = 40f
+                        val gHeight = 8f
+
+                        // --- TWEAK THESE TO MOVE GLINT 1 (Top Left) ---
+                        // size.width * 0.0f is far left, size.width * 1.0f is far right
+                        // size.height * 0.0f is top, size.height * 1.0f is bottom
+                        val glint1X = size.width * 0.07f
+                        val glint1Y = size.height * 0.20f
+
+                        withTransform({
+                            translate(glint1X, glint1Y)
+                            scale(glintScale1, glintScale1, pivot = Offset.Zero)
+                        }) {
+                            drawOval(Color.White, topLeft = Offset(-gWidth/2, -gHeight/2), size = Size(gWidth, gHeight))
+                            drawOval(Color.White, topLeft = Offset(-gHeight/2, -gWidth/2), size = Size(gHeight, gWidth))
+                        }
+
+                        // --- TWEAK THESE TO MOVE GLINT 2 (Bottom Right) ---
+                        val glint2X = size.width * 0.93f
+                        val glint2Y = size.height * 0.80f
+
+                        withTransform({
+                            translate(glint2X, glint2Y)
+                            scale(glintScale2, glintScale2, pivot = Offset.Zero)
+                        }) {
+                            drawOval(Color.White, topLeft = Offset(-gWidth/2, -gHeight/2), size = Size(gWidth, gHeight))
+                            drawOval(Color.White, topLeft = Offset(-gHeight/2, -gWidth/2), size = Size(gHeight, gWidth))
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(32.dp))
+            } else {
+                Spacer(modifier = Modifier.height(80.dp))
+            }
 
             ActionButton(
                 text = stringResource(R.string.restart),
@@ -1674,24 +1921,30 @@ fun ExplosionScreen(state: GameState, audio: AudioController, onIntent: (GameInt
                 textColor = NeonOrange,
                 borderColor = NeonOrange,
                 borderWidth = 2.dp,
-                // THE FIX: Floods with orange and flips the text dark!
                 pressedBgColor = NeonOrange,
                 pressedBorderColor = NeonOrange,
-                pressedContentColor = Color(0xFF020617), // A sharp, dark slate!
+                pressedContentColor = Color(0xFF020617),
                 interactionSource = sharedRestartInteraction,
                 onClick = { /* Handled by top layer */ }
             )
         }
 
-        // THE LAG FIX: Call the isolated wrapper instead of doing the math here!
+        // --- Z-INDEX 200: HEN OVERLAY ---
         if (state.bombStyle == "HEN") {
             AnimatedHenOverlay(state = state, onIntent = onIntent)
         }
 
-        // Top Layer (Ghost Clicks)
+        // --- Z-INDEX 300: GHOST CLICKS ---
         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.zIndex(300f)) {
             Text(titleText, fontSize = titleSize, fontWeight = FontWeight.Black, fontFamily = CustomFont, color = Color.Transparent)
-            Spacer(modifier = Modifier.height(80.dp))
+
+            if (winnerName != null) {
+                Spacer(modifier = Modifier.height(16.dp))
+                Text("#1 ${winnerName.uppercase()}", fontSize = 42.sp, fontWeight = FontWeight.Black, fontFamily = CustomFont, color = Color.Transparent)
+                Spacer(modifier = Modifier.height(32.dp))
+            } else {
+                Spacer(modifier = Modifier.height(80.dp))
+            }
 
             Box(
                 modifier = Modifier
@@ -1717,12 +1970,12 @@ fun AnimatedHenOverlay(state: GameState, onIntent: (GameIntent) -> Unit) {
     LaunchedEffect(Unit) {
         var lastFrameNanos = 0L
         while(visualHenAnimTime <= 9.0f) {
-            withFrameNanos { nanos ->
-                val dt = if (lastFrameNanos == 0L) 0.016f else ((nanos - lastFrameNanos) / 1_000_000_000f).coerceAtMost(0.1f)
-                lastFrameNanos = nanos
-                if (!currentIsHenPaused) {
-                    visualHenAnimTime += dt
-                }
+            // THE FIX: Return 'it' to prevent the lambda from generating memory garbage!
+            val nanos = withFrameNanos { it }
+            val dt = if (lastFrameNanos == 0L) 0.016f else ((nanos - lastFrameNanos) / 1_000_000_000f).coerceAtMost(0.1f)
+            lastFrameNanos = nanos
+            if (!currentIsHenPaused) {
+                visualHenAnimTime += dt
             }
         }
     }
@@ -1747,7 +2000,7 @@ fun AnimatedHenOverlay(state: GameState, onIntent: (GameIntent) -> Unit) {
 }
 
 @Composable
-fun PlayerTurnUI(state: GameState, audio: AudioController, onIntent: (GameIntent) -> Unit) {
+fun PlayerTurnUI(state: GameState, colors: AppColors, audio: AudioController, onIntent: (GameIntent) -> Unit) { // <-- Added colors parameter
     if (state.playMode != PlayMode.GROUP || state.activePlayers.isEmpty()) return
 
     val currentPlayer = state.activePlayers.getOrNull(state.currentPlayerIndex) ?: return
@@ -1755,10 +2008,8 @@ fun PlayerTurnUI(state: GameState, audio: AudioController, onIntent: (GameIntent
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center,
-        modifier = Modifier
-            .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(24.dp))
-            .border(2.dp, NeonCyan.copy(alpha = 0.5f), RoundedCornerShape(24.dp))
-            .padding(horizontal = 16.dp, vertical = 8.dp)
+        // THE FIX: Stripped out the background and border modifiers!
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
     ) {
         Icon(
             imageVector = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
@@ -1781,7 +2032,7 @@ fun PlayerTurnUI(state: GameState, audio: AudioController, onIntent: (GameIntent
 
         Text(
             text = currentPlayer.name.uppercase(),
-            color = Color.White,
+            color = colors.text, // <-- THE FIX: Adapts dynamically to Light/Dark mode!
             fontSize = 22.sp,
             fontWeight = FontWeight.Bold,
             fontFamily = CustomFont

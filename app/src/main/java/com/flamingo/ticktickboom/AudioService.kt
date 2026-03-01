@@ -31,7 +31,7 @@ class AudioController(context: Context) {
     private var glassSoundId: Int = 0
     private var boingSoundId: Int = 0
     private var zapSoundId: Int = 0 // <-- NEW SOUND ID
-
+    private var victorySoundId: Int = 0
     // Hen Sounds
     private var henBokSoundId: Int = 0
     private var henFlySoundId: Int = 0
@@ -67,7 +67,7 @@ class AudioController(context: Context) {
 
         // --- Track loaded audio files ---
         var loadedCount = 0
-        val totalSoundsToLoad = 25 // The exact number of it.load() calls you have!
+        val totalSoundsToLoad = 26 // The exact number of it.load() calls you have!
         soundPool?.setOnLoadCompleteListener { _, _, _ ->
             // Even if a file fails, we count it so the app doesn't get stuck forever
             loadedCount++
@@ -90,6 +90,7 @@ class AudioController(context: Context) {
             alertSoundId = it.load(context, R.raw.alert, 1)
             beepSoundId = it.load(context, R.raw.beep, 1)
             zapSoundId = it.load(context, R.raw.zap, 1) // <-- LOAD THE ZAP
+            victorySoundId = it.load(context, R.raw.victory, 1)
             fizzleSoundId = it.load(context, R.raw.fizzle, 1)
             flintSoundId = it.load(context, R.raw.flint, 1)
             glassSoundId = it.load(context, R.raw.glass, 1)
@@ -178,6 +179,7 @@ class AudioController(context: Context) {
     fun playClick() { soundPool?.play(clickSoundId, timerVolume, timerVolume, 1, 0, 1f) }
     fun playGlassTap() { soundPool?.play(glassSoundId, timerVolume, timerVolume, 1, 0, 1f) }
     fun playZap() { soundPool?.play(zapSoundId, timerVolume, timerVolume, 1, 0, 1f) } // <-- PLAY THE ZAP
+    fun playVictory() { soundPool?.play(victorySoundId, timerVolume, timerVolume, 1, 0, 1f) }
     fun playCrack() { soundPool?.play(eggCrackSoundId, timerVolume, timerVolume, 1, 0, 1.0f) }
 
     fun playLoudCluck() {

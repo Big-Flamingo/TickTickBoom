@@ -1,9 +1,11 @@
 package com.flamingo.ticktickboom
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.font.FontVariation
 
 // --- COLORS ---
 val Slate950 = Color(0xFF020617) // Dark Mode Background
@@ -38,9 +40,25 @@ val FrogBody = Color(0xFFAED581)   // Muted pastel green
 val FrogBelly = Color(0xFFFFF59D)  // Creamy light yellow
 
 // --- FONTS ---
+@OptIn(ExperimentalTextApi::class)
 val CustomFont = FontFamily(
-    Font(R.font.orbitron_bold, FontWeight.Bold),
-    Font(R.font.orbitron_bold, FontWeight.Normal)
+    // 1. When the UI asks for 'Normal', inject the 'Bold' (700) axis!
+    Font(
+        resId = R.font.orbitron_variable,
+        weight = FontWeight.Normal,
+        variationSettings = FontVariation.Settings(
+            FontVariation.weight(700)
+        )
+    ),
+
+    // 2. When the UI asks for 'Bold', inject the 'Black' (900) axis!
+    Font(
+        resId = R.font.orbitron_variable,
+        weight = FontWeight.Bold,
+        variationSettings = FontVariation.Settings(
+            FontVariation.weight(900)
+        )
+    )
 )
 
 // --- DATA CLASSES FOR THEME ---

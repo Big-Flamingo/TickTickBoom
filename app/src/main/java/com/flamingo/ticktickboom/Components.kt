@@ -727,7 +727,8 @@ fun LanguageSwitch(
         Box(
             contentAlignment = Alignment.Center,
             modifier = modifier
-                .offset(x = offsetAnimatable.value, y = offsetAnimatable.value)
+                // --- THE FIX: Lambda offset bypasses the Composition Engine! ---
+                .offset { androidx.compose.ui.unit.IntOffset(offsetAnimatable.value.roundToPx(), offsetAnimatable.value.roundToPx()) }
                 .zIndex(zIndex.floatValue)
                 .size(28.dp)
                 .border(1.5.dp, animatedColor, RoundedCornerShape(8.dp))

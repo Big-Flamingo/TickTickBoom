@@ -328,8 +328,8 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors, isPaused
     val glowRadius = 25f * d; val coreRadius = 8f * d; val whiteRadius = 4f * d
     val particleRad = 3f * d; val particleRadS = 1.5f * d; val tapThreshold = 60f * d; val fuseYOffset = 5f * d
     val sparkPos = remember { floatArrayOf(0f, 0f) }
-
     val smokeSprite = ImageBitmap.imageResource(id = R.drawable.smoke_wisp)
+    val smokeColorFilter = remember(colors.smokeColor) { ColorFilter.tint(colors.smokeColor) }
 
     LaunchedEffect(isPaused) {
         while (true) {
@@ -360,10 +360,17 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors, isPaused
     }
 
     Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-        var currentSparkCenter by remember { mutableStateOf(Offset.Zero) }
+        // --- NEW FIX: A primitive array completely bypasses the Compose tracker! ---
+        val currentSparkCenter = remember { floatArrayOf(0f, 0f) }
 
         Canvas(
-            modifier = Modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures { tapOffset -> val dx = tapOffset.x - currentSparkCenter.x; val dy = tapOffset.y - currentSparkCenter.y; if (sqrt(dx * dx + dy * dy) < tapThreshold) onTogglePause() } }
+            modifier = Modifier.fillMaxSize().pointerInput(Unit) {
+                detectTapGestures { tapOffset ->
+                    val dx = tapOffset.x - currentSparkCenter[0] // Read primitive X
+                    val dy = tapOffset.y - currentSparkCenter[1] // Read primitive Y
+                    if (sqrt(dx * dx + dy * dy) < tapThreshold) onTogglePause()
+                }
+            }
         ) {
             if (frame >= 0) Unit
             val width = size.width
@@ -560,7 +567,15 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors, isPaused
                     }
                 }
 
-                val pos = floatArrayOf(0f, 0f); pathMeasure.getPosTan(currentBurnPoint, pos, null); val sparkCenter = Offset(pos[0], pos[1]); if (!isReflection) currentSparkCenter = sparkCenter
+                val pos = floatArrayOf(0f, 0f)
+                pathMeasure.getPosTan(currentBurnPoint, pos, null)
+                val sparkCenter = Offset(pos[0], pos[1])
+
+                if (!isReflection) {
+                    // Update primitive array instead of triggering Compose State!
+                    currentSparkCenter[0] = sparkCenter.x
+                    currentSparkCenter[1] = sparkCenter.y
+                }
                 if (!isPaused && !isReflection) {
                     // Spawn Spark
                     if (Math.random() < 0.3) {
@@ -612,7 +627,8 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors, isPaused
                         }) {
                             drawImage(
                                 image = smokeSprite, dstOffset = IntOffset.Zero, dstSize = IntSize(currentSize.toInt(), currentSize.toInt()),
-                                alpha = currentAlpha, colorFilter = ColorFilter.tint(colors.smokeColor)
+                                alpha = currentAlpha,
+                                colorFilter = smokeColorFilter // <-- ZERO ALLOCATIONS!
                             )
                         }
                     }
