@@ -1066,9 +1066,10 @@ fun C4Visual(
 @Composable
 fun DynamiteVisual(
     timeLeft: Float,
+    isLedOn: Boolean, // <-- ADDED PARAMETER!
     isPaused: Boolean,
     onTogglePause: () -> Unit,
-    isDarkMode: Boolean = false // <-- NEW PARAMETER
+    isDarkMode: Boolean = false
 ) {
     val density = LocalDensity.current
     val d = density.density
@@ -1211,20 +1212,19 @@ fun DynamiteVisual(
     val currentTimeLeft by rememberUpdatedState(timeLeft)
     val currentIsPaused by rememberUpdatedState(isPaused)
 
-    // THE FIX: Exact countdown boundary syncing
+    // --- THE NEW TICK SPAWNER ---
+    // Instead of doing complex math, the UI just waits for the ViewModel to pulse 'isLedOn'!
+    LaunchedEffect(isLedOn) {
+        if (isLedOn && !isPaused && timeLeft > 1.1f) {
+            val isFast = timeLeft <= 5f
+            textEffects.add(VisualText(tickText, (Math.random() * 100 - 50).toFloat(), tickOffsetY, if (isFast) NeonRed else TextGray, fontSize = 20f))
+        }
+    }
+
     LaunchedEffect(Unit) {
         var lastTime = 0L
         var localHasShownDing = false
         var previousTLeft = currentTimeLeft
-
-        // Exact same function used by the Audio Engine!
-        fun getNextTick(time: Float): Float {
-            val interval = if (time <= 5f) 0.5f else 1.0f
-            // THE FIX: Match the ViewModel's floor math perfectly!
-            return kotlin.math.floor(time / interval) * interval
-        }
-
-        var nextVisualTickTime = getNextTick(currentTimeLeft)
 
         while(true) {
             withFrameNanos { nanos ->
@@ -1234,25 +1234,14 @@ fun DynamiteVisual(
                 val tLeft = currentTimeLeft
                 val paused = currentIsPaused
 
-                // STRICT TIME TRAVEL DETECTOR
+                // STRICT TIME TRAVEL DETECTOR (Just for resetting the Ding now!)
                 if (kotlin.math.abs(tLeft - previousTLeft) > 0.5f) {
-                    nextVisualTickTime = getNextTick(tLeft)
                     if (tLeft > 1.0f) {
                         localHasShownDing = false
                         hasShownDing = false
                     }
                 }
                 previousTLeft = tLeft
-
-                // 1. Check for Ticks (Syncs perfectly with audio)
-                if (!paused && tLeft <= nextVisualTickTime && tLeft > 1.1f) {
-                    val isFast = tLeft <= 5f
-                    textEffects.add(VisualText(tickText, (Math.random() * 100 - 50).toFloat(), tickOffsetY, if (isFast) NeonRed else TextGray, fontSize = 20f))
-
-                    val interval = if (isFast) 0.5f else 1.0f
-                    nextVisualTickTime -= interval
-                    while (nextVisualTickTime >= tLeft) nextVisualTickTime -= interval
-                }
 
                 // 2. Check for the Ding
                 if (tLeft <= 1.0f && !localHasShownDing && tLeft > 0 && !paused) {

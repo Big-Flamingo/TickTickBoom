@@ -258,8 +258,15 @@ class AudioController(context: Context) {
     }
 
     fun startFuse(startMuffled: Boolean) {
-        if (fuseStreamId != 0) return
         val volume = if (startMuffled) timerVolume * 0.3f else timerVolume
+
+        // THE FIX: If it's already playing, just update the volume and return!
+        if (fuseStreamId != 0) {
+            soundPool?.setVolume(fuseStreamId, volume, volume)
+            return
+        }
+
+        // Otherwise, start a brand-new stream
         fuseStreamId = soundPool?.play(fuseSoundId, volume, volume, 1, -1, 1f) ?: 0
     }
 

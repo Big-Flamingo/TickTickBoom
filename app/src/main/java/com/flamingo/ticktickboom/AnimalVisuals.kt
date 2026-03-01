@@ -23,7 +23,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -120,9 +119,17 @@ fun FrogVisual(timeLeft: Float, isCritical: Boolean, isPaused: Boolean, onToggle
     var cachedFrogAlertBrush by remember { mutableStateOf<Brush?>(null) }
     val scope = rememberCoroutineScope()
     val boingAnim = remember { Animatable(1f) }
-    val sweatDrops = remember { mutableListOf<VisualParticle>() }
-    var lastFrameTime by remember { mutableLongStateOf(0L) }
-    var timeAccumulator by remember { mutableFloatStateOf(0.5f) }
+    // --- THE FIX 1: Primitive Object Pool ---
+    // Eliminates ConcurrentModification crashes and Garbage Collection lag!
+    val maxSweat = 15
+    val sweatX = remember { FloatArray(maxSweat) }
+    val sweatY = remember { FloatArray(maxSweat) }
+    val sweatVx = remember { FloatArray(maxSweat) }
+    val sweatVy = remember { FloatArray(maxSweat) }
+    val sweatLife = remember { FloatArray(maxSweat) }
+
+    var particleFrame by remember { mutableLongStateOf(0L) }
+    val timeAccumulator = remember { floatArrayOf(0.5f) }
     val currentIsCritical by rememberUpdatedState(isCritical)
 
     val density = LocalDensity.current
@@ -133,15 +140,27 @@ fun FrogVisual(timeLeft: Float, isCritical: Boolean, isPaused: Boolean, onToggle
     }
 
     LaunchedEffect(Unit) {
+        var lastTime = 0L
         while (true) {
             withFrameNanos { nanos ->
-                val dt = if (lastFrameTime == 0L) 0.016f else ((nanos - lastFrameTime) / 1_000_000_000f).coerceAtMost(0.1f)
-                lastFrameTime = nanos
-                if (currentIsCritical) timeAccumulator += dt
-                for (i in sweatDrops.indices.reversed()) {
-                    val p = sweatDrops[i]; p.life -= dt; p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 500f * dt
-                    if (p.life <= 0) sweatDrops.removeAt(i)
+                val dt = if (lastTime == 0L) 0.016f else ((nanos - lastTime) / 1_000_000_000f).coerceAtMost(0.1f)
+                lastTime = nanos
+
+                if (currentIsCritical) timeAccumulator[0] += dt
+
+                var activeParticles = false
+                for (i in 0 until maxSweat) {
+                    if (sweatLife[i] > 0f) {
+                        sweatLife[i] -= dt
+                        sweatX[i] += sweatVx[i] * dt
+                        sweatY[i] += sweatVy[i] * dt
+                        sweatVy[i] += 500f * dt
+                        if (sweatLife[i] > 0f) activeParticles = true
+                    }
                 }
+
+                // Keeps the Canvas awake while particles exist
+                if (currentIsCritical || activeParticles) particleFrame++
             }
         }
     }
@@ -427,24 +446,42 @@ fun FrogVisual(timeLeft: Float, isCritical: Boolean, isPaused: Boolean, onToggle
                     }
                 }
 
-                if (!isReflection && currentIsCritical && timeAccumulator >= 0.5f) {
-                    timeAccumulator -= 0.5f
+                // Link the Canvas to our game loop so it redraws smoothly!
+                if (particleFrame >= 0) Unit
+
+                if (!isReflection && currentIsCritical && timeAccumulator[0] >= 0.5f) {
+                    timeAccumulator[0] -= 0.5f
                     repeat(3) { i ->
                         val angle = -PI / 4 + (i - 1) * 0.5 + ((Math.random() - 0.5) * 0.1)
                         val speed = (bumpRadius / 0.5f) * (0.9f + Math.random().toFloat() * 0.2f)
                         val spawnX = (cx + bumpXOffset) + (bumpRadius * 1.05f)
                         val spawnY = bumpY - (bumpRadius * 1.15f)
                         val modSpawn = getMod(spawnX, spawnY)
-                        sweatDrops.add(VisualParticle(modSpawn.x, modSpawn.y, (cos(angle) * speed).toFloat(), (sin(angle) * speed).toFloat(), 0.5f, 0.5f))
+
+                        // Spawn directly into the primitive arrays
+                        for (j in 0 until maxSweat) {
+                            if (sweatLife[j] <= 0f) {
+                                sweatX[j] = modSpawn.x
+                                sweatY[j] = modSpawn.y
+                                sweatVx[j] = (cos(angle) * speed).toFloat()
+                                sweatVy[j] = (sin(angle) * speed).toFloat()
+                                sweatLife[j] = 0.5f
+                                break
+                            }
+                        }
                     }
                 }
-                sweatDrops.forEach { p ->
-                    withTransform({ translate(p.x, p.y); rotate((atan2(p.vy, p.vx) * (180f / PI)).toFloat() + 90f, Offset.Zero) }) {
-                        val currentAlpha = (p.life / p.maxLife).coerceIn(0f, 1f)
-                        val dropSize = bodyRadius * 0.1f
-                        // Pass alpha separately!
-                        drawPath(path = sweatDropPath, color = Color(0xFF60A5FA), alpha = currentAlpha)
-                        drawOval(color = Color.White, alpha = 0.6f * currentAlpha, topLeft = Offset(-dropSize * 0.4f, -dropSize * 0.6f), size = Size(dropSize * 0.5f, dropSize * 0.3f))
+                for (i in 0 until maxSweat) {
+                    if (sweatLife[i] > 0f) {
+                        withTransform({
+                            translate(sweatX[i], sweatY[i])
+                            rotate((atan2(sweatVy[i], sweatVx[i]) * (180f / PI)).toFloat() + 90f, Offset.Zero)
+                        }) {
+                            val currentAlpha = (sweatLife[i] / 0.5f).coerceIn(0f, 1f)
+                            val dropSize = bodyRadius * 0.1f
+                            drawPath(path = sweatDropPath, color = Color(0xFF60A5FA), alpha = currentAlpha)
+                            drawOval(color = Color.White, alpha = 0.6f * currentAlpha, topLeft = Offset(-dropSize * 0.4f, -dropSize * 0.6f), size = Size(dropSize * 0.5f, dropSize * 0.3f))
+                        }
                     }
                 }
             }

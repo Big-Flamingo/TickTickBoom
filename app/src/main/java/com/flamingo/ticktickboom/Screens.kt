@@ -47,7 +47,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
@@ -107,11 +112,6 @@ import androidx.compose.ui.zIndex
 import androidx.core.content.edit
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
 
 // NOTE: Uses VisualParticle from AppModels.kt
 // NOTE: Uses drawReflection and StrokeGlowText from Components.kt
@@ -279,13 +279,26 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, audio: AudioController, 
                 // Shorter distance, faster time, accelerates out!
                 flyAwayAnim.animateTo(screenHeightPx + 100f, tween(400, easing = FastOutLinearInEasing))
 
-                val min = minText.toIntOrNull() ?: 5
-                var max = maxText.toIntOrNull() ?: 10
-                if (max < min) max = min
+                // THE FIX: Check which tab we are on before launching!
+                if (selectedTabIndex == 0) {
+                    val min = minText.toIntOrNull() ?: 5
+                    var max = maxText.toIntOrNull() ?: 10
+                    if (max < min) max = min
 
-                prefs.edit { putInt("min", min); putInt("max", max); putFloat("vol_timer", timerVol); putFloat("vol_explode", explodeVol) }
-                audio.timerVolume = timerVol; audio.explosionVolume = explodeVol
-                onStart(TimerSettings(min, max, "FROG"))
+                    prefs.edit { putInt("min", min); putInt("max", max); putFloat("vol_timer", timerVol); putFloat("vol_explode", explodeVol) }
+                    audio.timerVolume = timerVol; audio.explosionVolume = explodeVol
+                    onStart(TimerSettings(min, max, "FROG"))
+                } else {
+                    // Group Mode Frog!
+                    if (selectedPresetIndex != null && savedPresets.isNotEmpty()) {
+                        val preset = savedPresets[selectedPresetIndex!!]
+                        onGroupStart(preset, "FROG")
+                    } else {
+                        // Failsafe: Reset if they somehow trigger it with no presets
+                        easterEggTaps = 0
+                        flyAwayAnim.snapTo(0f)
+                    }
+                }
             }
         }
     }
@@ -299,11 +312,23 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, audio: AudioController, 
             // Shorter distance, faster time, accelerates out!
             flyAwayAnim.animateTo(-screenHeightPx - 100f, tween(400, easing = FastOutLinearInEasing))
 
-            val min = minText.toIntOrNull() ?: 5
-            var max = maxText.toIntOrNull() ?: 10
-            if (max < min) max = min
+            // THE FIX: Check which tab we are on before launching!
+            if (selectedTabIndex == 0) {
+                val min = minText.toIntOrNull() ?: 5
+                var max = maxText.toIntOrNull() ?: 10
+                if (max < min) max = min
 
-            onStart(TimerSettings(min, max, "HEN"))
+                onStart(TimerSettings(min, max, "HEN"))
+            } else {
+                // Group Mode Hen!
+                if (selectedPresetIndex != null && savedPresets.isNotEmpty()) {
+                    val preset = savedPresets[selectedPresetIndex!!]
+                    onGroupStart(preset, "HEN")
+                } else {
+                    // Failsafe
+                    flyAwayAnim.snapTo(0f)
+                }
+            }
         }
     }
 
@@ -636,7 +661,9 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, audio: AudioController, 
                                     ) {
                                         Text(preset.presetName, color = if (isSelected) colors.text else colors.textSecondary, fontWeight = FontWeight.Bold, fontFamily = CustomFont)
                                         Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Text("${preset.players.size} Players", color = if (isSelected) colors.text else colors.textSecondary, fontSize = 12.sp, fontFamily = CustomFont)
+                                            // THE FIX 1: Dynamically drop the 's' if there is exactly 1 player!
+                                            val pCount = preset.players.size
+                                            Text("$pCount Player${if (pCount == 1) "" else "s"}", color = if (isSelected) colors.text else colors.textSecondary, fontSize = 12.sp, fontFamily = CustomFont)
 
                                             Spacer(modifier = Modifier.width(8.dp))
 
@@ -683,9 +710,37 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, audio: AudioController, 
                                                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                                     Column {
                                                         Text("ROSTER (Uncheck if absent)", color = colors.textSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont)
-                                                        Text("${preset.defaultTime}s start time", color = NeonCyan, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont)
+                                                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 2.dp)) {
+                                                            Text("${preset.defaultTime}s start time", color = NeonCyan, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont)
+
+                                                            // THE FIX 1: Only show RESET TIMES if at least one player needs it!
+                                                            val needsReset = preset.players.any { it.timeLeft != preset.defaultTime }
+                                                            if (needsReset) {
+                                                                Spacer(modifier = Modifier.width(8.dp))
+                                                                Text(
+                                                                    text = "RESET TIMES",
+                                                                    color = NeonOrange,
+                                                                    fontSize = 10.sp,
+                                                                    fontWeight = FontWeight.Bold,
+                                                                    fontFamily = CustomFont,
+                                                                    modifier = Modifier.clickable(
+                                                                        interactionSource = remember { MutableInteractionSource() },
+                                                                        indication = null
+                                                                    ) {
+                                                                        audio.playClick()
+                                                                        val resetPlayers = preset.players.map { it.copy(timeLeft = preset.defaultTime) }
+                                                                        val updatedPreset = preset.copy(players = resetPlayers)
+                                                                        val updatedPresetsList = savedPresets.toMutableList()
+                                                                        updatedPresetsList[selectedPresetIndex!!] = updatedPreset
+                                                                        savedPresets = updatedPresetsList
+                                                                        groupManager.savePresets(savedPresets)
+                                                                    }
+                                                                )
+                                                            }
+                                                        }
                                                     }
-                                                    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                                                    Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                                                        // THE FIX 2: Moved Edit Icon to be FIRST!
                                                         Icon(Icons.Filled.Edit, "Edit", tint = NeonCyan, modifier = Modifier.size(20.dp).clickable(
                                                             interactionSource = remember { MutableInteractionSource() },
                                                             indication = null
@@ -698,6 +753,25 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, audio: AudioController, 
                                                             resetTimeRule = preset.resetOnExplosion
                                                             tempPlayers = preset.players
                                                         })
+
+                                                        // THE FIX 2: Moved Auto-Reset Toggle to be SECOND!
+                                                        Icon(
+                                                            imageVector = Icons.Filled.Refresh,
+                                                            contentDescription = "Toggle Auto-Reset",
+                                                            tint = if (preset.resetOnExplosion) NeonOrange else colors.textSecondary,
+                                                            modifier = Modifier.size(20.dp).clickable(
+                                                                interactionSource = remember { MutableInteractionSource() },
+                                                                indication = null
+                                                            ) {
+                                                                audio.playClick()
+                                                                val updatedPreset = preset.copy(resetOnExplosion = !preset.resetOnExplosion)
+                                                                val updatedPresetsList = savedPresets.toMutableList()
+                                                                updatedPresetsList[selectedPresetIndex!!] = updatedPreset
+                                                                savedPresets = updatedPresetsList
+                                                                groupManager.savePresets(savedPresets)
+                                                            }
+                                                        )
+
                                                         Icon(Icons.Filled.Delete, "Delete", tint = NeonRed, modifier = Modifier.size(20.dp).clickable(
                                                             interactionSource = remember { MutableInteractionSource() },
                                                             indication = null
@@ -812,7 +886,10 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, audio: AudioController, 
                             color = NeonOrange,
                             colors = colors,
                             modifier = Modifier.fillMaxWidth(),
-                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Done),
+                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                                capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Words,
+                                imeAction = androidx.compose.ui.text.input.ImeAction.Done
+                            ),
                             keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { focusManager.clearFocus() })
                         )
                         Spacer(modifier = Modifier.height(16.dp))
@@ -850,7 +927,10 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, audio: AudioController, 
                                 color = NeonOrange,
                                 colors = colors,
                                 modifier = Modifier.weight(1f), // Keeps it perfectly aligned next to the (+) button!
-                                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Done),
+                                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                                    capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Words,
+                                    imeAction = androidx.compose.ui.text.input.ImeAction.Done
+                                ),
                                 keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = {
                                     if (newPlayerName.isNotBlank()) {
                                         val time = groupTimeText.toFloatOrNull() ?: 10f
@@ -1119,7 +1199,10 @@ fun BombScreen(
 ) {
     val coroutineScope = rememberCoroutineScope()
 
-    // We only keep purely VISUAL state in the Composable now (like wobbles and flashes)
+    val visualTimeLeftState = remember { mutableFloatStateOf(state.duration.toFloat()) }
+    val timeProvider = { visualTimeLeftState.floatValue }
+
+    // We only keep purely VISUAL state in the Composable now
     var hasPlayedCrack1 by remember { mutableStateOf(false) }
     var hasPlayedCrack2 by remember { mutableStateOf(false) }
     var hasPlayedCrack3 by remember { mutableStateOf(false) }
@@ -1143,27 +1226,52 @@ fun BombScreen(
         }
     ) }
 
+    // --- THE GRAVITY RESTORED! ---
     LaunchedEffect(state.bombStyle) {
         if (state.bombStyle == "FROG" || state.bombStyle == "HEN") {
             slideInAnim.animateTo(0f, tween(500, easing = LinearOutSlowInEasing))
         }
     }
 
-    // Calculate Crack Stage purely based on the State's Time Left
+    // Snap animations instantly on Player Change to prevent lag!
+    LaunchedEffect(state.currentPlayerIndex, state.duration) {
+        // (Side note: we should actually use timeLeft here too so the visual
+        // timer doesn't accidentally jump to the max time for a split second!)
+        visualTimeLeftState.floatValue = state.timeLeft
+
+        // Reset Hen Animation States
+        hasPlayedFly = false
+        hasPlayedCrack1 = false
+        hasPlayedCrack2 = false
+        hasPlayedCrack3 = false
+        eggWobbleAnim.snapTo(0f)
+
+        audio.stopWingFlap()
+        audio.stopFlail()
+
+        // --- THE FIX: Use timeLeft, not duration! ---
+        if (state.bombStyle == "FUSE" && !state.isPaused) {
+            audio.startFuse(startMuffled = state.timeLeft <= 5f)
+        }
+    }
+
+    // Calculate cracks using the VISUAL timer to prevent thread desync!
+    val visualTime = visualTimeLeftState.floatValue
     val crackStage = if (state.bombStyle != "HEN") 0 else when {
-        state.timeLeft <= 1.5f -> 3
-        state.timeLeft <= 3.0f -> 2
-        state.timeLeft <= 4.5f -> 1
+        visualTime <= 1.5f -> 3
+        visualTime <= 3.0f -> 2
+        visualTime <= 4.5f -> 1
         else -> 0
     }
 
     LaunchedEffect(crackStage) {
-        if (state.bombStyle == "HEN" && !state.isPaused) {
+        if (state.bombStyle == "HEN" && !state.isPaused && crackStage > 0) {
             val shouldPlay = (crackStage == 1 && !hasPlayedCrack1) ||
                     (crackStage == 2 && !hasPlayedCrack2) ||
                     (crackStage == 3 && !hasPlayedCrack3)
 
             if (shouldPlay) {
+                // Set the booleans FIRST to prevent Compose from double-firing!
                 if (crackStage == 1) hasPlayedCrack1 = true
                 if (crackStage == 2) hasPlayedCrack2 = true
                 if (crackStage == 3) hasPlayedCrack3 = true
@@ -1181,75 +1289,58 @@ fun BombScreen(
     // --- RESTORED: Resume Wing Flap Audio when Unpausing ---
     LaunchedEffect(state.isPaused) {
         if (!state.isPaused && state.bombStyle == "HEN") {
-            // Only resume if we are actively in the middle of the flapping animation!
             if (henSequenceElapsed > 0.5f && henSequenceElapsed < 2.5f) {
                 var resumeVol = 1.0f
-
-                // Match the exact fade-out math used in the animation loop
                 if (henSequenceElapsed > 1.0f) {
                     resumeVol = (2.5f - henSequenceElapsed) / 1.5f
                 }
-
                 val finalVol = resumeVol.coerceIn(0f, 1f) * audio.timerVolume
                 audio.playWingFlap(startVol = finalVol)
             }
         }
     }
 
-    // --- MASTER VISUAL TIMER (Client-Side Prediction) ---
     val currentIsPaused by rememberUpdatedState(state.isPaused)
     val masterTimeLeft by rememberUpdatedState(state.timeLeft)
+    val currentBombStyle by rememberUpdatedState(state.bombStyle)
 
-    // THE FIX: Hold the raw state object, not the delegated value
-    val visualTimeLeftState = remember(state.duration) { mutableFloatStateOf(state.duration.toFloat()) }
-
-    // Create the Lambda Provider that we will pass around!
-    val timeProvider = { visualTimeLeftState.floatValue }
-
-    LaunchedEffect(state.duration) {
+    // The Unified Master Loop! (Timer Math AND Hen Math together)
+    LaunchedEffect(Unit) {
         var lastFrameNanos = System.nanoTime()
         while(true) {
             withFrameNanos { nanos ->
                 val dt = ((nanos - lastFrameNanos) / 1_000_000_000f).coerceAtMost(0.1f)
                 lastFrameNanos = nanos
 
+                // 1. Visual Timer Engine
                 if (!currentIsPaused && visualTimeLeftState.floatValue > 0f) {
                     visualTimeLeftState.floatValue -= dt
 
-                    // Soft-Sync: If the visual timer drifts from the ViewModel's master timer
-                    // by more than 50ms, we gently snap it back into place to prevent desync.
                     if (kotlin.math.abs(visualTimeLeftState.floatValue - masterTimeLeft) > 0.05f) {
                         visualTimeLeftState.floatValue = masterTimeLeft
                     }
                 } else if (currentIsPaused) {
-                    visualTimeLeftState.floatValue = masterTimeLeft // Keep perfectly synced when paused
+                    visualTimeLeftState.floatValue = masterTimeLeft
                 }
-            }
-        }
-    }
 
-    // --- THE FIX: Display-synced animation loop! ---
-    LaunchedEffect(state.bombStyle) {
-        if (state.bombStyle == "HEN") {
-            var lastFrameNanos = System.nanoTime()
-            while(true) {
-                withFrameNanos { nanos ->
-                    val dt = ((nanos - lastFrameNanos) / 1_000_000_000f).coerceAtMost(0.1f)
-                    lastFrameNanos = nanos
+                // 2. Hen Fly Engine
+                if (currentBombStyle == "HEN") {
+                    // THE FIX 2: Mathematically bind the animation directly to the master timer!
+                    henSequenceElapsed = (6.0f - visualTimeLeftState.floatValue).coerceAtLeast(0f)
 
-                    if (!currentIsPaused && visualTimeLeftState.floatValue <= 6.0f) {
-                        henSequenceElapsed += dt
-
-                        if (henSequenceElapsed > 0.5f && !hasPlayedFly) {
-                            audio.playLoudCluck()
-                            audio.playWingFlap(audio.timerVolume)
-                            hasPlayedFly = true
-                        }
-                        if (henSequenceElapsed > 1.0f && henSequenceElapsed < 2.5f) {
+                    if (!currentIsPaused) {
+                        if (henSequenceElapsed > 0.5f && henSequenceElapsed < 2.5f) {
+                            if (!hasPlayedFly) {
+                                audio.playLoudCluck()
+                                audio.playWingFlap(audio.timerVolume)
+                                hasPlayedFly = true
+                            }
                             val currentVol = (2.5f - henSequenceElapsed) / 1.5f
                             audio.updateWingFlapVolume(currentVol.coerceIn(0f, 1f))
+                        } else if (henSequenceElapsed >= 2.5f) {
+                            audio.stopWingFlap()
+                            hasPlayedFly = true // Prevents loud cluck if swapping to someone already post-flight!
                         }
-                        if (henSequenceElapsed > 2.5f) audio.stopWingFlap()
                     }
                 }
             }
@@ -1276,21 +1367,24 @@ fun BombScreen(
                 .fillMaxSize()
                 .zIndex(0f)
                 .onGloballyPositioned {
-                    // Send Intent to ViewModel regarding origin!
                     onIntent(GameIntent.UpdateExplosionOrigin(it.positionInRoot() + Offset(it.size.width/2f, it.size.height/2f)))
                 },
             contentAlignment = Alignment.Center
         ) {
+            // --- THE FIX 2: No more keys, no more delays! ---
+            // The bomb persists, allowing internal clock loops to run flawlessly.
             BombVisualContent(
                 style = state.bombStyle,
                 duration = state.duration,
                 timeLeftProvider = timeProvider,
                 isCritical = state.isCritical,
-                isLedOn = state.isLedOn,
+
+                isLedOn = state.isLedOn, // Back to the pure, un-delayed state!
+
                 isDarkMode = isDarkMode,
                 colors = colors,
                 isPaused = state.isPaused,
-                onTogglePause = { onIntent(GameIntent.TogglePause) }, // Send Intent!
+                onTogglePause = { onIntent(GameIntent.TogglePause) },
                 onShock = {
                     audio.playZap()
                     coroutineScope.launch {
@@ -1359,29 +1453,72 @@ fun BombScreen(
                     }
                 }
             } else {
-                // 2. THE PORTRAIT COLUMN
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                // --- PORTRAIT LAYOUT ---
+                // Root Box allows the Player UI and the Bomb Column to float independently.
+                Box(modifier = Modifier.fillMaxSize()) {
 
-                    // --- NEW: Add the Player UI! ---
+                    // 1. PLAYER TURN UI (Anchored to Top)
                     if (state.playMode == PlayMode.GROUP) {
-                        PlayerTurnUI(state, audio, onIntent)
-                        Spacer(modifier = Modifier.height(16.dp))
+                        val playerTopPadding = when (state.bombStyle) {
+                            "FUSE" -> 40.dp
+                            "C4", "DYNAMITE" -> 110.dp
+                            "FROG", "HEN" -> 64.dp
+                            else -> 48.dp
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .align(Alignment.TopCenter)
+                                .padding(top = playerTopPadding),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            PlayerTurnUI(state, audio, onIntent)
+                        }
                     }
 
-                    BombTextContent(
-                        style = state.bombStyle,
-                        timeLeftProvider = timeProvider,
-                        isCritical = state.isCritical,
-                        isPaused = state.isPaused,
-                        colors = colors,
-                        henSequenceElapsed = henSequenceElapsed
-                    )
-                    Spacer(modifier = Modifier.height(64.dp))
-                    Box(modifier = Modifier.size(300.dp))
-                    Spacer(modifier = Modifier.height(64.dp))
-                    AbortButtonContent(colors) {
-                        audio.playClick()
-                        onIntent(GameIntent.Abort)
+                    // 2. RIGID BOMB COLUMN (Anchored to Center)
+                    // Total height is mathematically locked to 608.dp so elements never shift.
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.align(Alignment.Center)
+                    ) {
+                        // A. Text Content Area
+                        Box(
+                            modifier = Modifier
+                                .height(120.dp)
+                                .offset(y = (-32).dp), // Visually nudges text up without altering layout height
+                            contentAlignment = Alignment.BottomCenter
+                        ) {
+                            BombTextContent(
+                                style = state.bombStyle,
+                                timeLeftProvider = timeProvider,
+                                isCritical = state.isCritical,
+                                isPaused = state.isPaused,
+                                colors = colors,
+                                henSequenceElapsed = henSequenceElapsed
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(64.dp))
+
+                        // B. Target Bomb Area
+                        Box(modifier = Modifier.size(300.dp))
+
+                        // C. Abort Button (With split-spacers to shift position while maintaining 64.dp total gap)
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        Box(
+                            modifier = Modifier.height(60.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            AbortButtonContent(colors) {
+                                audio.playClick()
+                                onIntent(GameIntent.Abort)
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(48.dp))
                     }
                 }
             }

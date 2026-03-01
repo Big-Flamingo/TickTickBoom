@@ -511,7 +511,7 @@ fun BombVisualContent(
                     FuseVisual(progress, isCritical, colors, isPaused, onTogglePause, isDarkMode = isDarkMode)
                 }
                 "C4" -> C4Visual(isLedOn, isDarkMode, isPaused, onTogglePause, onShock)
-                "DYNAMITE" -> DynamiteVisual(timeLeftProvider(), isPaused, onTogglePause, isDarkMode)
+                "DYNAMITE" -> DynamiteVisual(timeLeftProvider(), isLedOn, isPaused, onTogglePause, isDarkMode) // <-- Inject isLedOn here!
                 "FROG" -> FrogVisual(timeLeftProvider(), isCritical, isPaused, onTogglePause, isDarkMode = isDarkMode)
             }
         }

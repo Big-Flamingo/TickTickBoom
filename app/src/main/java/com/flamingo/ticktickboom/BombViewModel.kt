@@ -182,11 +182,19 @@ class BombViewModel(private val audio: AudioController, private val groupManager
         if (nextPlayerTime > 1.05f) hasPlayedAlert = false
         if (nextPlayerTime > 1.0f) hasPlayedFlail = false
 
+        lastPlayedCrackStage = when {
+            nextPlayerTime <= 1.5f -> 3
+            nextPlayerTime <= 3.0f -> 2
+            nextPlayerTime <= 4.5f -> 1
+            else -> 0
+        }
+
         _state.update {
             it.copy(
                 activePlayers = updatedPlayers,
                 currentPlayerIndex = nextIndex,
-                timeLeft = nextPlayerTime
+                timeLeft = nextPlayerTime,
+                isLedOn = false
             )
         }
     }
@@ -275,8 +283,11 @@ class BombViewModel(private val audio: AudioController, private val groupManager
 
                     // THE FIX: We wait to cross the exact next mathematical boundary!
                     if (internalTimeLeft <= nextAudioTickTime) {
+
+                        newIsLedOn = true // <-- MOVED OUTSIDE! Now the metronome pulses for all bombs!
+
                         if (newTimeLeft > 0.05f) {
-                            if (currentState.bombStyle == "C4") { audio.playTick(); newIsLedOn = true }
+                            if (currentState.bombStyle == "C4") { audio.playTick() } // <-- Removed newIsLedOn from here
                             if (currentState.bombStyle == "DYNAMITE" && newTimeLeft > 1.0) audio.playClockTick()
                             if (currentState.bombStyle == "FROG") audio.playCroak(newTimeLeft <= 5f)
                             if (currentState.bombStyle == "HEN" && newTimeLeft > 6.0f) audio.playHenCluck()
