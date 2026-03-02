@@ -61,8 +61,11 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.rounded.AccessTime
 import androidx.compose.material.icons.rounded.DeveloperBoard
 import androidx.compose.material.icons.rounded.LocalFireDepartment
@@ -539,7 +542,7 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, audio: AudioController, 
                             )
                         },
                     contentAlignment = Alignment.Center
-                ) { Text("RANDOM MODE", color = if (isRandomSelected) colors.text else colors.textSecondary, fontWeight = FontWeight.Bold, fontFamily = CustomFont) }
+                ) { Text(stringResource(R.string.tab_random_mode), color = if (isRandomSelected) colors.text else colors.textSecondary, fontWeight = FontWeight.Normal, fontFamily = CustomFont) }
 
                 Box(
                     modifier = Modifier
@@ -555,7 +558,7 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, audio: AudioController, 
                             )
                         },
                     contentAlignment = Alignment.Center
-                ) { Text("GROUP MODE", color = if (isGroupSelected) colors.text else colors.textSecondary, fontWeight = FontWeight.Bold, fontFamily = CustomFont) }
+                ) { Text(stringResource(R.string.tab_group_mode), color = if (isGroupSelected) colors.text else colors.textSecondary, fontWeight = FontWeight.Normal, fontFamily = CustomFont) }
             }
 
             Spacer(modifier = Modifier.height(24.dp))
@@ -581,11 +584,13 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, audio: AudioController, 
             } else {
                 // GROUP MODE UI
                 if (!isCreatingNewPreset && !isEditingPreset) {
+                    val firstPresetName = stringResource(R.string.default_preset_name, 1)
+                    val nextPresetName = stringResource(R.string.default_preset_name, savedPresets.size + 1)
                     if (savedPresets.isEmpty()) {
-                        Text("No saved presets!", color = NeonRed, fontFamily = CustomFont)
+                        Text(stringResource(R.string.no_saved_presets), color = NeonRed, fontFamily = CustomFont)
                         Spacer(modifier = Modifier.height(16.dp))
                         ActionButton(
-                            text = "Create Preset",
+                            text = stringResource(R.string.btn_create_preset),
                             icon = Icons.Filled.PlayArrow,
                             color = NeonOrange,
                             textColor = colors.text,
@@ -597,17 +602,17 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, audio: AudioController, 
                             audio.playClick()
                             isCreatingNewPreset = true
                             tempPlayers = emptyList()
-                            newPresetName = "Preset 1"
+                            newPresetName = firstPresetName
                             groupTimeText = "10"
                             resetTimeRule = false
                         }
                     } else {
                         // THE DROPDOWN SELECTOR
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                            Text("SELECT PRESET:", color = colors.textSecondary, fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont)
+                            Text(stringResource(R.string.label_select_preset), color = colors.textSecondary, fontSize = 12.sp, fontWeight = FontWeight.Normal, fontFamily = CustomFont)
                             // Hollowed out the button to match the bomb style!
                             ActionButton(
-                                text = "New",
+                                text = stringResource(R.string.btn_new),
                                 icon = Icons.Filled.Add,
                                 color = unselectedGlass,
                                 textColor = colors.text,
@@ -618,7 +623,7 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, audio: AudioController, 
                                 audio.playClick()
                                 isCreatingNewPreset = true
                                 tempPlayers = emptyList()
-                                newPresetName = "Preset ${savedPresets.size + 1}"
+                                newPresetName = nextPresetName
                                 groupTimeText = "10"
                                 resetTimeRule = false
                             }
@@ -697,17 +702,18 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, audio: AudioController, 
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text(preset.presetName, color = if (isSelected) colors.text else colors.textSecondary, fontWeight = FontWeight.Bold, fontFamily = CustomFont)
+                                    Text(preset.presetName, color = if (isSelected) colors.text else colors.textSecondary, fontWeight = FontWeight.Normal, fontFamily = CustomFont)
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         val pCount = preset.players.size
-                                        Text("$pCount Player${if (pCount == 1) "" else "s"}", color = if (isSelected) colors.text else colors.textSecondary, fontSize = 12.sp, fontFamily = CustomFont)
+                                        val countRes = if (pCount == 1) R.string.player_count_single else R.string.player_count_multiple
+                                        Text(stringResource(countRes, pCount), color = if (isSelected) colors.text else colors.textSecondary, fontSize = 12.sp, fontFamily = CustomFont)
 
                                         Spacer(modifier = Modifier.width(8.dp))
 
                                         val isThisExpanded = isSelected && isRosterExpanded
                                         Icon(
                                             imageVector = if (isThisExpanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
-                                            contentDescription = "Toggle Roster",
+                                            contentDescription = stringResource(R.string.desc_toggle_roster),
                                             tint = if (arrowPressed.value) Color.Gray else (if (isSelected) colors.text else colors.textSecondary),
                                             modifier = Modifier
                                                 .size(28.dp)
@@ -749,18 +755,18 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, audio: AudioController, 
 
                                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                                 Column {
-                                                    Text("ROSTER (Uncheck if absent)", color = colors.textSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont)
+                                                    Text(stringResource(R.string.label_roster_uncheck), color = colors.textSecondary, fontSize = 10.sp, fontWeight = FontWeight.Normal, fontFamily = CustomFont)
                                                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 2.dp)) {
-                                                        Text("${preset.defaultTime}s start time", color = NeonCyan, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont)
+                                                        Text(stringResource(R.string.label_start_time, preset.defaultTime.toString()), color = NeonCyan, fontSize = 10.sp, fontWeight = FontWeight.Normal, fontFamily = CustomFont)
 
                                                         val needsReset = preset.players.any { it.timeLeft != preset.defaultTime }
                                                         if (needsReset) {
                                                             Spacer(modifier = Modifier.width(8.dp))
                                                             Text(
-                                                                text = "RESET TIMES",
+                                                                text = stringResource(R.string.btn_reset_times),
                                                                 color = NeonOrange,
                                                                 fontSize = 10.sp,
-                                                                fontWeight = FontWeight.Bold,
+                                                                fontWeight = FontWeight.Normal,
                                                                 fontFamily = CustomFont,
                                                                 modifier = Modifier.clickable(
                                                                     interactionSource = remember { MutableInteractionSource() },
@@ -792,14 +798,27 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, audio: AudioController, 
                                                         tempPlayers = preset.players
                                                     })
 
+                                                    val quickToggleScale by androidx.compose.animation.core.animateFloatAsState(
+                                                        targetValue = if (preset.resetOnExplosion) 1.2f else 1.0f,
+                                                        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMediumLow),
+                                                        label = "quick_toggle_scale"
+                                                    )
+
                                                     Icon(
-                                                        imageVector = Icons.Filled.Refresh,
-                                                        contentDescription = "Toggle Auto-Reset",
-                                                        tint = if (preset.resetOnExplosion) NeonOrange else colors.textSecondary,
-                                                        modifier = Modifier.size(20.dp).clickable(
-                                                            interactionSource = remember { MutableInteractionSource() },
-                                                            indication = null
-                                                        ) {
+                                                        imageVector = if (preset.resetOnExplosion) Icons.Filled.Refresh else Icons.Filled.Lock,
+                                                        contentDescription = stringResource(R.string.desc_toggle_auto_reset),
+                                                        tint = if (preset.resetOnExplosion) NeonOrange else colors.text,
+                                                        modifier = Modifier
+                                                            .size(20.dp)
+                                                            .graphicsLayer {
+                                                                scaleX = quickToggleScale
+                                                                scaleY = quickToggleScale
+                                                            }
+                                                            .clickable(
+                                                                interactionSource = remember { MutableInteractionSource() },
+                                                                indication = null
+                                                            ) {
+                                                                // ... (Keep your click logic exactly the same!)
                                                             audio.playClick()
                                                             val updatedPreset = preset.copy(resetOnExplosion = !preset.resetOnExplosion)
                                                             val updatedPresetsList = savedPresets.toMutableList()
@@ -934,7 +953,6 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, audio: AudioController, 
                 } else {
                     // THE UNIVERSAL EDITOR UI (Handles Create AND Edit)
                     // We can remove editorBg since it is going transparent!
-                    val fieldBg = if (isDarkMode) Slate800 else Color(0xFFE5E7EB)
 
                     Column(
                         modifier = Modifier
@@ -943,13 +961,13 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, audio: AudioController, 
                             .border(1.dp, faintOutline, RoundedCornerShape(8.dp))
                             .padding(16.dp)
                     ) {
-                        Text(if (isEditingPreset) "EDIT PRESET" else "CREATE NEW PRESET", color = NeonOrange, fontWeight = FontWeight.Bold, fontFamily = CustomFont)
+                        Text(stringResource(if (isEditingPreset) R.string.title_edit_preset else R.string.title_create_new_preset), color = NeonOrange, fontWeight = FontWeight.Normal, fontFamily = CustomFont)
                         Spacer(modifier = Modifier.height(16.dp))
 
                         CustomTextField(
                             value = newPresetName,
                             onValueChange = { newPresetName = it },
-                            placeholder = "Preset Name (e.g. Group 1)",
+                            placeholder = stringResource(R.string.hint_preset_name),
                             color = NeonOrange,
                             colors = colors,
                             modifier = Modifier.fillMaxWidth(),
@@ -962,35 +980,84 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, audio: AudioController, 
                         Spacer(modifier = Modifier.height(16.dp))
 
                         // THE FIX: Clears focus on Done, and swapped to NeonOrange for consistency!
-                        TimeInput("Starting Time (Seconds)", groupTimeText, { groupTimeText = it }, NeonOrange, colors, Modifier.fillMaxWidth(), { focusManager.clearFocus() })
+                        TimeInput(stringResource(R.string.label_starting_time), groupTimeText, { groupTimeText = it }, NeonOrange, colors, Modifier.fillMaxWidth(), { focusManager.clearFocus() })
                         Spacer(modifier = Modifier.height(16.dp))
 
-                        // Toggle Rule
-                        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text("Reset times on explosion?", color = colors.text, fontFamily = CustomFont)
+                        // --- NEW: Mirrored Toggle Rule Layout ---
+                        Text(stringResource(R.string.label_on_explosion), color = colors.textSecondary, fontSize = 12.sp, fontWeight = FontWeight.Normal, fontFamily = CustomFont)
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // 1. Declare the Bouncy Springs
+                        val keepScale by androidx.compose.animation.core.animateFloatAsState(
+                            targetValue = if (!resetTimeRule) 1.3f else 1.0f,
+                            animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMediumLow),
+                            label = "keep_scale"
+                        )
+                        val resetScale by androidx.compose.animation.core.animateFloatAsState(
+                            targetValue = if (resetTimeRule) 1.3f else 1.0f,
+                            animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMediumLow),
+                            label = "reset_scale"
+                        )
+
+                        // 2. Apply them to the Icons
+                        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
+                            Icon(Icons.Filled.Lock, null, tint = if(!resetTimeRule) colors.text else colors.textSecondary, modifier = Modifier.size(16.dp).graphicsLayer { scaleX = keepScale; scaleY = keepScale })
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(stringResource(R.string.rule_keep_times), color = if(!resetTimeRule) colors.text else colors.textSecondary, fontSize = 10.sp, fontWeight = FontWeight.Normal, fontFamily = CustomFont)
+
+                            Spacer(modifier = Modifier.width(8.dp))
+
                             Switch(
                                 checked = resetTimeRule,
-                                onCheckedChange = {
-                                    resetTimeRule = it
-                                    audio.playClick() // <-- ADDED AUDIO FEEDBACK!
-                                },
-                                colors = SwitchDefaults.colors(
-                                    checkedThumbColor = NeonRed,
-                                    checkedTrackColor = fieldBg,
-                                    uncheckedThumbColor = if (isDarkMode) Slate800 else Color.White,
-                                    uncheckedTrackColor = if (isDarkMode) Slate950 else Color(0xFFD1D5DB)
-                                )
+                                onCheckedChange = { resetTimeRule = it; audio.playClick() },
+                                colors = SwitchDefaults.colors(checkedThumbColor = NeonOrange, checkedTrackColor = Color.Transparent, checkedBorderColor = NeonOrange, uncheckedThumbColor = colors.text, uncheckedTrackColor = Color.Transparent, uncheckedBorderColor = colors.text)
                             )
+
+                            Spacer(modifier = Modifier.width(8.dp))
+
+                            Text(stringResource(R.string.rule_reset_times), color = if(resetTimeRule) NeonOrange else colors.textSecondary, fontSize = 10.sp, fontWeight = FontWeight.Normal, fontFamily = CustomFont)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Icon(Icons.Filled.Refresh, null, tint = if(resetTimeRule) NeonOrange else colors.textSecondary, modifier = Modifier.size(16.dp).graphicsLayer { scaleX = resetScale; scaleY = resetScale })
                         }
 
                         Spacer(modifier = Modifier.height(24.dp))
-                        Text("ADD/EDIT PLAYERS", color = colors.textSecondary, fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont)
+
+                        // THE FIX: Added a sleek INVERT ORDER button!
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Text(stringResource(R.string.title_add_edit_players), color = colors.textSecondary, fontSize = 12.sp, fontWeight = FontWeight.Normal, fontFamily = CustomFont)
+
+                            if (tempPlayers.size > 1) {
+                                // 1. Create a state to track the spins!
+                                var invertSpins by remember { mutableIntStateOf(0) }
+                                val rotation by androidx.compose.animation.core.animateFloatAsState(
+                                    targetValue = invertSpins * 180f,
+                                    animationSpec = tween(300, easing = FastOutSlowInEasing),
+                                    label = "invert_spin"
+                                )
+
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.clickable(
+                                        interactionSource = remember { MutableInteractionSource() }, indication = null
+                                    ) {
+                                        audio.playClick()
+                                        tempPlayers = tempPlayers.reversed()
+                                        invertSpins++ // 2. Trigger the spin!
+                                    }
+                                ) {
+                                    Text("INVERT ORDER", color = NeonCyan, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont)
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    // 3. Apply the rotation!
+                                    Icon(Icons.Filled.SwapVert, null, tint = NeonCyan, modifier = Modifier.size(16.dp).graphicsLayer { rotationZ = rotation })
+                                }
+                            }
+                        }
 
                         Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                             CustomTextField(
                                 value = newPlayerName,
                                 onValueChange = { newPlayerName = it },
-                                placeholder = "Player Name",
+                                placeholder = stringResource(R.string.hint_player_name),
                                 color = NeonOrange,
                                 colors = colors,
                                 modifier = Modifier.weight(1f), // Keeps it perfectly aligned next to the (+) button!
@@ -1054,6 +1121,19 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, audio: AudioController, 
                                             )
                                         }
 
+                                        // NEW: SET AS STARTING PLAYER (Rotates the circle)
+                                        if (i > 0) {
+                                            Icon(Icons.Filled.Star, "Set as First", tint = NeonOrange, modifier = Modifier.size(24.dp).clickable(
+                                                interactionSource = remember { MutableInteractionSource() }, indication = null
+                                            ) {
+                                                audio.playClick()
+                                                // Drops everything before this player, and tacks it onto the end!
+                                                tempPlayers = tempPlayers.drop(i) + tempPlayers.take(i)
+                                            })
+                                        } else { Spacer(modifier = Modifier.size(24.dp)) }
+
+                                        Spacer(modifier = Modifier.width(4.dp))
+
                                         // Move Up
                                         if (i > 0) {
                                             Icon(Icons.Filled.KeyboardArrowUp, null, tint = NeonCyan, modifier = Modifier.size(24.dp).clickable(
@@ -1112,7 +1192,7 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, audio: AudioController, 
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Box(modifier = Modifier.weight(1f)) {
                                 ActionButton(
-                                    text = "Cancel",
+                                    text = stringResource(R.string.btn_cancel),
                                     icon = Icons.Filled.Refresh,
                                     color = unselectedGlass,
                                     textColor = colors.text,
@@ -1127,7 +1207,7 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, audio: AudioController, 
                             }
                             Box(modifier = Modifier.weight(1f)) {
                                 ActionButton(
-                                    text = "Save",
+                                    text = stringResource(R.string.btn_save),
                                     icon = Icons.Filled.PlayArrow,
                                     color = NeonOrange,
                                     textColor = colors.text,
@@ -1190,10 +1270,24 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, audio: AudioController, 
             VolumeSlider(stringResource(R.string.explosion_volume), explodeVol, NeonRed, colors) { saveExplodeVol(it) }
             Spacer(modifier = Modifier.height(24.dp))
 
+            // 1. Declare the Bouncy Springs
+            val lightScale by androidx.compose.animation.core.animateFloatAsState(
+                targetValue = if (!isDarkMode) 1.3f else 1.0f,
+                animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMediumLow),
+                label = "light_scale"
+            )
+            val darkScale by androidx.compose.animation.core.animateFloatAsState(
+                targetValue = if (isDarkMode) 1.3f else 1.0f,
+                animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMediumLow),
+                label = "dark_scale"
+            )
+
+            // 2. Apply them to the Icons
             Row(modifier = Modifier.fillMaxWidth().height(48.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
-                Icon(Icons.Filled.LightMode, null, tint = if(!isDarkMode) NeonOrange else colors.textSecondary, modifier = Modifier.size(20.dp))
+                Icon(Icons.Filled.LightMode, null, tint = if(!isDarkMode) NeonOrange else colors.textSecondary, modifier = Modifier.size(20.dp).graphicsLayer { scaleX = lightScale; scaleY = lightScale })
                 Spacer(modifier = Modifier.width(8.dp))
-                Text(stringResource(R.string.light_mode), color = if(!isDarkMode) NeonOrange else colors.textSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont)
+                Text(stringResource(R.string.light_mode), color = if(!isDarkMode) NeonOrange else colors.textSecondary, fontSize = 10.sp, fontWeight = FontWeight.Normal, fontFamily = CustomFont)
+
                 Spacer(modifier = Modifier.width(16.dp))
                 Switch(
                     checked = isDarkMode,
@@ -1201,9 +1295,10 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, audio: AudioController, 
                     colors = SwitchDefaults.colors(checkedThumbColor = NeonCyan, checkedTrackColor = Color.Transparent, checkedBorderColor = NeonCyan, uncheckedThumbColor = NeonOrange, uncheckedTrackColor = Color.Transparent, uncheckedBorderColor = NeonOrange)
                 )
                 Spacer(modifier = Modifier.width(16.dp))
-                Text(stringResource(R.string.dark_mode), color = if(isDarkMode) NeonCyan else colors.textSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont)
+
+                Text(stringResource(R.string.dark_mode), color = if(isDarkMode) NeonCyan else colors.textSecondary, fontSize = 10.sp, fontWeight = FontWeight.Normal, fontFamily = CustomFont)
                 Spacer(modifier = Modifier.width(8.dp))
-                Icon(Icons.Filled.DarkMode, null, tint = if(isDarkMode) NeonCyan else colors.textSecondary, modifier = Modifier.size(20.dp))
+                Icon(Icons.Filled.DarkMode, null, tint = if(isDarkMode) NeonCyan else colors.textSecondary, modifier = Modifier.size(20.dp).graphicsLayer { scaleX = darkScale; scaleY = darkScale })
             }
 
             Spacer(modifier = Modifier.height(32.dp))
@@ -1246,9 +1341,9 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, audio: AudioController, 
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(Icons.Filled.PlayArrow, null, tint = Color.White)
+                Icon(Icons.Filled.PlayArrow, null, tint = colors.text)
                 Spacer(modifier = Modifier.width(8.dp))
-                Text(stringResource(R.string.arm_system), color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp, fontFamily = CustomFont)
+                Text(stringResource(R.string.arm_system), color = colors.text, fontSize = 24.sp, fontWeight = FontWeight.Bold, letterSpacing = 4.sp, fontFamily = CustomFont)
             }
             Spacer(modifier = Modifier.height(24.dp))
             Spacer(modifier = Modifier.navigationBarsPadding())
@@ -1566,8 +1661,8 @@ fun BombScreen(
                         // A. Text Content Area
                         Box(
                             modifier = Modifier
-                                .height(120.dp)
-                                .offset(y = (-32).dp), // Visually nudges text up without altering layout height
+                                .height(140.dp)
+                                .offset(y = (-52).dp), // Visually nudges text up without altering layout height
                             contentAlignment = Alignment.BottomCenter
                         ) {
                             BombTextContent(
@@ -1580,7 +1675,7 @@ fun BombScreen(
                             )
                         }
 
-                        Spacer(modifier = Modifier.height(64.dp))
+                        Spacer(modifier = Modifier.height(44.dp))
 
                         // B. Target Bomb Area
                         Box(modifier = Modifier.size(300.dp))
@@ -2013,7 +2108,7 @@ fun PlayerTurnUI(state: GameState, colors: AppColors, audio: AudioController, on
     ) {
         Icon(
             imageVector = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
-            contentDescription = "Previous Player",
+            contentDescription = stringResource(R.string.desc_previous_player),
             tint = NeonCyan,
             modifier = Modifier
                 .size(32.dp)
@@ -2033,7 +2128,7 @@ fun PlayerTurnUI(state: GameState, colors: AppColors, audio: AudioController, on
         Text(
             text = currentPlayer.name.uppercase(),
             color = colors.text, // <-- THE FIX: Adapts dynamically to Light/Dark mode!
-            fontSize = 22.sp,
+            fontSize = 24.sp,
             fontWeight = FontWeight.Bold,
             fontFamily = CustomFont
         )
@@ -2042,7 +2137,7 @@ fun PlayerTurnUI(state: GameState, colors: AppColors, audio: AudioController, on
 
         Icon(
             imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-            contentDescription = "Next Player",
+            contentDescription = stringResource(R.string.desc_next_player),
             tint = NeonCyan,
             modifier = Modifier
                 .size(32.dp)

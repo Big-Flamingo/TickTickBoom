@@ -412,6 +412,18 @@ class BombViewModel(private val audio: AudioController, private val groupManager
                         }.toMutableList()
                     }
 
+                    // --- NEW CLASSROOM QOL: ROTATE THE CIRCLE! ---
+                    // We find the doomed player in the MASTER list (because indices might differ)
+                    val doomedId = updatedPlayers[doomedIndex].id
+                    val masterDoomedIndex = masterPlayers.indexOfFirst { it.id == doomedId }
+
+                    if (masterDoomedIndex != -1) {
+                        // The next player in the circle should be the start of the list.
+                        // So we split the list *after* the doomed player.
+                        val splitIndex = (masterDoomedIndex + 1) % masterPlayers.size
+                        masterPlayers = (masterPlayers.drop(splitIndex) + masterPlayers.take(splitIndex)).toMutableList()
+                    }
+
                     allPresets[targetIndex] = targetPreset.copy(players = masterPlayers)
                     groupManager.savePresets(allPresets)
                 }

@@ -897,7 +897,7 @@ fun C4Visual(
                                         text = pausedText,
                                         color = Color.Transparent,
                                         fontSize = 8.sp,
-                                        fontWeight = FontWeight.Bold,
+                                        fontWeight = FontWeight.Normal,
                                         letterSpacing = 2.sp,
                                         fontFamily = CustomFont, // Matches Glow component
                                         overflow = TextOverflow.Visible,
@@ -911,7 +911,7 @@ fun C4Visual(
                                             text = pausedText,
                                             color = Color(0xFF1E293B),
                                             fontSize = 8.sp,
-                                            fontWeight = FontWeight.Bold,
+                                            fontWeight = FontWeight.Normal,
                                             letterSpacing = 2.sp,
                                             fontFamily = CustomFont, // Matches Glow component
                                             overflow = TextOverflow.Visible,
@@ -1016,7 +1016,7 @@ fun C4Visual(
                 Row(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Filled.Warning, null, tint = warningTextIcon, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text(warningText, color = warningTextIcon, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont)
+                    Text(warningText, color = warningTextIcon, fontSize = 10.sp, fontWeight = FontWeight.Normal, fontFamily = CustomFont)
                 }
             }
 
@@ -1197,7 +1197,7 @@ fun DynamiteVisual(
     val tickLayoutResult = remember(d, tickText) {
         textMeasurer.measure(
             text = tickText,
-            style = TextStyle(color = Color.Black, fontSize = 20.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont)
+            style = TextStyle(color = Color.Black, fontSize = 20.sp, fontWeight = FontWeight.Normal, fontFamily = CustomFont)
         )
     }
 

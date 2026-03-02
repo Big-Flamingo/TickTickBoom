@@ -48,4 +48,37 @@
     <string name="desc_select_style">選擇炸彈款式：%1$s</string>
     <string name="desc_arm_system">啟動系統並開始倒數</string>
     <string name="desc_trigger_shock">觸發高壓電擊</string>
+
+    <string name="tab_random_mode">隨機模式</string>
+    <string name="tab_group_mode">群組模式</string>
+    <string name="no_saved_presets">沒有已儲存的預設！</string>
+    <string name="btn_create_preset">建立預設</string>
+    <string name="label_select_preset">選擇預設：</string>
+    <string name="btn_new">新增</string>
+    <string name="default_preset_name">預設 %1$d</string>
+
+    <string name="player_count_single">%1$d 位玩家</string>
+    <string name="player_count_multiple">%1$d 位玩家</string>
+    <string name="desc_toggle_roster">切換名單</string>
+    <string name="label_roster_uncheck">名單 (若缺席請取消勾選)</string>
+    <string name="label_start_time">%1$s秒 起始時間</string>
+    <string name="btn_reset_times">重設時間</string>
+    <string name="desc_toggle_auto_reset">切換自動重設</string>
+
+    <string name="title_edit_preset">編輯預設</string>
+    <string name="title_create_new_preset">建立新預設</string>
+    <string name="hint_preset_name">預設名稱 (例如：群組 1)</string>
+    <string name="label_starting_time">起始時間 (秒)</string>
+    <string name="label_reset_rule">爆炸時重設時間？</string>
+    <string name="title_add_edit_players">新增/編輯玩家</string>
+    <string name="hint_player_name">玩家名稱</string>
+    <string name="btn_cancel">取消</string>
+    <string name="btn_save">儲存</string>
+
+    <string name="desc_previous_player">上一位玩家</string>
+    <string name="desc_next_player">下一位玩家</string>
+
+    <string name="label_on_explosion">爆炸時：</string>
+    <string name="rule_keep_times">保留剩餘時間</string>
+    <string name="rule_reset_times">重設時間</string>
 </resources>

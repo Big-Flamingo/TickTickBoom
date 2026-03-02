@@ -15,7 +15,7 @@
     <string name="explosion_volume">EXPLOSION VOLUME</string>
     <string name="light_mode">LIGHT MODE</string>
     <string name="dark_mode">DARK MODE</string>
-    <string name="arm_system">ARM SYSTEM</string>
+    <string name="arm_system">ARM</string>
 
     <string name="armed">ARMED</string>
     <string name="paused">PAUSED</string>
@@ -47,4 +47,37 @@
     <string name="desc_select_style">Select bomb style: %1$s</string>
     <string name="desc_arm_system">Arm System and Start Timer</string>
     <string name="desc_trigger_shock">Trigger High Voltage Shock</string>
+
+    <string name="tab_random_mode">RANDOM MODE</string>
+    <string name="tab_group_mode">GROUP MODE</string>
+    <string name="no_saved_presets">No saved presets!</string>
+    <string name="btn_create_preset">Create Preset</string>
+    <string name="label_select_preset">SELECT PRESET:</string>
+    <string name="btn_new">New</string>
+    <string name="default_preset_name">Preset %1$d</string>
+
+    <string name="player_count_single">%1$d Player</string>
+    <string name="player_count_multiple">%1$d Players</string>
+    <string name="desc_toggle_roster">Toggle Roster</string>
+    <string name="label_roster_uncheck">ROSTER (Uncheck if absent)</string>
+    <string name="label_start_time">%1$ss start time</string>
+    <string name="btn_reset_times">RESET TIMES</string>
+    <string name="desc_toggle_auto_reset">Toggle Auto-Reset</string>
+
+    <string name="title_edit_preset">EDIT PRESET</string>
+    <string name="title_create_new_preset">CREATE NEW PRESET</string>
+    <string name="hint_preset_name">Preset Name (e.g. Group 1)</string>
+    <string name="label_starting_time">Starting Time (Seconds)</string>
+    <string name="label_reset_rule">Reset times on explosion?</string>
+    <string name="title_add_edit_players">ADD/EDIT PLAYERS</string>
+    <string name="hint_player_name">Player Name</string>
+    <string name="btn_cancel">Cancel</string>
+    <string name="btn_save">Save</string>
+
+    <string name="desc_previous_player">Previous Player</string>
+    <string name="desc_next_player">Next Player</string>
+
+    <string name="label_on_explosion">ON EXPLOSION:</string>
+    <string name="rule_keep_times">KEEP TIMES</string>
+    <string name="rule_reset_times">RESET TIMES</string>
 </resources>

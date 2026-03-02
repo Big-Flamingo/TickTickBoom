@@ -235,7 +235,7 @@ fun ActionButton(
     ) {
         Icon(icon, null, tint = animatedContentColor)
         Spacer(modifier = Modifier.width(8.dp))
-        Text(text, color = animatedContentColor, fontSize = 18.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp, fontFamily = CustomFont)
+        Text(text, color = animatedContentColor, fontSize = 18.sp, fontWeight = FontWeight.Normal, letterSpacing = 2.sp, fontFamily = CustomFont)
     }
 }
 
@@ -295,7 +295,7 @@ fun RowScope.StyleButton(
     ) {
         Icon(icon, null, tint = contentColor)
         Spacer(modifier = Modifier.height(8.dp))
-        Text(label, color = contentColor, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont)
+        Text(label, color = contentColor, fontSize = 10.sp, fontWeight = FontWeight.Normal, fontFamily = CustomFont)
     }
 }
 
@@ -332,14 +332,14 @@ fun TimeInput(
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Rounded.AccessTime, null, tint = color, modifier = Modifier.size(14.dp))
             Spacer(modifier = Modifier.width(6.dp))
-            Text(label, color = color, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont)
+            Text(label, color = color, fontSize = 10.sp, fontWeight = FontWeight.Normal, fontFamily = CustomFont)
         }
         BasicTextField(
             value = value,
             onValueChange = { if (it.all { char -> char.isDigit() }) onValueChange(it) },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
             keyboardActions = KeyboardActions(onDone = { onDone() }),
-            textStyle = TextStyle(color = colors.text, fontSize = 32.sp, fontWeight = FontWeight.Black, fontFamily = CustomFont),
+            textStyle = TextStyle(color = colors.text, fontSize = 32.sp, fontWeight = FontWeight.Normal, fontFamily = CustomFont),
             cursorBrush = androidx.compose.ui.graphics.SolidColor(color),
             modifier = Modifier
                 .fillMaxWidth()
@@ -445,7 +445,7 @@ fun VolumeSlider(
                     modifier = Modifier.size(12.dp)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
-                Text(label, color = animatedLabelColor, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = CustomFont) // <-- Now illuminates!
+                Text(label, color = animatedLabelColor, fontSize = 10.sp, fontWeight = FontWeight.Normal, fontFamily = CustomFont) // <-- Now illuminates!
             }
             Text("${(value * 100).toInt()}%", color = animatedLabelColor, fontSize = 10.sp, fontFamily = CustomFont) // <-- Now illuminates!
         }
@@ -542,7 +542,7 @@ fun BombTextContent(style: String, timeLeftProvider: () -> Float, isCritical: Bo
                             stringResource(R.string.extinguished),
                             color = NeonCyan,
                             fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
+                            fontWeight = FontWeight.Normal,
                             letterSpacing = 2.sp,
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
                             fontFamily = CustomFont
@@ -553,7 +553,7 @@ fun BombTextContent(style: String, timeLeftProvider: () -> Float, isCritical: Bo
             "FROG", "HEN" -> StrokeGlowText(stringResource(R.string.paused), NeonCyan, 48.sp)
             else -> {
                 Surface(color = Color.Transparent, border = BorderStroke(1.dp, NeonCyan), shape = RoundedCornerShape(50), modifier = Modifier) {
-                    Text(stringResource(R.string.system_paused), color = NeonCyan, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp), fontFamily = CustomFont)
+                    Text(stringResource(R.string.system_paused), color = NeonCyan, fontSize = 12.sp, fontWeight = FontWeight.Normal, letterSpacing = 2.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp), fontFamily = CustomFont)
                 }
             }
         }
@@ -577,7 +577,7 @@ fun BombTextContent(style: String, timeLeftProvider: () -> Float, isCritical: Bo
                             stringResource(R.string.fuse_burning),
                             color = NeonOrange,
                             fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
+                            fontWeight = FontWeight.Normal,
                             letterSpacing = 2.sp,
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
                             fontFamily = CustomFont
@@ -599,7 +599,7 @@ fun BombTextContent(style: String, timeLeftProvider: () -> Float, isCritical: Bo
                         stringResource(R.string.critical),
                         color,
                         48.sp,
-                        fontWeight = FontWeight.Black,
+                        fontWeight = FontWeight.Bold,
                         glowIntensity = 1.3f
                     )
 
@@ -612,7 +612,7 @@ fun BombTextContent(style: String, timeLeftProvider: () -> Float, isCritical: Bo
                             stringResource(R.string.detonation_imminent),
                             color = NeonRed,
                             fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
+                            fontWeight = FontWeight.Normal,
                             letterSpacing = 2.sp,
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
                             fontFamily = CustomFont
@@ -637,7 +637,7 @@ fun BombTextContent(style: String, timeLeftProvider: () -> Float, isCritical: Bo
         }
         else -> {
             Surface(color = Color.Transparent, border = BorderStroke(1.dp, NeonRed), shape = RoundedCornerShape(50), modifier = Modifier) {
-                Text(stringResource(R.string.detonation_sequence), color = NeonRed, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp), fontFamily = CustomFont)
+                Text(stringResource(R.string.detonation_sequence), color = NeonRed, fontSize = 12.sp, fontWeight = FontWeight.Normal, letterSpacing = 2.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp), fontFamily = CustomFont)
             }
         }
     }
@@ -738,7 +738,7 @@ fun LanguageSwitch(
                 text = text,
                 color = animatedColor,
                 fontSize = fixedFontSize, // <-- Applied here!
-                fontWeight = FontWeight.Bold,
+                fontWeight = FontWeight.Normal,
                 fontFamily = CustomFont
             )
         }
