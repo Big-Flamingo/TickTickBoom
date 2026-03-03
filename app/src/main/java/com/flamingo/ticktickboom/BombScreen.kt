@@ -80,7 +80,8 @@ fun BombScreen(
     var hasPlayedCrack3 by remember { mutableStateOf(false) }
 
     var hasPlayedFly by remember { mutableStateOf(false) }
-    var henSequenceElapsed by remember { mutableFloatStateOf(0f) }
+    val henSequenceElapsedState = remember { mutableFloatStateOf(0f) }
+    val henProvider = remember { { henSequenceElapsedState.floatValue } }
 
     val flashAnim = remember { Animatable(0f) }
     val eggWobbleAnim = remember { Animatable(0f) }
@@ -107,21 +108,24 @@ fun BombScreen(
 
     // Snap animations instantly on Player Change to prevent lag!
     LaunchedEffect(state.currentPlayerIndex, state.duration) {
-        visualTimeLeftState.floatValue = state.timeLeft
+        val currentTime = state.timeLeft
+        visualTimeLeftState.floatValue = currentTime
 
-        // Reset Hen Animation States
-        hasPlayedFly = false
-        hasPlayedCrack1 = false
-        hasPlayedCrack2 = false
-        hasPlayedCrack3 = false
+        // --- THE FIX: Prime the booleans so old cracks don't re-wobble ---
+        hasPlayedCrack1 = currentTime <= 4.5f
+        hasPlayedCrack2 = currentTime <= 3.0f
+        hasPlayedCrack3 = currentTime <= 1.5f
+
+        // Only reset the fly state if they haven't reached the fly-away point (approx 3.5s left)
+        hasPlayedFly = currentTime < 3.5f
+
         eggWobbleAnim.snapTo(0f)
 
         audio.stopWingFlap()
         audio.stopFlail()
 
-        // --- THE FIX: Use timeLeft, not duration! ---
         if (state.bombStyle == "FUSE" && !state.isPaused) {
-            audio.startFuse(startMuffled = state.timeLeft <= 5f)
+            audio.startFuse(startMuffled = currentTime <= 5f)
         }
     }
 
@@ -153,10 +157,11 @@ fun BombScreen(
     // --- RESTORED: Resume Wing Flap Audio when Unpausing ---
     LaunchedEffect(state.isPaused) {
         if (!state.isPaused && state.bombStyle == "HEN") {
-            if (henSequenceElapsed > 0.5f && henSequenceElapsed < 2.5f) {
+            val currentHenElapsed = henSequenceElapsedState.floatValue // Read it once here
+            if (currentHenElapsed > 0.5f && currentHenElapsed < 2.5f) {
                 var resumeVol = 1.0f
-                if (henSequenceElapsed > 1.0f) {
-                    resumeVol = (2.5f - henSequenceElapsed) / 1.5f
+                if (currentHenElapsed > 1.0f) {
+                    resumeVol = (2.5f - currentHenElapsed) / 1.5f
                 }
                 val finalVol = resumeVol.coerceIn(0f, 1f) * audio.timerVolume
                 audio.playWingFlap(startVol = finalVol)
@@ -205,21 +210,22 @@ fun BombScreen(
 
             // 2. Hen Fly Engine
             if (currentBombStyle == "HEN") {
-                // THE FIX 2: Mathematically bind the animation directly to the master timer!
-                henSequenceElapsed = (6.0f - visualTimeLeftState.floatValue).coerceAtLeast(0f)
+                // THE FIX: Calculate it locally, then push it to the state!
+                val currentHenElapsed = (6.0f - visualTimeLeftState.floatValue).coerceAtLeast(0f)
+                henSequenceElapsedState.floatValue = currentHenElapsed
 
                 if (!currentIsPaused) {
-                    if (henSequenceElapsed > 0.5f && henSequenceElapsed < 2.5f) {
+                    if (currentHenElapsed > 0.5f && currentHenElapsed < 2.5f) {
                         if (!hasPlayedFly) {
                             audio.playLoudCluck()
                             audio.playWingFlap(audio.timerVolume)
                             hasPlayedFly = true
                         }
-                        val currentVol = (2.5f - henSequenceElapsed) / 1.5f
+                        val currentVol = (2.5f - currentHenElapsed) / 1.5f
                         audio.updateWingFlapVolume(currentVol.coerceIn(0f, 1f))
-                    } else if (henSequenceElapsed >= 2.5f) {
+                    } else if (currentHenElapsed >= 2.5f) {
                         audio.stopWingFlap()
-                        hasPlayedFly = true // Prevents loud cluck if swapping to someone already post-flight!
+                        hasPlayedFly = true
                     }
                 }
             }
@@ -276,7 +282,7 @@ fun BombScreen(
                     }
                 },
                 eggWobbleRotation = eggWobbleAnim.value,
-                henSequenceElapsed = henSequenceElapsed.coerceAtMost(2.5f),
+                henSequenceProvider = henProvider,
                 showEgg = true,
                 crackStage = crackStage,
                 isDarkModeShadows = isDarkMode
@@ -326,7 +332,7 @@ fun BombScreen(
                                 isCritical = state.isCritical,
                                 isPaused = state.isPaused,
                                 colors = colors,
-                                henSequenceElapsed = henSequenceElapsed
+                                henSequenceProvider = henProvider
                             )
                             AbortButtonContent(colors) {
                                 audio.playClick()
@@ -379,7 +385,7 @@ fun BombScreen(
                                 isCritical = state.isCritical,
                                 isPaused = state.isPaused,
                                 colors = colors,
-                                henSequenceElapsed = henSequenceElapsed
+                                henSequenceProvider = henProvider
                             )
                         }
 

@@ -46,6 +46,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -477,7 +478,7 @@ fun BombVisualContent(
     onTogglePause: () -> Unit,
     onShock: () -> Unit = {}, // <-- NEW CALLBACK
     eggWobbleRotation: Float = 0f,
-    henSequenceElapsed: Float = 0f,
+    henSequenceProvider: () -> Float = { 0f },
     showEgg: Boolean = true,
     crackStage: Int = 0,
     isPainedBeakOpen: Boolean = false,
@@ -490,7 +491,7 @@ fun BombVisualContent(
             isPaused = isPaused,
             onTogglePause = onTogglePause,
             eggWobbleRotation = eggWobbleRotation,
-            henSequenceElapsed = henSequenceElapsed,
+            henSequenceElapsed = henSequenceProvider().coerceAtMost(2.5f),
             showEgg = showEgg,
             crackStage = crackStage,
             isPainedBeakOpen = isPainedBeakOpen,
@@ -519,7 +520,14 @@ fun BombVisualContent(
 }
 
 @Composable
-fun BombTextContent(style: String, timeLeftProvider: () -> Float, isCritical: Boolean, isPaused: Boolean, colors: AppColors, henSequenceElapsed: Float = 0f) {
+fun BombTextContent(
+    style: String,
+    timeLeftProvider: () -> Float,
+    isCritical: Boolean,
+    isPaused: Boolean,
+    colors: AppColors,
+    henSequenceProvider: () -> Float = { 0f } // <-- Updated to provider!
+) {
 
     // THE FIX: "Press the button" to get the latest time!
     val timeLeft = timeLeftProvider()
@@ -630,7 +638,11 @@ fun BombTextContent(style: String, timeLeftProvider: () -> Float, isCritical: Bo
             StrokeGlowText(text, FrogBody, 48.sp)
         }
         "HEN" -> {
-            val showCracking = henSequenceElapsed > 0.5f
+            // THE FIX: derivedStateOf acts as a shield, absorbing the 60fps float updates
+            // and only triggering a recomposition when the boolean result actually flips!
+            val showCracking by remember {
+                derivedStateOf { henSequenceProvider() > 0.5f }
+            }
             val text = if (showCracking) stringResource(R.string.cracking) else stringResource(R.string.cluck)
             val color = if (showCracking) NeonRed else NeonOrange
             StrokeGlowText(text, color, 48.sp)

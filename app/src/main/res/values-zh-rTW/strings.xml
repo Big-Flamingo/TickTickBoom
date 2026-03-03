@@ -88,4 +88,6 @@
     <string name="title_delete_preset">刪除預設組合？</string>
     <string name="desc_delete_preset">確定要刪除「%1$s」嗎？此動作無法復原。</string>
     <string name="btn_delete">刪除</string>
+
+    <string name="btn_invert_order">反轉順序</string>
 </resources>

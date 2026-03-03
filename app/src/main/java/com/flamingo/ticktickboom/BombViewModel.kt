@@ -229,7 +229,7 @@ class BombViewModel(private val audio: AudioController, private val groupManager
     private fun startGameLoop() {
         gameLoopJob?.cancel()
 
-        gameLoopJob = viewModelScope.launch(Dispatchers.Default) {
+        gameLoopJob = viewModelScope.launch {
             var lastTimeNanos = System.nanoTime()
             var lastUiUpdateMs = 0L
 
@@ -306,7 +306,7 @@ class BombViewModel(private val audio: AudioController, private val groupManager
 
                     if (newIsLedOn && (currentRunTimeMs - lastLedTurnOnTimeMs > 50)) newIsLedOn = false
 
-                    if (currentRunTimeMs - lastUiUpdateMs >= 16L || newIsLedOn != currentState.isLedOn) {
+                    if (currentRunTimeMs - lastUiUpdateMs >= 8L || newIsLedOn != currentState.isLedOn) {
                         _state.update {
                             it.copy(
                                 timeLeft = newTimeLeft,
@@ -379,53 +379,56 @@ class BombViewModel(private val audio: AudioController, private val groupManager
 
             // 3. --- SAVE THE ROUND RESULTS TO DISK INSTANTLY ---
             activePresetId?.let { presetId ->
-                val allPresets = groupManager.loadPresets().toMutableList()
-                val targetIndex = allPresets.indexOfFirst { it.id == presetId }
+                withContext(Dispatchers.IO) {
+                    val allPresets = groupManager.loadPresets().toMutableList()
+                    val targetIndex = allPresets.indexOfFirst { it.id == presetId }
 
-                if (targetIndex != -1) {
-                    val targetPreset = allPresets[targetIndex]
-                    var masterPlayers = targetPreset.players.toMutableList()
+                    if (targetIndex != -1) {
+                        val targetPreset = allPresets[targetIndex]
+                        var masterPlayers = targetPreset.players.toMutableList()
 
-                    // Sync the active players' exact remaining times back to the master roster
-                    for (i in masterPlayers.indices) {
-                        val activeMatch = updatedPlayers.find { it.id == masterPlayers[i].id }
-                        if (activeMatch != null) {
-                            masterPlayers[i] = masterPlayers[i].copy(
-                                timeLeft = activeMatch.timeLeft,
-                                isAbsent = activeMatch.isAbsent
-                            )
+                        // Sync the active players' exact remaining times back to the master roster
+                        for (i in masterPlayers.indices) {
+                            val activeMatch = updatedPlayers.find { it.id == masterPlayers[i].id }
+                            if (activeMatch != null) {
+                                masterPlayers[i] = masterPlayers[i].copy(
+                                    timeLeft = activeMatch.timeLeft,
+                                    isAbsent = activeMatch.isAbsent
+                                )
+                            }
                         }
+
+                        // --- FIX 2: THE AUTO-RESET (Match Over!) ---
+                        // Count how many people in the whole class are still checked-in
+                        val survivors = masterPlayers.count { !it.isAbsent }
+
+                        // If only 1 (or 0) players are left, the match is over! Reset everyone.
+                        if (survivors <= 1) {
+                            masterPlayers = masterPlayers.map {
+                                it.copy(
+                                    isAbsent = false,
+                                    isEliminated = false,
+                                    timeLeft = targetPreset.defaultTime
+                                )
+                            }.toMutableList()
+                        }
+
+                        // --- NEW CLASSROOM QOL: ROTATE THE CIRCLE! ---
+                        // We find the doomed player in the MASTER list (because indices might differ)
+                        val doomedId = updatedPlayers[doomedIndex].id
+                        val masterDoomedIndex = masterPlayers.indexOfFirst { it.id == doomedId }
+
+                        if (masterDoomedIndex != -1) {
+                            // The next player in the circle should be the start of the list.
+                            // So we split the list *after* the doomed player.
+                            val splitIndex = (masterDoomedIndex + 1) % masterPlayers.size
+                            masterPlayers =
+                                (masterPlayers.drop(splitIndex) + masterPlayers.take(splitIndex)).toMutableList()
+                        }
+
+                        allPresets[targetIndex] = targetPreset.copy(players = masterPlayers)
+                        groupManager.savePresets(allPresets)
                     }
-
-                    // --- FIX 2: THE AUTO-RESET (Match Over!) ---
-                    // Count how many people in the whole class are still checked-in
-                    val survivors = masterPlayers.count { !it.isAbsent }
-
-                    // If only 1 (or 0) players are left, the match is over! Reset everyone.
-                    if (survivors <= 1) {
-                        masterPlayers = masterPlayers.map {
-                            it.copy(
-                                isAbsent = false,
-                                isEliminated = false,
-                                timeLeft = targetPreset.defaultTime
-                            )
-                        }.toMutableList()
-                    }
-
-                    // --- NEW CLASSROOM QOL: ROTATE THE CIRCLE! ---
-                    // We find the doomed player in the MASTER list (because indices might differ)
-                    val doomedId = updatedPlayers[doomedIndex].id
-                    val masterDoomedIndex = masterPlayers.indexOfFirst { it.id == doomedId }
-
-                    if (masterDoomedIndex != -1) {
-                        // The next player in the circle should be the start of the list.
-                        // So we split the list *after* the doomed player.
-                        val splitIndex = (masterDoomedIndex + 1) % masterPlayers.size
-                        masterPlayers = (masterPlayers.drop(splitIndex) + masterPlayers.take(splitIndex)).toMutableList()
-                    }
-
-                    allPresets[targetIndex] = targetPreset.copy(players = masterPlayers)
-                    groupManager.savePresets(allPresets)
                 }
             }
 

@@ -87,4 +87,6 @@
     <string name="title_delete_preset">Delete Preset?</string>
     <string name="desc_delete_preset">Are you sure you want to delete "%1$s"? This cannot be undone.</string>
     <string name="btn_delete">DELETE</string>
+
+    <string name="btn_invert_order">INVERT ORDER</string>
 </resources>

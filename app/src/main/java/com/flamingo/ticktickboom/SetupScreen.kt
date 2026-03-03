@@ -1135,7 +1135,7 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, audio: AudioController, 
                                     }
                                 ) {
                                     Text(
-                                        text = "INVERT ORDER",
+                                        text = stringResource(R.string.btn_invert_order),
                                         color = NeonCyan,
                                         fontSize = 10.sp,
                                         fontWeight = FontWeight.Bold,
