@@ -1,5 +1,6 @@
 package com.flamingo.ticktickboom
 
+import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.font.Font
@@ -62,6 +63,7 @@ val CustomFont = FontFamily(
 )
 
 // --- DATA CLASSES FOR THEME ---
+@Immutable
 data class AppColors(
     val background: Color,
     val surface: Color,

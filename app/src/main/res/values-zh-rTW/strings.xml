@@ -53,7 +53,6 @@
     <string name="tab_group_mode">群組模式</string>
     <string name="no_saved_presets">沒有已儲存的預設！</string>
     <string name="btn_create_preset">建立預設</string>
-    <string name="label_select_preset">選擇預設：</string>
     <string name="btn_new">新增</string>
     <string name="default_preset_name">預設 %1$d</string>
 
@@ -81,4 +80,12 @@
     <string name="label_on_explosion">爆炸時：</string>
     <string name="rule_keep_times">保留剩餘時間</string>
     <string name="rule_reset_times">重設時間</string>
+
+    <string name="label_single_preset">1 個預設：</string>
+    <string name="label_multiple_presets">%1$d 個預設：</string>
+
+    <string name="no_other_presets">沒有其他預設組合！</string>
+    <string name="title_delete_preset">刪除預設組合？</string>
+    <string name="desc_delete_preset">確定要刪除「%1$s」嗎？此動作無法復原。</string>
+    <string name="btn_delete">刪除</string>
 </resources>

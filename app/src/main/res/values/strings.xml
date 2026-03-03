@@ -52,7 +52,6 @@
     <string name="tab_group_mode">GROUP MODE</string>
     <string name="no_saved_presets">No saved presets!</string>
     <string name="btn_create_preset">Create Preset</string>
-    <string name="label_select_preset">SELECT PRESET:</string>
     <string name="btn_new">New</string>
     <string name="default_preset_name">Preset %1$d</string>
 
@@ -80,4 +79,12 @@
     <string name="label_on_explosion">ON EXPLOSION:</string>
     <string name="rule_keep_times">KEEP TIMES</string>
     <string name="rule_reset_times">RESET TIMES</string>
+
+    <string name="label_single_preset">1 PRESET:</string>
+    <string name="label_multiple_presets">%1$d PRESETS:</string>
+
+    <string name="no_other_presets">No other presets!</string>
+    <string name="title_delete_preset">Delete Preset?</string>
+    <string name="desc_delete_preset">Are you sure you want to delete "%1$s"? This cannot be undone.</string>
+    <string name="btn_delete">DELETE</string>
 </resources>

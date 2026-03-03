@@ -73,12 +73,22 @@ class MainActivity : AppCompatActivity() {
             // 1. Get the screen's pixel density
             val density = resources.displayMetrics.density
 
-            // 2. Define your movement in 'dp' instead of raw pixels
-            // (Tweak this number until it matches your Compose UI)
-            val moveUpInDp = -384f
+            // 2. Find the exact height of the user's specific status bar (notch/hole-punch)
+            val windowInsets = androidx.core.view.WindowInsetsCompat.toWindowInsetsCompat(splashScreenView.rootWindowInsets)
+            val statusBarHeightPx = windowInsets.getInsets(androidx.core.view.WindowInsetsCompat.Type.statusBars()).top
 
-            // 3. Multiply them to get the perfect pixel count for THIS specific phone!
-            val translationYValue = moveUpInDp * density
+            // 3. Add your Compose UI math! (32dp for center of Box + 2dp offset = 34dp)
+            val targetDistanceFromTopDp = 34f
+            val composeOffsetPx = targetDistanceFromTopDp * density
+
+            // 4. Combine them to find the true bullseye on the screen
+            val targetYInPixels = statusBarHeightPx + composeOffsetPx
+
+            // 5. Find the exact center where the splash bomb starts
+            val startYInPixels = splashScreenView.height / 2f
+
+            // 6. Calculate the perfect distance to travel!
+            val translationYValue = targetYInPixels - startYInPixels
 
             val moveUpAnim = ObjectAnimator.ofFloat(iconView, View.TRANSLATION_Y, 0f, translationYValue)
             val shrinkXAnim = ObjectAnimator.ofFloat(iconView, View.SCALE_X, 1f, 0.22f)

@@ -38,7 +38,6 @@ data class Particle(
     val rotationSpeed: Float
 )
 
-@Immutable
 data class SmokeParticle(
     var x: Float,
     var y: Float,
