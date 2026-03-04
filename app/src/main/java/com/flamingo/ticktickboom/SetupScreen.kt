@@ -1061,7 +1061,9 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, audio: AudioController, 
                             placeholder = stringResource(R.string.hint_preset_name),
                             color = NeonOrange,
                             colors = colors,
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(56.dp),
                             keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
                                 capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Words,
                                 imeAction = androidx.compose.ui.text.input.ImeAction.Done
@@ -1175,7 +1177,9 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, audio: AudioController, 
                                 placeholder = stringResource(R.string.hint_player_name),
                                 color = NeonOrange,
                                 colors = colors,
-                                modifier = Modifier.weight(1f), // Keeps it perfectly aligned next to the (+) button!
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(56.dp),
                                 keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
                                     capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Words,
                                     imeAction = androidx.compose.ui.text.input.ImeAction.Done
