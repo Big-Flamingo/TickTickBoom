@@ -6,7 +6,7 @@
     <string name="randomized_sequence">RANDOMIZED DETONATION SEQUENCE</string>
     <string name="style_digital">DIGITAL</string>
     <string name="style_fuse">FUSE</string>
-    <string name="style_timer">TIMER</string>
+    <string name="style_dynamite">DYNAMITE</string>
     <string name="min_secs">MIN SECS</string>
     <string name="max_secs">MAX SECS</string>
     <string name="error_max_time">Maximum time is 99,999 seconds!</string>

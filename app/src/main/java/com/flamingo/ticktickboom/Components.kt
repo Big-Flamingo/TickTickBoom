@@ -35,9 +35,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.rounded.AccessTime
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Slider
@@ -66,6 +64,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
@@ -409,6 +408,7 @@ fun CustomTextField(
 @Composable
 fun VolumeSlider(
     label: String,
+    iconPainter: Painter,
     value: Float,
     color: Color,
     colors: AppColors,
@@ -440,7 +440,7 @@ fun VolumeSlider(
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
-                    imageVector = if (label == stringResource(R.string.timer_volume)) Icons.AutoMirrored.Filled.VolumeUp else Icons.Filled.Warning,
+                    painter = iconPainter,
                     contentDescription = null,
                     tint = animatedLabelColor, // <-- Now illuminates!
                     modifier = Modifier.size(12.dp)

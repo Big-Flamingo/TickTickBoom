@@ -47,19 +47,20 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.LightMode
-import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.SwapVert
-import androidx.compose.material.icons.rounded.AccessTime
+import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material.icons.rounded.DeveloperBoard
 import androidx.compose.material.icons.rounded.LocalFireDepartment
 import androidx.compose.material3.Icon
@@ -67,6 +68,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -78,6 +80,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -151,6 +154,10 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, audio: AudioController, 
     var newPlayerName by remember { mutableStateOf("") }
     var tempPlayers by remember { mutableStateOf(emptyList<Player>()) }
     var resetTimeRule by remember { mutableStateOf(false) }
+
+    // --- NEW: In-line Editing State ---
+    var editingPlayerId by remember { mutableStateOf<String?>(null) }
+    var editingPlayerName by remember { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue("")) }
 
     var style by remember { mutableStateOf(prefs.getString("style", "C4") ?: "C4") }
     var timerVol by remember { mutableFloatStateOf(prefs.getFloat("vol_timer", 1.0f)) }
@@ -547,7 +554,7 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, audio: AudioController, 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 StyleButton(stringResource(R.string.style_digital), Icons.Rounded.DeveloperBoard, style == "C4", NeonCyan, colors) { saveStyle("C4") }
                 StyleButton(stringResource(R.string.style_fuse), Icons.Rounded.LocalFireDepartment, style == "FUSE", NeonOrange, colors) { saveStyle("FUSE") }
-                StyleButton(stringResource(R.string.style_timer), Icons.Rounded.AccessTime, style == "DYNAMITE", NeonRed, colors) { saveStyle("DYNAMITE") }
+                StyleButton(stringResource(R.string.style_dynamite), Icons.Outlined.Timer, style == "DYNAMITE", NeonRed, colors) { saveStyle("DYNAMITE") }
             }
             Spacer(modifier = Modifier.height(24.dp))
 
@@ -571,7 +578,7 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, audio: AudioController, 
                         Spacer(modifier = Modifier.height(16.dp))
                         ActionButton(
                             text = stringResource(R.string.btn_create_preset),
-                            icon = Icons.Filled.PlayArrow,
+                            icon = Icons.Filled.Add,
                             color = NeonOrange,
                             textColor = colors.text,
                             borderColor = NeonOrange,
@@ -800,7 +807,12 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, audio: AudioController, 
                                                     )
 
                                                     Icon(
-                                                        imageVector = if (preset.resetOnExplosion) Icons.Filled.Refresh else Icons.Filled.Lock,
+                                                        // --- THE FIX: Use 'painter =' and rememberVectorPainter! ---
+                                                        painter = if (preset.resetOnExplosion) {
+                                                            androidx.compose.ui.graphics.vector.rememberVectorPainter(Icons.Filled.History)
+                                                        } else {
+                                                            androidx.compose.ui.res.painterResource(id = R.drawable.ic_pace)
+                                                        },
                                                         contentDescription = stringResource(R.string.desc_toggle_auto_reset),
                                                         tint = if (preset.resetOnExplosion) NeonOrange else colors.text,
                                                         modifier = Modifier
@@ -1080,7 +1092,7 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, audio: AudioController, 
 
                         // 2. Apply them to the Icons
                         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
-                            Icon(Icons.Filled.Lock, null, tint = if(!resetTimeRule) colors.text else colors.textSecondary, modifier = Modifier.size(16.dp).graphicsLayer { scaleX = keepScale; scaleY = keepScale })
+                            Icon(painter = androidx.compose.ui.res.painterResource(id = R.drawable.ic_pace), null, tint = if(!resetTimeRule) colors.text else colors.textSecondary, modifier = Modifier.size(16.dp).graphicsLayer { scaleX = keepScale; scaleY = keepScale })
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(stringResource(R.string.rule_keep_times), color = if(!resetTimeRule) colors.text else colors.textSecondary, fontSize = 10.sp, fontWeight = FontWeight.Normal, fontFamily = CustomFont)
 
@@ -1096,7 +1108,7 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, audio: AudioController, 
 
                             Text(stringResource(R.string.rule_reset_times), color = if(resetTimeRule) NeonOrange else colors.textSecondary, fontSize = 10.sp, fontWeight = FontWeight.Normal, fontFamily = CustomFont)
                             Spacer(modifier = Modifier.width(4.dp))
-                            Icon(Icons.Filled.Refresh, null, tint = if(resetTimeRule) NeonOrange else colors.textSecondary, modifier = Modifier.size(16.dp).graphicsLayer { scaleX = resetScale; scaleY = resetScale })
+                            Icon(Icons.Filled.History, null, tint = if(resetTimeRule) NeonOrange else colors.textSecondary, modifier = Modifier.size(16.dp).graphicsLayer { scaleX = resetScale; scaleY = resetScale })
                         }
 
                         Spacer(modifier = Modifier.height(24.dp))
@@ -1179,7 +1191,7 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, audio: AudioController, 
                                 })
                             )
                             Spacer(modifier = Modifier.width(8.dp))
-                            Icon(Icons.Filled.Add, null, tint = NeonOrange, modifier = Modifier.size(36.dp).clickable(
+                            Icon(Icons.Filled.PersonAdd, null, tint = NeonOrange, modifier = Modifier.size(36.dp).clickable(
                                 interactionSource = remember { MutableInteractionSource() },
                                 indication = null
                             ) {
@@ -1215,13 +1227,69 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, audio: AudioController, 
                                                 modifier = Modifier.width(28.dp)
                                             )
                                             Spacer(modifier = Modifier.width(8.dp))
-                                            Text(
-                                                text = p.name,
-                                                color = colors.text,
-                                                fontFamily = CustomFont,
-                                                maxLines = 1,
-                                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                                            )
+                                            Spacer(modifier = Modifier.width(8.dp))
+
+                                            // --- THE IN-LINE EDITING SWAP ---
+                                            if (editingPlayerId == p.id) {
+                                                // 1. The Active Text Box
+                                                val focusRequester = remember { androidx.compose.ui.focus.FocusRequester() }
+
+                                                // Auto-pop the keyboard when tapped!
+                                                LaunchedEffect(Unit) { focusRequester.requestFocus() }
+
+                                                androidx.compose.foundation.text.BasicTextField(
+                                                    value = editingPlayerName,
+                                                    onValueChange = { editingPlayerName = it },
+                                                    textStyle = androidx.compose.ui.text.TextStyle(
+                                                        color = NeonOrange,
+                                                        fontFamily = CustomFont,
+                                                        fontSize = 16.sp // Matches your standard font size
+                                                    ),
+                                                    cursorBrush = androidx.compose.ui.graphics.SolidColor(colors.text),
+                                                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                                                        capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Words,
+                                                        imeAction = androidx.compose.ui.text.input.ImeAction.Done
+                                                    ),
+                                                    keyboardActions = androidx.compose.foundation.text.KeyboardActions(
+                                                        onDone = {
+                                                            if (editingPlayerName.text.isNotBlank()) {
+                                                                tempPlayers = tempPlayers.map {
+                                                                    if (it.id == p.id) it.copy(name = editingPlayerName.text.trim()) else it
+                                                                }
+                                                            }
+                                                            editingPlayerId = null // Close the editor
+                                                            focusManager.clearFocus() // Hide keyboard
+                                                            audio.playClick()
+                                                        }
+                                                    ),
+                                                    modifier = Modifier
+                                                        .weight(1f)
+                                                        .focusRequester(focusRequester)
+                                                )
+                                            } else {
+                                                // 2. The Normal Clickable Text
+                                                Text(
+                                                    text = p.name,
+                                                    color = colors.text,
+                                                    fontFamily = CustomFont,
+                                                    maxLines = 1,
+                                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                                    modifier = Modifier
+                                                        .weight(1f)
+                                                        .clickable(
+                                                            interactionSource = remember { MutableInteractionSource() },
+                                                            indication = null // Keeps the click invisible so it doesn't flash
+                                                        ) {
+                                                            audio.playClick()
+                                                            editingPlayerId = p.id
+                                                            editingPlayerName = androidx.compose.ui.text.input.TextFieldValue(
+                                                                text = p.name,
+                                                                selection = androidx.compose.ui.text.TextRange(p.name.length)
+                                                            )
+                                                        }
+                                                )
+                                            }
+                                            // --- END SWAP ---
                                         }
 
                                         // NEW: SET AS STARTING PLAYER (Rotates the circle)
@@ -1296,7 +1364,7 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, audio: AudioController, 
                             Box(modifier = Modifier.weight(1f)) {
                                 ActionButton(
                                     text = stringResource(R.string.btn_cancel),
-                                    icon = Icons.Filled.Refresh,
+                                    icon = Icons.Filled.Close,
                                     color = unselectedGlass,
                                     textColor = colors.text,
                                     borderColor = faintOutline, // <-- Updated Cancel Border
@@ -1311,7 +1379,7 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, audio: AudioController, 
                             Box(modifier = Modifier.weight(1f)) {
                                 ActionButton(
                                     text = stringResource(R.string.btn_save),
-                                    icon = Icons.Filled.PlayArrow,
+                                    icon = Icons.Filled.Check,
                                     color = NeonOrange,
                                     textColor = colors.text,
                                     borderColor = NeonOrange,
@@ -1368,9 +1436,26 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, audio: AudioController, 
 
             Spacer(modifier = Modifier.height(32.dp))
 
-            VolumeSlider(stringResource(R.string.timer_volume), timerVol, NeonCyan, colors) { saveTimerVol(it) }
+            // 1. The Timer Volume Slider
+            VolumeSlider(
+                label = stringResource(R.string.timer_volume),
+                iconPainter = androidx.compose.ui.res.painterResource(id = R.drawable.ic_share_eta), // <-- Pass Share ETA SVG
+                value = timerVol,
+                color = NeonCyan,
+                colors = colors
+            ) { saveTimerVol(it) }
+
             Spacer(modifier = Modifier.height(16.dp))
-            VolumeSlider(stringResource(R.string.explosion_volume), explodeVol, NeonRed, colors) { saveExplodeVol(it) }
+
+            // 2. The Explosion Volume Slider
+            VolumeSlider(
+                label = stringResource(R.string.explosion_volume),
+                iconPainter = androidx.compose.ui.res.painterResource(id = R.drawable.ic_explosion), // <-- Pass Explosion SVG
+                value = explodeVol,
+                color = NeonRed,
+                colors = colors
+            ) { saveExplodeVol(it) }
+
             Spacer(modifier = Modifier.height(24.dp))
 
             // 1. Declare the Bouncy Springs
