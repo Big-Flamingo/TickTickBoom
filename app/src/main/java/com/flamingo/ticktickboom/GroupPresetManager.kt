@@ -37,6 +37,22 @@ class GroupPresetManager(context: Context) {
     }
 
     fun loadPresets(): List<GroupPreset> {
+        /*// --- TEMPORARY BASELINE PROFILE HACK ---
+        // TODO: Delete this block after generating the profile!
+        return listOf(
+            GroupPreset(
+                id = "baseline_test",
+                presetName = "Baseline Test",
+                players = listOf(
+                    Player("p1", "Player 1", 3f), // 3 seconds so they explode instantly!
+                    Player("p2", "Player 2", 10f)
+                ),
+                defaultTime = 10f,
+                resetOnExplosion = false
+            )
+        )
+        // --- END TEMPORARY HACK ---*/
+
         val jsonString = prefs.getString("saved_presets", null) ?: return emptyList()
         val presets = mutableListOf<GroupPreset>()
 

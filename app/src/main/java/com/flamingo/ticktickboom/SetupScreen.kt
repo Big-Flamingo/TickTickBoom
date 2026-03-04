@@ -511,6 +511,8 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, audio: AudioController, 
                         .background(randomAnimatedBg, RoundedCornerShape(8.dp))
                         .border(if (isRandomSelected) 2.dp else 1.dp, randomAnimatedBorder, RoundedCornerShape(8.dp)) // Independent border!
                         .clip(RoundedCornerShape(8.dp))
+                        // --- THE FIX: Give the hit-box a strict name ---
+                        .semantics { contentDescription = "Random Tab" }
                         .pointerInput(Unit) {
                             detectTapGestures(
                                 onPress = { randomPressed.value = true; tryAwaitRelease(); randomPressed.value = false },
@@ -527,6 +529,8 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, audio: AudioController, 
                         .background(groupAnimatedBg, RoundedCornerShape(8.dp))
                         .border(if (isGroupSelected) 2.dp else 1.dp, groupAnimatedBorder, RoundedCornerShape(8.dp)) // Independent border!
                         .clip(RoundedCornerShape(8.dp))
+                        // --- THE FIX: Give the hit-box a strict name ---
+                        .semantics { contentDescription = "Group Tab" }
                         .pointerInput(Unit) {
                             detectTapGestures(
                                 onPress = { groupPressed.value = true; tryAwaitRelease(); groupPressed.value = false },

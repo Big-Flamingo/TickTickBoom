@@ -53,6 +53,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import kotlinx.coroutines.launch
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 
 @Composable
 fun ExplosionScreen(state: GameState, audio: AudioController, onIntent: (GameIntent) -> Unit) {
@@ -402,6 +404,10 @@ fun ExplosionScreen(state: GameState, audio: AudioController, onIntent: (GameInt
             Box(
                 modifier = Modifier
                     .size(200.dp, 60.dp)
+                    // --- THE FIX: Tell UI Automator exactly where this invisible box is! ---
+                    .semantics {
+                        contentDescription = "Restart Button"
+                    }
                     .clickable(
                         interactionSource = sharedRestartInteraction,
                         indication = null
