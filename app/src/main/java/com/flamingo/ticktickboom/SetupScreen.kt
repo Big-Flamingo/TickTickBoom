@@ -864,7 +864,9 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, audio: AudioController, 
                                                                 color = if (player.isAbsent) colors.textSecondary else colors.text,
                                                                 fontFamily = CustomFont,
                                                                 textAlign = androidx.compose.ui.text.style.TextAlign.End,
-                                                                modifier = Modifier.width(28.dp)
+                                                                maxLines = 1,
+                                                                softWrap = false,
+                                                                modifier = Modifier.width(with(density) { 40.sp.toDp() })
                                                             )
                                                             Spacer(modifier = Modifier.width(8.dp))
                                                             Text(
@@ -1228,7 +1230,9 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, audio: AudioController, 
                                                 color = colors.text,
                                                 fontFamily = CustomFont,
                                                 textAlign = androidx.compose.ui.text.style.TextAlign.End,
-                                                modifier = Modifier.width(28.dp)
+                                                maxLines = 1,
+                                                softWrap = false,
+                                                modifier = Modifier.width(with(density) { 40.sp.toDp() })
                                             )
                                             Spacer(modifier = Modifier.width(8.dp))
                                             Spacer(modifier = Modifier.width(8.dp))
