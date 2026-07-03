@@ -107,6 +107,7 @@ import androidx.compose.ui.zIndex
 import androidx.core.content.edit
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.time.Duration.Companion.milliseconds
 
 @Composable
 fun SetupScreen(colors: AppColors, isDarkMode: Boolean, audio: AudioController, onToggleTheme: () -> Unit, onStart: (TimerSettings) -> Unit, onGroupStart: (GroupPreset, String) -> Unit, onToggleLanguage: () -> Unit) {
@@ -366,7 +367,7 @@ fun SetupScreen(colors: AppColors, isDarkMode: Boolean, audio: AudioController, 
                             detectTapGestures(
                                 onPress = {
                                     val job = scope.launch {
-                                        delay(200)
+                                        delay(200.milliseconds)
                                         isHoldingBomb = true
                                         audio.startHoldingCluck()
                                     }

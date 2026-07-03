@@ -432,7 +432,7 @@ fun PlayerTurnUI(state: GameState, colors: AppColors, audio: AudioController, on
             contentDescription = stringResource(R.string.desc_previous_player),
             tint = NeonCyan,
             modifier = Modifier
-                .size(32.dp)
+                .size(48.dp)
                 .clip(CircleShape)
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
@@ -441,7 +441,7 @@ fun PlayerTurnUI(state: GameState, colors: AppColors, audio: AudioController, on
                     audio.playClick()
                     onIntent(GameIntent.PreviousPlayer)
                 }
-                .padding(4.dp)
+                .padding(12.dp)
         )
 
         Spacer(modifier = Modifier.width(16.dp))
@@ -461,7 +461,7 @@ fun PlayerTurnUI(state: GameState, colors: AppColors, audio: AudioController, on
             contentDescription = stringResource(R.string.desc_next_player),
             tint = NeonCyan,
             modifier = Modifier
-                .size(32.dp)
+                .size(48.dp)
                 .clip(CircleShape)
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
@@ -470,7 +470,7 @@ fun PlayerTurnUI(state: GameState, colors: AppColors, audio: AudioController, on
                     audio.playClick()
                     onIntent(GameIntent.NextPlayer)
                 }
-                .padding(4.dp)
+                .padding(12.dp)
         )
     }
 }

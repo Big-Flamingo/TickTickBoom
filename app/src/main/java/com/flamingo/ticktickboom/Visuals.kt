@@ -258,7 +258,7 @@ const val EXPLOSION_SHADER = """
 @Composable
 fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors, isPaused: Boolean, onTogglePause: () -> Unit, isDarkMode: Boolean) {
     // HYPER OPTIMIZATION: A Primitive Object Pool! Memory is allocated exactly ONCE.
-    val maxSparks = 100
+    val maxSparks = 250
     val sparkX = remember { FloatArray(maxSparks) }
     val sparkY = remember { FloatArray(maxSparks) }
     val sparkVx = remember { FloatArray(maxSparks) }
@@ -280,6 +280,7 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors, isPaused
     val fusePath = remember { Path() }
     val fuseLayerPaint = remember { Paint() }
     val frontRimPath = remember { Path() }
+    val burntTipPath = remember { Path() }
     val ashPath = remember { Path() } // Create ONE Compose Path
     val pathMeasure = remember { android.graphics.PathMeasure() }
     var cachedSize by remember { mutableStateOf(Size.Zero) }
@@ -299,6 +300,15 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors, isPaused
         animationSpec = infiniteRepeatable(tween(200, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "glint"
     )
 
+    // --- THE COOLING GLOW ANIMATION ---
+    // --- THE FIX: Asymmetric Animation Spec ---
+    val coolingColor by androidx.compose.animation.animateColorAsState(
+        targetValue = if (isPaused) Color(0xFF1E293B) else NeonRed,
+        // INSTANT heat-up (0ms) when unpaused, 5-second (5000ms) cooldown when paused!
+        animationSpec = if (isPaused) tween(durationMillis = 5000) else tween(durationMillis = 0),
+        label = "tip_cooling"
+    )
+
     val showBloom = isCritical || progress > 0.95f
     val criticalAlpha by animateFloatAsState(
         targetValue = if (showBloom) 1f else 0f,
@@ -310,13 +320,16 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors, isPaused
     val d = density.density
 
     // Measurements
-    val protrusionW = 40f * d
+    val protrusionW = 60f * d
     val protrusionH = 24f * d
     val cylinderOvalH = 14f * d
     val fuseInnerOffset = 3f * d
     val holeW = 12f * d
     val holeH = holeW * (cylinderOvalH / protrusionW)
-    val strokeW = 6f * d
+    val strokeW = 8f * d
+    val tipRadius = 4f * d
+
+    val tipRect = remember(tipRadius) { Rect(-tipRadius, -tipRadius, tipRadius, tipRadius) }
 
     // --- NEW: Hoisted Ash Strokes ---
     val ashStrokeMain = remember(d) { Stroke(width = strokeW, cap = StrokeCap.Round) }
@@ -324,7 +337,7 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors, isPaused
     val ashStrokeInner = remember(d) { Stroke(width = strokeW * 0.4f, cap = StrokeCap.Round) }
 
     // Particles/Glint configs...
-    val glintSizeL = 24f * d; val glintSizeS = 4f * d; val glintOffsetL = 12f * d; val glintOffsetS = 2f * d
+    val glintSizeL = 36f * d; val glintSizeS = 6f * d; val glintOffsetL = 18f * d; val glintOffsetS = 3f * d
     val glowRadius = 25f * d; val coreRadius = 8f * d; val whiteRadius = 4f * d
     val particleRad = 3f * d; val particleRadS = 1.5f * d; val tapThreshold = 60f * d; val fuseYOffset = 5f * d
     val sparkPos = remember { floatArrayOf(0f, 0f) }
@@ -568,8 +581,33 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors, isPaused
                 }
 
                 val pos = floatArrayOf(0f, 0f)
-                pathMeasure.getPosTan(currentBurnPoint, pos, null)
+                val tan = floatArrayOf(0f, 0f)
+                pathMeasure.getPosTan(currentBurnPoint, pos, tan)
                 val sparkCenter = Offset(pos[0], pos[1])
+                val fuseAngle = atan2(tan[1], tan[0]).toDouble()
+
+                // --- THE NEW COOLING BURNT TIP ---
+                if (!isCritical) {
+                    burntTipPath.reset()
+                    burntTipPath.moveTo(0f, -tipRadius)
+
+                    // --- FIXED: Uses the cached tipRect. Zero memory allocation! ---
+                    burntTipPath.arcTo(tipRect, -90f, 180f, false)
+
+                    burntTipPath.quadraticTo(-tipRadius * 1f, 0f, 0f, -tipRadius)
+                    burntTipPath.close()
+
+                    withTransform({
+                        translate(sparkCenter.x, sparkCenter.y)
+                        // Rotate the entire shape to perfectly align with the fuse cord
+                        rotate(Math.toDegrees(fuseAngle).toFloat(), pivot = Offset.Zero)
+                    }) {
+                        drawPath(
+                            path = burntTipPath,
+                            color = coolingColor
+                        )
+                    }
+                }
 
                 if (!isReflection) {
                     // Update primitive array instead of triggering Compose State!
@@ -578,18 +616,29 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors, isPaused
                 }
                 if (!isPaused && !isReflection) {
                     // Spawn Spark
-                    if (Math.random() < 0.3) {
+                    // INCREASE the chance from 0.3 (30%) to 0.8 (80%) per frame
+                    if (Math.random() < 0.8) {
+
+                        // NEW: Force it to spawn 2 to 4 sparks all at once!
+                        val sparksToSpawn = (2..4).random()
+                        var spawnedCount = 0
+
                         for (i in 0 until maxSparks) {
-                            if (sparkLife[i] <= 0f) { // Found empty slot!
-                                val angle = Math.random() * Math.PI * 2
-                                val speed = (2f + Math.random() * 4f).toFloat()
+                            if (sparkLife[i] <= 0f) { // Found an empty slot!
+                                val spread = Math.PI / 2.0
+                                val angle = fuseAngle - (spread / 2.0) + (Math.random() * spread)
+                                val speed = (4f + Math.random() * 6f).toFloat()
+
                                 sparkX[i] = if (isCritical) cachedInnerHoleRect.center.x else sparkCenter.x
                                 sparkY[i] = if (isCritical) cachedInnerHoleRect.center.y else sparkCenter.y
                                 sparkVx[i] = (cos(angle) * speed).toFloat()
-                                sparkVy[i] = (sin(angle) * speed - 2f).toFloat()
+                                sparkVy[i] = (sin(angle) * speed).toFloat()
                                 sparkLife[i] = (0.2f + Math.random() * 0.3f).toFloat()
                                 sparkMaxLife[i] = 0.5f
-                                break
+
+                                spawnedCount++
+                                // Keep searching for empty slots until we hit our target!
+                                if (spawnedCount >= sparksToSpawn) break
                             }
                         }
                     }
@@ -614,7 +663,7 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors, isPaused
                 for (i in 0 until maxSmoke) {
                     if (smokeLife[i] > 0f) {
                         val p = 1f - (smokeLife[i] / smokeMaxLife[i])
-                        val currentSize = 30f + (p * 60f)
+                        val currentSize = 50f + (p * 90f)
                         val halfSize = currentSize / 2f
                         val currentAlpha = (1f - p).coerceIn(0f, 0.6f)
                         val rotationSpeed = if (smokeVx[i] > 0) 50f else -50f

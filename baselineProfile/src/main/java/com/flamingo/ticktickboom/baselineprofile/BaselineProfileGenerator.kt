@@ -21,7 +21,9 @@ class BaselineProfileGenerator {
     ) {
         startActivityAndWait()
 
-        // --- PHASE 1: C4 SPARKS & RANDOM MODE EXPLOSION ---
+        // ==========================================================
+        // PHASE 1: C4 SPARKS & RANDOM MODE EXPLOSION
+        // ==========================================================
 
         // 1. Wait for the Random Tab hit-box to render
         device.wait(Until.hasObject(By.desc("Random Tab")), 5000)
@@ -30,7 +32,7 @@ class BaselineProfileGenerator {
         device.findObject(By.desc("Random Tab"))?.click()
         device.waitForIdle()
 
-        // Tap "DIGITAL" to select the C4 Style
+        // 3. Tap "DIGITAL" to ensure the C4 Electric Shaders are tested!
         device.findObject(By.textContains("DIGITAL"))?.click()
 
         // Arm the system
@@ -39,51 +41,52 @@ class BaselineProfileGenerator {
         // Wait for the Bomb Screen to load
         device.wait(Until.hasObject(By.desc("Abort")), 2000)
 
-        // --- THE FIX: Find the exact panel using your Semantics or Text! ---
-        // (Change "VOLTAGE" to whatever one of the words is in your R.string.high_voltage_warning)
+        // Find the voltage panel
         val dangerPanel = device.findObject(By.textContains("VOLTAGE"))
-            ?: device.findObject(By.desc("Trigger Shock")) // Fallback to your content description
+            ?: device.findObject(By.desc("Trigger Shock"))
 
-        // Trigger the C4 Sparks!
+        // 4. Trigger the C4 Sparks!
         dangerPanel?.click()
         Thread.sleep(300)
         dangerPanel?.click()
 
-        // 1. Wait until the Explosion Screen officially loads
+        // Wait until the Explosion Screen officially loads
         device.wait(Until.hasObject(By.desc("Restart Button")), 15000)
 
-        // --- THE FIX: Force the profile to capture the heavy particle math! ---
-        // Sleep for 3 or 4 seconds to let the explosion animation play out fully.
+        // Sleep for 3.5 seconds to let the C4 explosion particle math play out fully
         Thread.sleep(3500)
 
-        // 2. NOW click the exact center of the hit-box
+        // Click Restart to go back to the Setup Screen
         device.findObject(By.desc("Restart Button"))?.click()
         device.wait(Until.hasObject(By.desc("Arm System and Start Timer")), 2000)
 
 
-        // --- PHASE 2: GROUP MODE & VICTORY SCREEN ---
+        // ==========================================================
+        // PHASE 2: FUSE MATH & GROUP MODE VICTORY SCREEN
+        // ==========================================================
 
         // Switch to the Group Mode Tab via hit-box
         device.findObject(By.desc("Group Tab"))?.click()
         device.waitForIdle()
 
-        // Because of our hack, "Baseline Test" is automatically selected!
+        // 5. Tap "FUSE" to ensure our newly optimized math is tested
+        device.findObject(By.textContains("FUSE"))?.click()
+        device.waitForIdle()
+
+        // Because of the temporary hack in GroupPresetManager, "Baseline Test" is selected.
         // Arm the system
         device.findObject(By.desc("Arm System and Start Timer"))?.click()
 
-        // 1. Wait until the Explosion Screen officially loads
+        // Wait until the Explosion / Victory Screen officially loads
         device.wait(Until.hasObject(By.desc("Restart Button")), 15000)
 
-        // --- THE FIX: Force the profile to capture the heavy particle math! ---
-        // Sleep for 3 or 4 seconds to let the explosion animation play out fully.
+        // Sleep for 3.5 seconds to let the explosion particles AND the Victory Confetti physics play out fully
         Thread.sleep(3500)
 
-        // 2. NOW click the exact center of the hit-box
+        // Click Restart to navigate back to the Setup Screen
         device.findObject(By.desc("Restart Button"))?.click()
 
-        // Let the Victory Screen confetti render for 2 seconds so the compiler captures it
-        Thread.sleep(2000)
-
-        // Done!
+        // Wait to ensure we successfully returned to the Setup Screen
+        device.wait(Until.hasObject(By.desc("Arm System and Start Timer")), 2000)
     }
 }

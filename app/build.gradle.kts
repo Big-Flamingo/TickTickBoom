@@ -6,12 +6,12 @@ plugins {
 
 android {
     namespace = "com.flamingo.ticktickboom"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.flamingo.ticktickboom"
         minSdk = 26
-        targetSdk = 36
+        targetSdk = 37
         versionCode = 1
         versionName = "1.0"
 

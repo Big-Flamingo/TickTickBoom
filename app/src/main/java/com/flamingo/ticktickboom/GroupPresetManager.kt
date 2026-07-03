@@ -44,7 +44,7 @@ class GroupPresetManager(context: Context) {
                 id = "baseline_test",
                 presetName = "Baseline Test",
                 players = listOf(
-                    Player("p1", "Player 1", 3f), // 3 seconds so they explode instantly!
+                    Player("p1", "Player 1", 6f),
                     Player("p2", "Player 2", 10f)
                 ),
                 defaultTime = 10f,
