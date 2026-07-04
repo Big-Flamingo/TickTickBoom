@@ -286,7 +286,6 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors, isPaused
     var cachedSize by remember { mutableStateOf(Size.Zero) }
     var cachedOuterRimRect by remember { mutableStateOf(Rect.Zero) }
     var cachedInnerHoleRect by remember { mutableStateOf(Rect.Zero) }
-    var cachedBloomRect by remember { mutableStateOf(Rect.Zero) }
     var cachedMetalGradient by remember { mutableStateOf<Brush?>(null) }
     var cachedGoldBloomBrush by remember { mutableStateOf<Brush?>(null) }
     var cachedRedBloomBrush by remember { mutableStateOf<Brush?>(null) }
@@ -314,6 +313,12 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors, isPaused
         targetValue = if (showBloom) 1f else 0f,
         animationSpec = tween(durationMillis = 1000, easing = FastOutSlowInEasing),
         label = "criticalBloom"
+    )
+
+    val pauseCooling by animateFloatAsState(
+        targetValue = if (isPaused) 0f else 1f,
+        animationSpec = if (isPaused) tween(durationMillis = 5000) else tween(durationMillis = 0),
+        label = "pauseCooling"
     )
 
     val density = LocalDensity.current
@@ -418,7 +423,6 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors, isPaused
                 // --- THE RECT/PATH FIX: Calculated exactly ONCE when the bomb loads! ---
                 cachedOuterRimRect = Rect(offset = Offset(bombCenterX - protrusionW / 2, neckTopY - cylinderOvalH / 2), size = Size(protrusionW, cylinderOvalH))
                 cachedInnerHoleRect = Rect(center = cachedOuterRimRect.center, radius = holeW / 2).copy(top = cachedOuterRimRect.center.y - holeH / 2, bottom = cachedOuterRimRect.center.y + holeH / 2)
-                cachedBloomRect = cachedInnerHoleRect.inflate(20f * d)
 
                 // --- NEW: Cache the static Brushes! ---
                 val rectLeft = bombCenterX - protrusionW / 2
@@ -430,7 +434,7 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors, isPaused
                 val fuseBase = cachedInnerHoleRect.center
                 cachedGoldBloomBrush = Brush.radialGradient(colors = listOf(Color(0xFFFFFFE0), Color(0xFFFFD700)), center = fuseBase, radius = holeW)
 
-                val drawRadius = cachedBloomRect.width / 2f
+                val drawRadius = cachedOuterRimRect.width / 2f
                 cachedRedBloomBrush = Brush.radialGradient(colors = listOf(NeonRed.copy(alpha = 0.6f), Color.Transparent), center = fuseBase, radius = drawRadius, tileMode = TileMode.Clamp)
 
                 frontRimPath.reset()
@@ -542,14 +546,17 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors, isPaused
                 drawOval(brush = rimGradient, topLeft = cachedOuterRimRect.topLeft, size = cachedOuterRimRect.size)
 
                 val heatThreshold = 60f * d
-                val heatFactor = when {
-                    isPaused -> 0f
+                val targetHeat = when {
                     isCritical -> 1f
                     else -> {
                         val dist = (currentBurnPoint - fuseInnerOffset).coerceAtLeast(0f)
                         (1f - (dist / heatThreshold)).coerceIn(0f, 1f)
                     }
                 }
+
+                // Multiply the raw heat by our 5-second animator!
+                val heatFactor = targetHeat * pauseCooling
+
                 val holeDark = Color(0xFF0F172A)
                 val holeHot = Color(0xFFFFD700)
                 val currentHoleColor = lerp(holeDark, holeHot, heatFactor)
@@ -568,15 +575,33 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors, isPaused
 
                 drawPath(path = frontRimPath, brush = rimGradient)
 
-                if (criticalAlpha > 0f && !isPaused) {
+                // --- THE FIX: Remove !isPaused, and use heatFactor to dynamically shift the colors! ---
+                if (criticalAlpha > 0f) {
                     val fuseBase = cachedInnerHoleRect.center
-                    // Notice we just pass the criticalAlpha directly into the draw function!
-                    drawOval(brush = cachedGoldBloomBrush!!, topLeft = cachedInnerHoleRect.topLeft, size = cachedInnerHoleRect.size, alpha = criticalAlpha)
 
-                    val bloomAspectRatio = cachedBloomRect.height / cachedBloomRect.width
+                    // 1. Dynamic Gold Bloom (Transitions to holeDark when paused)
+                    val currentGoldCenter = lerp(holeDark, Color(0xFFFFFFE0), heatFactor)
+                    val currentGoldEdge = lerp(holeDark, Color(0xFFFFD700), heatFactor)
+                    val dynamicGoldBloom = Brush.radialGradient(
+                        colors = listOf(currentGoldCenter, currentGoldEdge),
+                        center = fuseBase,
+                        radius = holeW
+                    )
+                    drawOval(brush = dynamicGoldBloom, topLeft = cachedInnerHoleRect.topLeft, size = cachedInnerHoleRect.size, alpha = criticalAlpha)
+
+                    // 2. Dynamic Red Bloom (Transitions to Transparent when paused)
+                    val bloomAspectRatio = cachedOuterRimRect.height / cachedOuterRimRect.width
                     withTransform({ scale(1f, bloomAspectRatio, pivot = fuseBase) }) {
-                        val drawRadius = cachedBloomRect.width / 2f
-                        drawCircle(brush = cachedRedBloomBrush!!, radius = drawRadius, center = fuseBase, alpha = criticalAlpha)
+                        val drawRadius = cachedOuterRimRect.width / 2f
+
+                        val currentRed = lerp(Color.Transparent, NeonRed.copy(alpha = 0.6f), heatFactor)
+                        val dynamicRedBloom = Brush.radialGradient(
+                            colors = listOf(currentRed, Color.Transparent),
+                            center = fuseBase,
+                            radius = drawRadius,
+                            tileMode = TileMode.Clamp
+                        )
+                        drawCircle(brush = dynamicRedBloom, radius = drawRadius, center = fuseBase, alpha = criticalAlpha)
                     }
                 }
 
