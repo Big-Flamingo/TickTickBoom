@@ -646,11 +646,11 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors, isPaused
                         for (i in 0 until maxSparks) {
                             if (sparkLife[i] <= 0f) { // Found an empty slot!
                                 // RESTORED: Conical spread based on the fuse's exact angle!
-                                val spread = Math.PI / 2.0
+                                val spread = Math.PI / 4.0
                                 val angle = fuseAngle - (spread / 2.0) + (Random.nextFloat() * spread)
 
                                 // RESTORED: Higher velocity for the burst!
-                                val speed = 4f + Random.nextFloat() * 6f
+                                val speed = 8f + Random.nextFloat() * 10f
 
                                 sparkX[i] = if (isCritical) cachedInnerHoleRect.center.x else sparkCenter.x
                                 sparkY[i] = if (isCritical) cachedInnerHoleRect.center.y else sparkCenter.y

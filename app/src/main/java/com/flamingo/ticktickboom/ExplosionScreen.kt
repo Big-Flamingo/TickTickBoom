@@ -116,11 +116,23 @@ fun ExplosionScreen(state: GameState, audio: AudioController, onIntent: (GameInt
             // 1. THE SHRAPNEL PARTICLES (Zero-Allocation Primitive Loop!)
             for (i in state.particles.indices) {
                 val p = state.particles[i]
+
+                // Keep the outward momentum the same
                 val dist = p.velocity * progress * 2.5f
                 val x = center.x + (p.dirX * dist)
-                val y = center.y + (p.dirY * dist)
-                val alpha = (1f - progress).coerceIn(0f, 1f)
-                if (alpha > 0) drawCircle(color = p.color, alpha = alpha, radius = p.size * 1.5f, center = Offset(x, y))
+
+                // --- THE FIX: Exponential Gravity Drop! ---
+                // progress * progress perfectly simulates realistic parabolic gravity (at^2)
+                val gravityDrop = progress * progress * 1000f
+                val y = center.y + (p.dirY * dist) + gravityDrop
+
+                // --- THE FIX: Linger longer! ---
+                // Stays solid (1.0) until progress hits 0.6, then beautifully fades to 0
+                val alpha = ((1f - progress) * 2.5f).coerceIn(0f, 1f)
+
+                if (alpha > 0) {
+                    drawCircle(color = p.color, alpha = alpha, radius = p.size * 1.5f, center = Offset(x, y))
+                }
             }
 
             // 2. THE WEBP SMOKE (Zero-Allocation Primitive Loop!)
@@ -214,13 +226,17 @@ fun ExplosionScreen(state: GameState, audio: AudioController, onIntent: (GameInt
                 hasSpawnedConfetti = true
                 audio.playVictory()
                 for (i in 0 until maxConfetti) {
-                    cX[i] = (Math.random() * currentScreenWidth).toFloat()
-                    cY[i] = (-50f - Math.random() * 800f).toFloat()
-                    cVx[i] = ((Math.random() - 0.5) * 300f).toFloat()
-                    cVy[i] = (300f + Math.random() * 400f).toFloat()
-                    cColorIndex[i] = (Math.random() * 6).toInt()
-                    cRot[i] = (Math.random() * 360f).toFloat()
-                    cRotSpeed[i] = ((Math.random() - 0.5) * 500f).toFloat()
+                    // Fully native 32-bit float math!
+                    cX[i] = kotlin.random.Random.nextFloat() * currentScreenWidth
+                    cY[i] = -50f - kotlin.random.Random.nextFloat() * 800f
+                    cVx[i] = (kotlin.random.Random.nextFloat() - 0.5f) * 300f
+                    cVy[i] = 300f + kotlin.random.Random.nextFloat() * 400f
+
+                    // BONUS OPTIMIZATION: Use nextInt() to bypass float-to-int casting entirely!
+                    cColorIndex[i] = kotlin.random.Random.nextInt(6)
+
+                    cRot[i] = kotlin.random.Random.nextFloat() * 360f
+                    cRotSpeed[i] = (kotlin.random.Random.nextFloat() - 0.5f) * 500f
                 }
 
                 var lastTime = 0L

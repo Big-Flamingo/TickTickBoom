@@ -14,6 +14,7 @@ import kotlinx.coroutines.withContext
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.random.Random
+import kotlin.time.Duration.Companion.milliseconds
 
 class BombViewModel(private val audio: AudioController, private val groupManager: GroupPresetManager) : ViewModel() {
 
@@ -78,7 +79,7 @@ class BombViewModel(private val audio: AudioController, private val groupManager
 
             viewModelScope.launch {
                 _state.update { it.copy(isPainedBeakClosed = true) }
-                delay(150)
+                delay(150.milliseconds)
                 _state.update { it.copy(isPainedBeakClosed = false) }
                 if (_state.value.isHenPaused && isAppInForeground) audio.playPainedCluck()
             }
@@ -234,7 +235,7 @@ class BombViewModel(private val audio: AudioController, private val groupManager
             var lastUiUpdateMs = 0L
 
             while (_state.value.timeLeft > 0.01f) {
-                delay(5)
+                delay(5.milliseconds)
 
                 val currentNanos = System.nanoTime()
                 val dt = ((currentNanos - lastTimeNanos) / 1_000_000_000.0).coerceAtMost(0.5)
@@ -459,7 +460,7 @@ class BombViewModel(private val audio: AudioController, private val groupManager
             _state.update { it.copy(isHenPaused = false, isPainedBeakClosed = false) }
 
             while (_state.value.appState == AppState.EXPLODED) {
-                delay(10)
+                delay(10.milliseconds)
                 val currentNanos = System.nanoTime()
                 val dt = ((currentNanos - lastTimeNanos) / 1_000_000_000f).coerceAtMost(0.1f)
                 lastTimeNanos = currentNanos
@@ -471,7 +472,7 @@ class BombViewModel(private val audio: AudioController, private val groupManager
                         painedCluckTimer += dt
                         if (painedCluckTimer >= nextPainedCluckTarget) {
                             _state.update { it.copy(isPainedBeakClosed = true) }
-                            delay(150)
+                            delay(150.milliseconds)
                             _state.update { it.copy(isPainedBeakClosed = false) }
 
                             if (_state.value.isHenPaused && isAppInForeground) {
@@ -509,7 +510,6 @@ class BombViewModel(private val audio: AudioController, private val groupManager
     }
 
     override fun onCleared() {
-        super.onCleared()
         gameLoopJob?.cancel()
     }
 

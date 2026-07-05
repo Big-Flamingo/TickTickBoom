@@ -64,6 +64,7 @@ import kotlin.math.pow
 import kotlin.math.sin
 import kotlin.math.sqrt
 import kotlin.random.Random
+import kotlin.time.Duration.Companion.milliseconds
 
 // NOTE: This file uses VisualParticle from AppModels.kt
 // and drawReflection / lerp from Components.kt
@@ -165,7 +166,7 @@ fun FrogVisual(timeLeft: Float, isCritical: Boolean, isPaused: Boolean, onToggle
         }
     }
     var isBlinking by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { while (true) { delay(Random.nextLong(2000, 4000)); isBlinking = true; delay(150); isBlinking = false } }
+    LaunchedEffect(Unit) { while (true) { delay(Random.nextLong(2000, 4000).milliseconds); isBlinking = true; delay(150.milliseconds); isBlinking = false } }
 
     Box(contentAlignment = Alignment.Center, modifier = Modifier.size(300.dp).clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
         scope.launch { boingAnim.snapTo(1f); boingAnim.animateTo(0.9f, tween(50)); boingAnim.animateTo(1.05f, tween(100)); boingAnim.animateTo(1.0f, spring(dampingRatio = 0.4f, stiffness = 400f)) }
@@ -569,7 +570,7 @@ fun HenVisual(modifier: Modifier = Modifier, timeLeft: Float, isPaused: Boolean,
     }
 
     var isBlinking by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { while (true) { delay(Random.nextLong(2000, 4000)); isBlinking = true; delay(150); isBlinking = false } }
+    LaunchedEffect(Unit) { while (true) { delay(Random.nextLong(2000, 4000).milliseconds); isBlinking = true; delay(150.milliseconds); isBlinking = false } }
 
     val wingFlapRotation by infiniteTransition.animateFloat(0f, 45f, infiniteRepeatable(tween(150, easing = LinearEasing), RepeatMode.Reverse), "wing")
     val scope = rememberCoroutineScope(); val boingAnim = remember { Animatable(1f) }

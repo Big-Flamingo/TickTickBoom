@@ -48,6 +48,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.hypot
+import kotlin.time.Duration.Companion.milliseconds
 
 class MainActivity : AppCompatActivity() {
 
@@ -150,7 +151,7 @@ class MainActivity : AppCompatActivity() {
             // 1. Wait until AudioController reports all 25 files are loaded
             // (We add a 5-second timeout safety net just in case a file gets corrupted)
             while (!audioController.isFullyLoaded && (System.currentTimeMillis() - startTime) < 5000L) {
-                delay(50)
+                delay(50.milliseconds)
             }
 
             // 2. Ensure a HARD minimum splash screen time
@@ -158,7 +159,7 @@ class MainActivity : AppCompatActivity() {
             val minimumSplashTime = 1000L
             val elapsed = System.currentTimeMillis() - startTime
             if (elapsed < minimumSplashTime) {
-                delay(minimumSplashTime - elapsed)
+                delay((minimumSplashTime - elapsed).milliseconds)
             }
 
             // 3. Open the gates!
