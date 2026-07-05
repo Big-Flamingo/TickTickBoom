@@ -112,6 +112,7 @@ import kotlin.math.cos
 import kotlin.math.pow
 import kotlin.math.sin
 import kotlin.math.sqrt
+import kotlin.random.Random
 
 // --- VISUALS ---
 
@@ -284,10 +285,11 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors, isPaused
     val ashPath = remember { Path() } // Create ONE Compose Path
     val pathMeasure = remember { android.graphics.PathMeasure() }
     var cachedSize by remember { mutableStateOf(Size.Zero) }
+    var cachedCurtainRect by remember { mutableStateOf(Rect.Zero) }
     var cachedOuterRimRect by remember { mutableStateOf(Rect.Zero) }
     var cachedInnerHoleRect by remember { mutableStateOf(Rect.Zero) }
     var cachedMetalGradient by remember { mutableStateOf<Brush?>(null) }
-    var cachedGoldBloomBrush by remember { mutableStateOf<Brush?>(null) }
+    var cachedHotGoldBrush by remember { mutableStateOf<Brush?>(null) }
     var cachedRedBloomBrush by remember { mutableStateOf<Brush?>(null) }
 // --- NEW: Size-dependent Brush Caches ---
     var cachedBombBodyBrush by remember { mutableStateOf<Brush?>(null) }
@@ -348,6 +350,15 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors, isPaused
     val sparkPos = remember { floatArrayOf(0f, 0f) }
     val smokeSprite = ImageBitmap.imageResource(id = R.drawable.smoke_wisp)
     val smokeColorFilter = remember(colors.smokeColor) { ColorFilter.tint(colors.smokeColor) }
+
+    // Creates ONE generic radial gradient anchored at 0,0
+    val sparkGlowBrush = remember(glowRadius) {
+        Brush.radialGradient(
+            colors = listOf(NeonOrange.copy(alpha = 0.5f), Color.Transparent),
+            center = Offset.Zero, // Pin it to local 0,0
+            radius = glowRadius   // Pin the exact physical radius
+        )
+    }
 
     LaunchedEffect(isPaused) {
         while (true) {
@@ -422,6 +433,7 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors, isPaused
                 )
                 // --- THE RECT/PATH FIX: Calculated exactly ONCE when the bomb loads! ---
                 cachedOuterRimRect = Rect(offset = Offset(bombCenterX - protrusionW / 2, neckTopY - cylinderOvalH / 2), size = Size(protrusionW, cylinderOvalH))
+                cachedCurtainRect = Rect(cachedOuterRimRect.left, neckTopY, cachedOuterRimRect.right, neckBaseY + 15f * d)
                 cachedInnerHoleRect = Rect(center = cachedOuterRimRect.center, radius = holeW / 2).copy(top = cachedOuterRimRect.center.y - holeH / 2, bottom = cachedOuterRimRect.center.y + holeH / 2)
 
                 // --- NEW: Cache the static Brushes! ---
@@ -432,7 +444,7 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors, isPaused
                 cachedMetalGradient = Brush.horizontalGradient(0.0f to baseDark, 0.5f to baseLight, 1.0f to baseDark, startX = rectLeft, endX = rectRight)
 
                 val fuseBase = cachedInnerHoleRect.center
-                cachedGoldBloomBrush = Brush.radialGradient(colors = listOf(Color(0xFFFFFFE0), Color(0xFFFFD700)), center = fuseBase, radius = holeW)
+                cachedHotGoldBrush = Brush.radialGradient(colors = listOf(Color(0xFFFFFFE0), Color(0xFFFFD700)), center = fuseBase, radius = holeW)
 
                 val drawRadius = cachedOuterRimRect.width / 2f
                 cachedRedBloomBrush = Brush.radialGradient(colors = listOf(NeonRed.copy(alpha = 0.6f), Color.Transparent), center = fuseBase, radius = drawRadius, tileMode = TileMode.Clamp)
@@ -526,8 +538,8 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors, isPaused
                     val currentSweep = maxSweep * curtainProgress
 
                     drawIntoCanvas { canvas ->
-                        // USE CACHED PAINT!
-                        canvas.saveLayer(Rect(cachedOuterRimRect.left, neckTopY, cachedOuterRimRect.right, neckBaseY + 15f * d), fuseLayerPaint)
+                        // USE CACHED RECT AND PAINT!
+                        canvas.saveLayer(cachedCurtainRect, fuseLayerPaint)
 
                         drawOval(brush = litGradient, topLeft = Offset(bombCenterX - protrusionW / 2, neckBaseY - cylinderOvalH / 2), size = Size(protrusionW, cylinderOvalH))
                         drawRect(brush = litGradient, topLeft = Offset(bombCenterX - protrusionW / 2, neckTopY), size = Size(protrusionW, neckBaseY - neckTopY))
@@ -557,29 +569,19 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors, isPaused
                 // Multiply the raw heat by our 5-second animator!
                 val heatFactor = targetHeat * pauseCooling
 
+                // 1. Draw the static dark base
                 val holeDark = Color(0xFF0F172A)
-                val holeHot = Color(0xFFFFD700)
-                val currentHoleColor = lerp(holeDark, holeHot, heatFactor)
-                drawOval(color = currentHoleColor, topLeft = cachedInnerHoleRect.topLeft, size = cachedInnerHoleRect.size)
+                drawOval(color = holeDark, topLeft = cachedInnerHoleRect.topLeft, size = cachedInnerHoleRect.size)
 
-                if (criticalAlpha > 0f) {
-                    val fuseBase = cachedInnerHoleRect.center
-                    val currentGoldCenter = lerp(holeDark, Color(0xFFFFFFE0), heatFactor)
-                    val currentGoldEdge = lerp(holeDark, Color(0xFFFFD700), heatFactor)
-                    val dynamicGoldBloom = Brush.radialGradient(
-                        colors = listOf(currentGoldCenter, currentGoldEdge),
-                        center = fuseBase,
-                        radius = holeW
-                    )
-                    drawOval(brush = dynamicGoldBloom, topLeft = cachedInnerHoleRect.topLeft, size = cachedInnerHoleRect.size, alpha = criticalAlpha)
+                // 2. Overlay the hot gold brush, fading it out as it cools!
+                if (criticalAlpha > 0f && cachedHotGoldBrush != null) {
+                    drawOval(brush = cachedHotGoldBrush!!, topLeft = cachedInnerHoleRect.topLeft, size = cachedInnerHoleRect.size, alpha = heatFactor * criticalAlpha)
                 }
 
                 if (!isCritical) {
                     val androidAshPath = ashPath.asAndroidPath()
-                    androidAshPath.rewind() // CLEAR the cached path!
+                    androidAshPath.rewind()
                     pathMeasure.getSegment(0f, currentBurnPoint, androidAshPath, true)
-
-                    // USE CACHED STROKES! (No new objects created!)
                     drawPath(path = ashPath, color = Color(0xFFCCC9C6), style = ashStrokeMain)
                     drawPath(path = ashPath, color = Color(0xFFD6D3D1), style = ashStrokeMid)
                     drawPath(path = ashPath, color = Color.White.copy(alpha = 0.5f), style = ashStrokeInner)
@@ -587,20 +589,13 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors, isPaused
 
                 drawPath(path = frontRimPath, brush = rimGradient)
 
-                if (criticalAlpha > 0f) {
+                // 3. Overlay the red brush over the rim, fading it out as it cools!
+                if (criticalAlpha > 0f && cachedRedBloomBrush != null) {
                     val fuseBase = cachedInnerHoleRect.center
                     val bloomAspectRatio = cachedOuterRimRect.height / cachedOuterRimRect.width
                     withTransform({ scale(1f, bloomAspectRatio, pivot = fuseBase) }) {
                         val drawRadius = cachedOuterRimRect.width / 2f
-
-                        val currentRed = lerp(Color.Transparent, NeonRed.copy(alpha = 0.6f), heatFactor)
-                        val dynamicRedBloom = Brush.radialGradient(
-                            colors = listOf(currentRed, Color.Transparent),
-                            center = fuseBase,
-                            radius = drawRadius,
-                            tileMode = TileMode.Clamp
-                        )
-                        drawCircle(brush = dynamicRedBloom, radius = drawRadius, center = fuseBase, alpha = criticalAlpha)
+                        drawCircle(brush = cachedRedBloomBrush!!, radius = drawRadius, center = fuseBase, alpha = heatFactor * criticalAlpha)
                     }
                 }
 
@@ -640,24 +635,29 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors, isPaused
                 }
                 if (!isPaused && !isReflection) {
                     // Spawn Spark
-                    // INCREASE the chance from 0.3 (30%) to 0.8 (80%) per frame
-                    if (Math.random() < 0.8) {
+                    // RESTORED: 80% chance to spawn per frame
+                    if (Random.nextFloat() < 0.8f) {
 
-                        // NEW: Force it to spawn 2 to 4 sparks all at once!
-                        val sparksToSpawn = (2..4).random()
+                        // RESTORED: Force it to spawn 2 to 4 sparks all at once!
+                        // Random.nextInt(2, 5) returns 2, 3, or 4.
+                        val sparksToSpawn = Random.nextInt(2, 5)
                         var spawnedCount = 0
 
                         for (i in 0 until maxSparks) {
                             if (sparkLife[i] <= 0f) { // Found an empty slot!
+                                // RESTORED: Conical spread based on the fuse's exact angle!
                                 val spread = Math.PI / 2.0
-                                val angle = fuseAngle - (spread / 2.0) + (Math.random() * spread)
-                                val speed = (4f + Math.random() * 6f).toFloat()
+                                val angle = fuseAngle - (spread / 2.0) + (Random.nextFloat() * spread)
+
+                                // RESTORED: Higher velocity for the burst!
+                                val speed = 4f + Random.nextFloat() * 6f
 
                                 sparkX[i] = if (isCritical) cachedInnerHoleRect.center.x else sparkCenter.x
                                 sparkY[i] = if (isCritical) cachedInnerHoleRect.center.y else sparkCenter.y
                                 sparkVx[i] = (cos(angle) * speed).toFloat()
+                                // RESTORED: Removed the generic -2f upward bias since the cone handles direction!
                                 sparkVy[i] = (sin(angle) * speed).toFloat()
-                                sparkLife[i] = (0.2f + Math.random() * 0.3f).toFloat()
+                                sparkLife[i] = 0.2f + Random.nextFloat() * 0.3f
                                 sparkMaxLife[i] = 0.5f
 
                                 spawnedCount++
@@ -667,16 +667,16 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors, isPaused
                         }
                     }
                     // Spawn Smoke
-                    if (Math.random() < 0.2) {
+                    if (Random.nextFloat() < 0.2f) {
                         for (i in 0 until maxSmoke) {
-                            if (smokeLife[i] <= 0f) { // Found empty slot!
-                                val angle = -Math.PI / 2 + (Math.random() - 0.5) * 0.5
-                                val speed = (1f + Math.random() * 2f).toFloat()
+                            if (smokeLife[i] <= 0f) {
+                                val angle = -Math.PI / 2 + (Random.nextFloat() - 0.5f) * 0.5f
+                                val speed = 1f + Random.nextFloat() * 2f
                                 smokeX[i] = if (isCritical) cachedInnerHoleRect.center.x else sparkCenter.x
                                 smokeY[i] = (if (isCritical) cachedInnerHoleRect.center.y else sparkCenter.y) - fuseYOffset
                                 smokeVx[i] = (cos(angle) * speed).toFloat()
                                 smokeVy[i] = if (isCritical) (sin(angle) * speed * 2f).toFloat() else (sin(angle) * speed).toFloat()
-                                smokeLife[i] = (1f + Math.random() * 0.5f).toFloat()
+                                smokeLife[i] = 1f + Random.nextFloat() * 0.5f
                                 smokeMaxLife[i] = 1.5f
                                 break
                             }
@@ -717,10 +717,20 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors, isPaused
                 }
 
                 if (!isCritical && !isPaused) {
-                    drawCircle(brush = Brush.radialGradient(colors = listOf(NeonOrange.copy(alpha = 0.5f * lightIntensity), Color.Transparent), center = sparkCenter, radius = glowRadius), radius = glowRadius, center = sparkCenter)
-                    drawCircle(color = NeonOrange.copy(alpha=0.8f * lightIntensity), radius = coreRadius, center = sparkCenter); drawCircle(color = Color.White.copy(alpha=lightIntensity), radius = whiteRadius, center = sparkCenter)
-                    withTransform({ rotate(45f, pivot = sparkCenter); scale(glintScale, glintScale, pivot = sparkCenter) }) { drawOval(color = Color.White.copy(alpha=0.8f * lightIntensity), topLeft = Offset(sparkCenter.x - glintOffsetL, sparkCenter.y - glintOffsetS), size = Size(glintSizeL, glintSizeS)) }
-                    withTransform({ rotate(-45f, pivot = sparkCenter); scale(glintScale, glintScale, pivot = sparkCenter) }) { drawOval(color = Color.White.copy(alpha=0.8f * lightIntensity), topLeft = Offset(sparkCenter.x - glintOffsetL, sparkCenter.y - glintOffsetS), size = Size(glintSizeL, glintSizeS)) }
+                    // Shift the canvas to the spark, and draw the cached brush at 0,0!
+                    withTransform({ translate(sparkCenter.x, sparkCenter.y) }) {
+                        drawCircle(brush = sparkGlowBrush, radius = glowRadius, center = Offset.Zero, alpha = lightIntensity)
+                    }
+
+                    drawCircle(color = NeonOrange.copy(alpha=0.8f * lightIntensity), radius = coreRadius, center = sparkCenter)
+                    drawCircle(color = Color.White.copy(alpha=lightIntensity), radius = whiteRadius, center = sparkCenter)
+
+                    withTransform({ rotate(45f, pivot = sparkCenter); scale(glintScale, glintScale, pivot = sparkCenter) }) {
+                        drawOval(color = Color.White.copy(alpha=0.8f * lightIntensity), topLeft = Offset(sparkCenter.x - glintOffsetL, sparkCenter.y - glintOffsetS), size = Size(glintSizeL, glintSizeS))
+                    }
+                    withTransform({ rotate(-45f, pivot = sparkCenter); scale(glintScale, glintScale, pivot = sparkCenter) }) {
+                        drawOval(color = Color.White.copy(alpha=0.8f * lightIntensity), topLeft = Offset(sparkCenter.x - glintOffsetL, sparkCenter.y - glintOffsetS), size = Size(glintSizeL, glintSizeS))
+                    }
                 }
             }
         }
