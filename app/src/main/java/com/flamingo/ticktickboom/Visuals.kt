@@ -562,6 +562,18 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors, isPaused
                 val currentHoleColor = lerp(holeDark, holeHot, heatFactor)
                 drawOval(color = currentHoleColor, topLeft = cachedInnerHoleRect.topLeft, size = cachedInnerHoleRect.size)
 
+                if (criticalAlpha > 0f) {
+                    val fuseBase = cachedInnerHoleRect.center
+                    val currentGoldCenter = lerp(holeDark, Color(0xFFFFFFE0), heatFactor)
+                    val currentGoldEdge = lerp(holeDark, Color(0xFFFFD700), heatFactor)
+                    val dynamicGoldBloom = Brush.radialGradient(
+                        colors = listOf(currentGoldCenter, currentGoldEdge),
+                        center = fuseBase,
+                        radius = holeW
+                    )
+                    drawOval(brush = dynamicGoldBloom, topLeft = cachedInnerHoleRect.topLeft, size = cachedInnerHoleRect.size, alpha = criticalAlpha)
+                }
+
                 if (!isCritical) {
                     val androidAshPath = ashPath.asAndroidPath()
                     androidAshPath.rewind() // CLEAR the cached path!
@@ -575,21 +587,8 @@ fun FuseVisual(progress: Float, isCritical: Boolean, colors: AppColors, isPaused
 
                 drawPath(path = frontRimPath, brush = rimGradient)
 
-                // --- THE FIX: Remove !isPaused, and use heatFactor to dynamically shift the colors! ---
                 if (criticalAlpha > 0f) {
                     val fuseBase = cachedInnerHoleRect.center
-
-                    // 1. Dynamic Gold Bloom (Transitions to holeDark when paused)
-                    val currentGoldCenter = lerp(holeDark, Color(0xFFFFFFE0), heatFactor)
-                    val currentGoldEdge = lerp(holeDark, Color(0xFFFFD700), heatFactor)
-                    val dynamicGoldBloom = Brush.radialGradient(
-                        colors = listOf(currentGoldCenter, currentGoldEdge),
-                        center = fuseBase,
-                        radius = holeW
-                    )
-                    drawOval(brush = dynamicGoldBloom, topLeft = cachedInnerHoleRect.topLeft, size = cachedInnerHoleRect.size, alpha = criticalAlpha)
-
-                    // 2. Dynamic Red Bloom (Transitions to Transparent when paused)
                     val bloomAspectRatio = cachedOuterRimRect.height / cachedOuterRimRect.width
                     withTransform({ scale(1f, bloomAspectRatio, pivot = fuseBase) }) {
                         val drawRadius = cachedOuterRimRect.width / 2f
